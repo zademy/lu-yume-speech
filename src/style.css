@@ -160,9 +160,19 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--color-primary-200);
+  background: var(--color-border-strong);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-primary-400);
+  background: var(--color-text-muted);
+}
+
+/* -----------------------------------------------------------------------
+ * Line clamp (for history card text preview)
+ * ----------------------------------------------------------------------- */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }

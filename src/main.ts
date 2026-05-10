@@ -8,7 +8,7 @@
  *   Analyzer    → levels → EventBus → WaveformVisualizer
  *   Timer       → ticks  → EventBus → Timer display
  *   Keyboard    → calls  → Recorder → EventBus → UI
- *   GroqClient  → events → EventBus → Toast + Metadata + Output
+ *   GroqClient  → events → EventBus → Toast + Metadata + Output + History
  *
  * No module imports another module directly — they depend exclusively
  * on the EventBus abstraction (Dependency Inversion Principle).
@@ -17,7 +17,7 @@
 import './style.css';
 
 import { EventBus } from './core/event-bus';
-import type { EventMap, TranscriptionOptions, StatusUpdate } from './types';
+import type { EventMap, TranscriptionOptions, StatusUpdate, HistoryEntry } from './types';
 
 import { Recorder } from './audio/recorder';
 import { AudioAnalyzer } from './audio/audio-analyzer';
@@ -29,6 +29,9 @@ import type { AppElements } from './ui/renderer';
 import { renderMetadata } from './ui/metadata-panel';
 import { showToast } from './ui/toast';
 import { ThemeManager } from './utils/theme';
+import { createSidebar, populateEntries, prependEntry, removeCard, clearCards } from './ui/sidebar';
+import type { SidebarElements } from './ui/sidebar';
+import * as historyRepo from './utils/history-repo';
 
 import { registerKeyboardShortcuts } from './utils/keyboard';
 import { readTranscriptionOptions, readOperationMode } from './utils/settings';
@@ -42,8 +45,37 @@ async function main(): Promise<void> {
   const bus = new EventBus<EventMap>();
 
   const elements = renderApp();
-  const app = document.querySelector<HTMLDivElement>('#app')!;
-  app.appendChild(elements.root);
+
+  // Sidebar
+  const sidebar = createSidebar(
+    (id) => bus.emit('history:restore', id),
+    (id) => bus.emit('history:delete', id),
+    () => bus.emit('history:clear', undefined),
+  );
+
+  // Load existing history into sidebar
+  populateEntries(sidebar, historyRepo.getAll());
+
+  // Compose layout: centered container with sidebar + app side by side
+  const appDiv = document.querySelector<HTMLDivElement>('#app')!;
+  appDiv.className = 'flex items-start justify-center gap-4 p-4 min-h-screen';
+
+  // Wrapper for sidebar + main content
+  const wrapper = document.createElement('div');
+  wrapper.className = 'flex items-start gap-4 w-full max-w-5xl';
+
+  wrapper.appendChild(sidebar.root);
+
+  const mainEl = document.createElement('main');
+  mainEl.className =
+    'flex-1 min-w-0 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-elevated)] overflow-hidden';
+  mainEl.appendChild(elements.root);
+  wrapper.appendChild(mainEl);
+
+  appDiv.appendChild(wrapper);
+
+  // Insert sidebar toggle button into the app header (before theme toggle)
+  elements.headerActions.insertBefore(sidebar.toggleBtn, elements.themeToggle);
 
   // Theme — initialize before first paint to avoid flash
   const theme = new ThemeManager(elements.themeToggle);
@@ -79,9 +111,10 @@ async function main(): Promise<void> {
   window.addEventListener('resize', () => visualizer.syncSize());
 
   // Wire everything through the event bus
-  wireTranscriptionPipeline(bus, client, elements);
+  wireTranscriptionPipeline(bus, client, elements, sidebar);
   wireRecordingHandlers(bus, elements, analyzer, timer, visualizer, recorder);
   wireOutputToolbar(elements);
+  wireHistoryEvents(bus, sidebar, elements);
 
   // Keyboard shortcuts
   const cleanup = registerKeyboardShortcuts({
@@ -114,7 +147,6 @@ function wireLiveControls(elements: AppElements): void {
 
   elements.timestampToggle.disabled = elements.responseFormatSelect.value !== 'verbose_json';
 
-  // Word count updates on every keystroke or text change
   elements.outputArea.addEventListener('input', () => {
     updateWordCount(elements);
   });
@@ -173,6 +205,7 @@ function wireTranscriptionPipeline(
   bus: EventBus<EventMap>,
   client: GroqClient,
   elements: AppElements,
+  sidebar: SidebarElements,
 ): void {
   bus.on('audio:blob-ready', (blob) => {
     const options: TranscriptionOptions = readTranscriptionOptions(elements);
@@ -198,6 +231,21 @@ function wireTranscriptionPipeline(
 
     bus.emit('text:append', result.text);
 
+    // Save to history
+    const options = readTranscriptionOptions(elements);
+    const mode = readOperationMode(elements);
+    const entry: HistoryEntry = {
+      id: crypto.randomUUID(),
+      text: result.text,
+      language: result.language,
+      model: options.model,
+      duration: result.duration,
+      createdAt: Date.now(),
+      operationMode: mode,
+    };
+    historyRepo.addEntry(entry);
+    prependEntry(sidebar, entry);
+
     const copied = await copyToClipboard(result.text);
     if (copied) {
       showToast(elements.toastContainer, 'Texto copiado al portapapeles', 'success');
@@ -215,6 +263,38 @@ function wireTranscriptionPipeline(
 
   bus.on('status:change', (update) => {
     setStatus(elements, update);
+  });
+}
+
+// ===========================================================================
+// History events
+// ===========================================================================
+
+function wireHistoryEvents(
+  bus: EventBus<EventMap>,
+  sidebar: SidebarElements,
+  elements: AppElements,
+): void {
+  bus.on('history:restore', (id) => {
+    const entry = historyRepo.getById(id);
+    if (!entry) return;
+
+    elements.outputArea.value = entry.text;
+    updateWordCount(elements);
+    showToast(elements.toastContainer, 'Transcripción restaurada', 'success');
+    setStatus(elements, { message: 'Transcripción restaurada.', level: 'success' });
+  });
+
+  bus.on('history:delete', (id) => {
+    historyRepo.removeEntry(id);
+    removeCard(sidebar, id);
+    showToast(elements.toastContainer, 'Entrada eliminada', 'info');
+  });
+
+  bus.on('history:clear', () => {
+    historyRepo.clearAll();
+    clearCards(sidebar);
+    showToast(elements.toastContainer, 'Historial limpiado', 'info');
   });
 }
 

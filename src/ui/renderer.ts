@@ -8,10 +8,7 @@
  * SRP: This module's only job is DOM construction.
  * OCP: New UI sections can be added as new render functions.
  *
- * Design system: Micro-interactions style
- * Colors: Teal primary + Orange accent
- * Typography: Inter (body) / JetBrains Mono (code)
- * Icons: Lucide inline SVGs (stroke-based, consistent)
+ * App name: LU YUME
  */
 
 import { detectOS } from '../utils/os-detect';
@@ -24,18 +21,6 @@ import {
   DEFAULT_SETTINGS,
 } from '../types';
 
-/**
- * Parse an HTML template string and set it as the content of the target element.
- * Uses Range.createContextualFragment to parse HTML into a DocumentFragment,
- * then appends it to the target element.
- *
- * Safety contract: every call site in this module only interpolates values from:
- * - String literals (hardcoded in source code)
- * - Constants imported from types.ts (WHISPER_MODELS, LANGUAGES, etc.)
- * - SVG icon constants defined in this file
- *
- * NO user input is ever interpolated into these templates.
- */
 function setTrustedHTML(el: HTMLElement, html: string): void {
   const range = document.createRange();
   const fragment = range.createContextualFragment(html);
@@ -43,9 +28,6 @@ function setTrustedHTML(el: HTMLElement, html: string): void {
   el.appendChild(fragment);
 }
 
-/**
- * References to all interactive DOM elements.
- */
 export interface AppElements {
   root: HTMLDivElement;
   modelSelect: HTMLSelectElement;
@@ -68,27 +50,29 @@ export interface AppElements {
   copyAllBtn: HTMLButtonElement;
   clearBtn: HTMLButtonElement;
   downloadBtn: HTMLButtonElement;
+  headerActions: HTMLDivElement;
 }
 
-/**
- * Render the full application layout.
- */
 export function renderApp(): AppElements {
   const os = detectOS();
 
   const root = document.createElement('div');
   root.id = 'app-shell';
-  root.className = 'w-full max-w-xl mx-auto p-4 sm:p-6';
+  root.className = 'flex flex-col h-full';
 
   setTrustedHTML(
     root,
     `
-    ${renderHeader()}
-    ${renderSettingsPanel()}
-    ${renderStatusBar(os.modifierLabel)}
-    ${renderVisualizerArea()}
-    ${renderOutputSection()}
-    ${renderFooter()}
+    ${renderAppHeader()}
+    <div class="flex-1 overflow-y-auto">
+      <div class="max-w-xl mx-auto px-4 py-6">
+        ${renderSettingsPanel()}
+        ${renderStatusBar(os.modifierLabel)}
+        ${renderVisualizerArea()}
+        ${renderOutputSection()}
+      </div>
+    </div>
+    ${renderAppFooter()}
     ${renderToastContainer()}
   `,
   );
@@ -115,11 +99,61 @@ export function renderApp(): AppElements {
     copyAllBtn: root.querySelector('#copyAllBtn')!,
     clearBtn: root.querySelector('#clearBtn')!,
     downloadBtn: root.querySelector('#downloadBtn')!,
+    headerActions: root.querySelector('#headerActions')!,
   };
 }
 
 // -----------------------------------------------------------------------
-// SVG Icons — Lucide-style, stroke-based, 20x20 viewport
+// App Header — LU YUME branding
+// -----------------------------------------------------------------------
+
+function renderAppHeader(): string {
+  return `
+    <header class="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-primary-500 to-accent-500 text-white flex items-center justify-center shadow-sm">
+          ${icons.mic}
+        </div>
+        <div class="text-left">
+          <h1 class="text-base font-bold text-[var(--color-text-primary)] leading-tight tracking-tight">
+            LU YUME
+          </h1>
+          <p class="text-[10px] text-[var(--color-text-muted)] leading-none">Dictado por voz</p>
+        </div>
+      </div>
+      <div id="headerActions" class="flex items-center gap-1">
+        <button
+          id="themeToggle"
+          type="button"
+          class="p-2 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-muted)] transition-colors duration-[var(--transition-fast)] cursor-pointer"
+          aria-label="Toggle dark mode"
+        ></button>
+      </div>
+    </header>
+  `;
+}
+
+// -----------------------------------------------------------------------
+// App Footer
+// -----------------------------------------------------------------------
+
+function renderAppFooter(): string {
+  return `
+    <footer class="px-4 py-3 border-t border-[var(--color-border)] bg-[var(--color-surface)]">
+      <div class="max-w-xl mx-auto flex items-center justify-between">
+        <p class="text-[10px] text-[var(--color-text-muted)]">
+          ⌥/Ctrl + Space para grabar
+        </p>
+        <p class="text-[10px] text-[var(--color-text-muted)]">
+          Powered by <span class="font-medium text-[var(--color-text-secondary)]">Groq Whisper</span>
+        </p>
+      </div>
+    </footer>
+  `;
+}
+
+// -----------------------------------------------------------------------
+// SVG Icons
 // -----------------------------------------------------------------------
 
 const icons = {
@@ -129,8 +163,6 @@ const icons = {
     '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>',
   download:
     '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>',
-  sun: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>',
-  moon: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>',
   settings:
     '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>',
   chevronDown:
@@ -140,30 +172,6 @@ const icons = {
 // -----------------------------------------------------------------------
 // Section renderers
 // -----------------------------------------------------------------------
-
-function renderHeader(): string {
-  return `
-    <header class="flex items-center justify-between mb-6">
-      <div class="flex items-center gap-3">
-        <div class="w-10 h-10 rounded-xl bg-primary-600 text-white flex items-center justify-center shadow-md">
-          ${icons.mic}
-        </div>
-        <div class="text-left">
-          <h1 class="text-lg font-semibold text-[var(--color-text-primary)] leading-tight">
-            Speech to Text
-          </h1>
-          <p class="text-xs text-[var(--color-text-muted)]">Powered by Groq Whisper</p>
-        </div>
-      </div>
-      <button
-        id="themeToggle"
-        type="button"
-        class="p-2 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-muted)] transition-colors duration-[var(--transition-fast)] cursor-pointer"
-        aria-label="Toggle dark mode"
-      ></button>
-    </header>
-  `;
-}
 
 function renderSettingsPanel(): string {
   return `
@@ -177,7 +185,6 @@ function renderSettingsPanel(): string {
           ${icons.chevronDown}
         </span>
       </summary>
-
       <div class="px-4 pb-4 space-y-3 border-t border-[var(--color-border)]">
         <div class="pt-3">
           ${renderSelectField(
@@ -230,9 +237,9 @@ function renderStatusBar(modifierLabel: string): string {
   return `
     <div id="status" class="text-center text-base font-medium text-[var(--color-text-secondary)] mb-4 min-h-[1.75em] transition-colors duration-[var(--transition-fast)]">
       Presiona
-      <kbd class="inline-flex items-center px-2 py-0.5 rounded border border-[var(--color-border-strong)] bg-[var(--color-surface-muted)] text-[var(--color-text-secondary)] font-mono text-xs ">${modifierLabel}</kbd>
+      <kbd class="inline-flex items-center px-2 py-0.5 rounded border border-[var(--color-border-strong)] bg-[var(--color-surface-muted)] text-[var(--color-text-secondary)] font-mono text-xs">${modifierLabel}</kbd>
       +
-      <kbd class="inline-flex items-center px-2 py-0.5 rounded border border-[var(--color-border-strong)] bg-[var(--color-surface-muted)] text-[var(--color-text-secondary)] font-mono text-xs ">Space</kbd>
+      <kbd class="inline-flex items-center px-2 py-0.5 rounded border border-[var(--color-border-strong)] bg-[var(--color-surface-muted)] text-[var(--color-text-secondary)] font-mono text-xs">Space</kbd>
       para hablar
     </div>
   `;
@@ -242,12 +249,7 @@ function renderVisualizerArea(): string {
   return `
     <div class="relative mb-4 rounded-xl overflow-hidden border border-[var(--color-border)] bg-[var(--color-surface)]">
       <canvas id="waveformCanvas" class="w-full h-16"></canvas>
-      <span
-        id="timerDisplay"
-        class="absolute top-2 right-3 text-xs font-mono text-[var(--color-text-muted)] bg-[var(--color-surface)]/70 backdrop-blur-sm px-2 py-0.5 rounded-md"
-      >
-        00:00
-      </span>
+      <span id="timerDisplay" class="absolute top-2 right-3 text-xs font-mono text-[var(--color-text-muted)] bg-[var(--color-surface)]/70 backdrop-blur-sm px-2 py-0.5 rounded-md">00:00</span>
     </div>
   `;
 }
@@ -255,52 +257,22 @@ function renderVisualizerArea(): string {
 function renderOutputSection(): string {
   return `
     <div class="space-y-2">
-      <!-- Toolbar -->
       <div class="flex items-center justify-between px-1">
-        <span class="text-xs text-[var(--color-text-muted)]">
-          <span id="wordCount">0</span> palabras
-        </span>
+        <span class="text-xs text-[var(--color-text-muted)]"><span id="wordCount">0</span> palabras</span>
         <div class="flex items-center gap-1">
           ${renderToolbarButton('copyAllBtn', icons.copy, 'Copiar todo')}
           ${renderToolbarButton('downloadBtn', icons.download, 'Descargar .txt')}
           ${renderToolbarButton('clearBtn', icons.trash, 'Limpiar')}
         </div>
       </div>
-
-      <!-- Textarea -->
-      <textarea
-        id="output"
-        class="w-full h-40 p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-primary)] text-base leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-border-strong)] focus:border-[var(--color-border-strong)] placeholder:text-[var(--color-text-muted)] shadow-[var(--shadow-card)] transition-all duration-[var(--transition-fast)]"
-        placeholder="Tu texto aparecerá aquí..."
-      ></textarea>
-
-      <!-- Metadata panel -->
-      <div
-        id="metadataPanel"
-        class="hidden rounded-xl border border-[var(--color-border)] p-3 bg-[var(--color-surface-muted)] text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]"
-      ></div>
+      <textarea id="output" class="w-full h-40 p-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-primary)] text-base leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-border-strong)] focus:border-[var(--color-border-strong)] placeholder:text-[var(--color-text-muted)] shadow-[var(--shadow-card)] transition-all duration-[var(--transition-fast)]" placeholder="Tu texto aparecerá aquí..."></textarea>
+      <div id="metadataPanel" class="hidden rounded-xl border border-[var(--color-border)] p-3 bg-[var(--color-surface-muted)] text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]"></div>
     </div>
   `;
 }
 
-function renderFooter(): string {
-  return `
-    <footer class="mt-6 text-center space-y-1">
-      <p class="text-xs text-[var(--color-text-muted)]">
-        Mantén presionadas las teclas mientras hablas. Suelta para terminar.
-      </p>
-      <p class="text-[10px] text-[var(--color-text-muted)] opacity-60">
-        Requiere API Key de Groq
-        (<code class="font-mono bg-[var(--color-surface-muted)] px-1 rounded text-[10px]">.env</code>).
-      </p>
-    </footer>
-  `;
-}
-
 function renderToastContainer(): string {
-  return `
-    <div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
-  `;
+  return `<div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>`;
 }
 
 // -----------------------------------------------------------------------
@@ -315,32 +287,19 @@ function renderSelectField(
   const opts = options
     .map((o) => `<option value="${o.value}" ${o.selected ? 'selected' : ''}>${o.label}</option>`)
     .join('');
-
   return `
     <div class="space-y-1">
       <label for="${id}" class="block text-xs font-medium text-[var(--color-text-muted)] text-left">${label}</label>
-      <select
-        id="${id}"
-        class="w-full p-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-500)] focus:border-transparent transition-all duration-[var(--transition-fast)] cursor-pointer"
-      >
-        ${opts}
-      </select>
-    </div>
-  `;
+      <select id="${id}" class="w-full p-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-500)] focus:border-transparent transition-all duration-[var(--transition-fast)] cursor-pointer">${opts}</select>
+    </div>`;
 }
 
 function renderTextareaField(id: string, label: string, placeholder: string, rows: number): string {
   return `
     <div class="space-y-1">
       <label for="${id}" class="block text-xs font-medium text-[var(--color-text-muted)] text-left">${label}</label>
-      <textarea
-        id="${id}"
-        rows="${rows}"
-        class="w-full p-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-sm text-[var(--color-text-primary)] resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-500)] focus:border-transparent transition-all duration-[var(--transition-fast)] placeholder:text-[var(--color-text-muted)]"
-        placeholder="${placeholder}"
-      ></textarea>
-    </div>
-  `;
+      <textarea id="${id}" rows="${rows}" class="w-full p-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-sm text-[var(--color-text-primary)] resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-500)] focus:border-transparent transition-all duration-[var(--transition-fast)] placeholder:text-[var(--color-text-muted)]" placeholder="${placeholder}"></textarea>
+    </div>`;
 }
 
 function renderTemperatureControl(): string {
@@ -348,21 +307,10 @@ function renderTemperatureControl(): string {
     <div class="space-y-1">
       <div class="flex items-center justify-between">
         <label for="temperatureSlider" class="text-xs font-medium text-[var(--color-text-muted)]">Temperatura</label>
-        <span id="temperatureValue" class="text-xs font-mono text-[var(--color-text-secondary)] bg-[var(--color-surface-muted)] px-1.5 py-0.5 rounded">
-          ${DEFAULT_SETTINGS.temperature}
-        </span>
+        <span id="temperatureValue" class="text-xs font-mono text-[var(--color-text-secondary)] bg-[var(--color-surface-muted)] px-1.5 py-0.5 rounded">${DEFAULT_SETTINGS.temperature}</span>
       </div>
-      <input
-        id="temperatureSlider"
-        type="range"
-        min="0"
-        max="1"
-        step="0.1"
-        value="${DEFAULT_SETTINGS.temperature}"
-        class="w-full h-1.5 rounded-full appearance-none bg-[var(--color-primary-200)] accent-[var(--color-accent-500)] cursor-pointer dark:bg-[var(--color-primary-800)]"
-      />
-    </div>
-  `;
+      <input id="temperatureSlider" type="range" min="0" max="1" step="0.1" value="${DEFAULT_SETTINGS.temperature}" class="w-full h-1.5 rounded-full appearance-none bg-[var(--color-primary-200)] accent-[var(--color-accent-500)] cursor-pointer dark:bg-[var(--color-primary-800)]" />
+    </div>`;
 }
 
 function renderResponseFormatControl(): string {
@@ -370,24 +318,16 @@ function renderResponseFormatControl(): string {
     (f) =>
       `<option value="${f.value}" ${f.value === DEFAULT_SETTINGS.responseFormat ? 'selected' : ''}>${f.label}</option>`,
   ).join('');
-
   return `
     <div class="flex items-end gap-3">
       <div class="flex-1 space-y-1">
         <label for="responseFormatSelect" class="block text-xs font-medium text-[var(--color-text-muted)] text-left">Formato</label>
-        <select
-          id="responseFormatSelect"
-          class="w-full p-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-500)] focus:border-transparent transition-all duration-[var(--transition-fast)] cursor-pointer"
-        >
-          ${options}
-        </select>
+        <select id="responseFormatSelect" class="w-full p-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-500)] focus:border-transparent transition-all duration-[var(--transition-fast)] cursor-pointer">${options}</select>
       </div>
       <label class="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)] whitespace-nowrap cursor-pointer pb-2.5">
-        <input id="timestampToggle" type="checkbox" class="accent-[var(--color-accent-500)] cursor-pointer" />
-        Por palabra
+        <input id="timestampToggle" type="checkbox" class="accent-[var(--color-accent-500)] cursor-pointer" /> Por palabra
       </label>
-    </div>
-  `;
+    </div>`;
 }
 
 function renderRateLimits(): string {
@@ -395,30 +335,12 @@ function renderRateLimits(): string {
     <div class="rounded-lg bg-[var(--color-surface-muted)] p-3 text-xs text-[var(--color-text-muted)] text-left">
       <div class="flex items-center justify-between">
         <span class="font-medium text-[var(--color-text-secondary)]">Límites (Free)</span>
-        <a
-          href="https://console.groq.com/settings/limits"
-          target="_blank"
-          class="text-[var(--color-accent-600)] hover:text-[var(--color-accent-700)] no-underline font-medium transition-colors duration-[var(--transition-fast)]"
-        >Ver &rarr;</a>
+        <a href="https://console.groq.com/settings/limits" target="_blank" class="text-[var(--color-accent-600)] hover:text-[var(--color-accent-700)] no-underline font-medium transition-colors duration-[var(--transition-fast)]">Ver &rarr;</a>
       </div>
-      <div class="mt-1.5 flex gap-4 text-[10px]">
-        <span>20 req/min</span>
-        <span>2,000 req/día</span>
-        <span>~8 hrs audio/día</span>
-      </div>
-    </div>
-  `;
+      <div class="mt-1.5 flex gap-4 text-[10px]"><span>20 req/min</span><span>2,000 req/día</span><span>~8 hrs audio/día</span></div>
+    </div>`;
 }
 
 function renderToolbarButton(id: string, iconSvg: string, ariaLabel: string): string {
-  return `
-    <button
-      id="${id}"
-      type="button"
-      class="p-1.5 rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-muted)] transition-all duration-[var(--transition-fast)] cursor-pointer"
-      aria-label="${ariaLabel}"
-    >
-      ${iconSvg}
-    </button>
-  `;
+  return `<button id="${id}" type="button" class="p-1.5 rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-muted)] transition-all duration-[var(--transition-fast)] cursor-pointer" aria-label="${ariaLabel}">${iconSvg}</button>`;
 }

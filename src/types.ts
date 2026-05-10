@@ -209,6 +209,47 @@ export interface EventMap {
   'status:change': StatusUpdate;
   /** One or more settings changed */
   'settings:change': Partial<AppSettings>;
+  /** A history entry was saved */
+  'history:save': HistoryEntry;
+  /** A history entry was deleted (payload = id) */
+  'history:delete': string;
+  /** All history entries were cleared */
+  'history:clear': void;
+  /** A history entry should be restored to the output area (payload = id) */
+  'history:restore': string;
+  /** The history list was updated (full list pushed to sidebar) */
+  'history:updated': HistoryEntry[];
+}
+
+// ---------------------------------------------------------------------------
+// History
+// ---------------------------------------------------------------------------
+
+/** Maximum number of history entries stored in localStorage. */
+export const HISTORY_MAX_ENTRIES = 100;
+
+/** localStorage key for the sidebar open/closed state. */
+export const HISTORY_SIDEBAR_KEY = 'sidebar_open';
+
+/** localStorage key for the history entries array. */
+export const HISTORY_ENTRIES_KEY = 'history';
+
+/** A single transcription saved to the history. */
+export interface HistoryEntry {
+  /** Unique identifier (crypto.randomUUID) */
+  id: string;
+  /** Transcribed text */
+  text: string;
+  /** Detected or specified language (ISO-639-1) */
+  language?: string;
+  /** Whisper model used */
+  model: WhisperModel;
+  /** Audio duration in seconds */
+  duration?: number;
+  /** Unix timestamp in milliseconds */
+  createdAt: number;
+  /** Whether this was a transcription or translation */
+  operationMode: OperationMode;
 }
 
 // ---------------------------------------------------------------------------
