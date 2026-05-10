@@ -1,0 +1,33 @@
+{
+  "name": "speech-to-text",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "eslint src && prettier --check \"src/**/*.ts\" \"*.html\" \"*.json\" \"src/**/*.css\" && tsc && vite build",
+    "preview": "vite preview",
+    "format": "prettier --write \"src/**/*.ts\" \"*.html\" \"*.json\" \"src/**/*.css\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"*.html\" \"*.json\" \"src/**/*.css\"",
+    "prepare": "husky",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix"
+  },
+  "lint-staged": {
+    "*.{ts,css,html,json}": "prettier --write",
+    "*.ts": "eslint --fix"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@tailwindcss/vite": "^4.3.0",
+    "eslint": "^10.3.0",
+    "globals": "^17.6.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.4",
+    "prettier": "3.8.3",
+    "tailwindcss": "^4.3.0",
+    "typescript": "~6.0.2",
+    "typescript-eslint": "^8.59.2",
+    "vite": "^8.0.10"
+  }
+}
