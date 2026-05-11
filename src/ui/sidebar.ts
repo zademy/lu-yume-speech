@@ -25,6 +25,14 @@ export interface SidebarElements {
   _onDelete: (id: string) => void;
 }
 
+/**
+ * Create the sidebar DOM structure with header, card list, and empty state.
+ *
+ * @param onRestore - Callback invoked when a user clicks a card to restore text
+ * @param onDelete  - Callback invoked when a user clicks delete on a card
+ * @param onClear   - Callback invoked when a user clicks "clear all history"
+ * @returns Object containing sidebar root element and interactive sub-elements
+ */
 export function createSidebar(
   onRestore: (id: string) => void,
   onDelete: (id: string) => void,
@@ -129,6 +137,13 @@ export function createSidebar(
   };
 }
 
+/**
+ * Populate the sidebar with a full list of history entries.
+ * Clears any existing cards before inserting.
+ *
+ * @param elements - Sidebar elements returned by createSidebar
+ * @param entries  - Array of history entries to render
+ */
 export function populateEntries(elements: SidebarElements, entries: HistoryEntry[]): void {
   const cards = elements.list.querySelectorAll('[data-history-card]');
   cards.forEach((c) => c.remove());
@@ -143,6 +158,13 @@ export function populateEntries(elements: SidebarElements, entries: HistoryEntry
   elements.countDisplay.textContent = entries.length > 0 ? String(entries.length) : '';
 }
 
+/**
+ * Prepend a new history entry card to the top of the sidebar list.
+ * Hides the empty state indicator.
+ *
+ * @param elements - Sidebar elements returned by createSidebar
+ * @param entry    - The new history entry to render
+ */
 export function prependEntry(elements: SidebarElements, entry: HistoryEntry): void {
   elements.emptyState.classList.add('hidden');
   const card = createHistoryCard(entry, elements._onRestore, elements._onDelete);
@@ -159,6 +181,13 @@ export function prependEntry(elements: SidebarElements, entry: HistoryEntry): vo
   elements.countDisplay.textContent = String(total);
 }
 
+/**
+ * Remove a single card from the sidebar by its entry ID.
+ * Shows the empty state if no cards remain.
+ *
+ * @param elements - Sidebar elements returned by createSidebar
+ * @param id       - History entry ID to remove
+ */
 export function removeCard(elements: SidebarElements, id: string): void {
   const card = elements.list.querySelector(`[data-history-card="${id}"]`);
   if (card) card.remove();
@@ -168,6 +197,12 @@ export function removeCard(elements: SidebarElements, id: string): void {
   elements.emptyState.classList.toggle('hidden', remaining > 0);
 }
 
+/**
+ * Remove all history cards from the sidebar.
+ * Restores the empty state indicator.
+ *
+ * @param elements - Sidebar elements returned by createSidebar
+ */
 export function clearCards(elements: SidebarElements): void {
   const cards = elements.list.querySelectorAll('[data-history-card]');
   cards.forEach((c) => c.remove());
@@ -179,6 +214,10 @@ export function clearCards(elements: SidebarElements): void {
 // Sidebar toggle
 // -----------------------------------------------------------------------
 
+/**
+ * Toggle the sidebar visibility and persist the state to localStorage.
+ * Handles responsive show/hide by toggling 'md:flex' / 'md:hidden' classes.
+ */
 function toggleSidebar(root: HTMLElement): void {
   const isHidden = root.classList.contains('md:hidden');
   if (isHidden) {
@@ -196,6 +235,9 @@ function toggleSidebar(root: HTMLElement): void {
 // SVG Icons (createElementNS)
 // -----------------------------------------------------------------------
 
+/**
+ * Create the panel toggle icon (sidebar layout icon).
+ */
 function createPanelIcon(): SVGElement {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('width', '16');
@@ -220,6 +262,9 @@ function createPanelIcon(): SVGElement {
   return svg;
 }
 
+/**
+ * Create the trash icon used for the "clear all history" button.
+ */
 function createTrashAllIcon(): SVGElement {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('width', '14');
@@ -242,6 +287,9 @@ function createTrashAllIcon(): SVGElement {
   return svg;
 }
 
+/**
+ * Create the empty state icon (document placeholder).
+ */
 function createEmptyIcon(): SVGElement {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('width', '40');

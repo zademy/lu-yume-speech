@@ -21,6 +21,13 @@ import {
   DEFAULT_SETTINGS,
 } from '../types';
 
+/**
+ * Safely set inner HTML using a Range-created document fragment.
+ * Avoids direct innerHTML assignment for better security.
+ *
+ * @param el   - Target element whose content will be replaced
+ * @param html - HTML string to parse and insert
+ */
 function setTrustedHTML(el: HTMLElement, html: string): void {
   const range = document.createRange();
   const fragment = range.createContextualFragment(html);
@@ -107,6 +114,10 @@ export function renderApp(): AppElements {
 // App Header — LU YUME branding
 // -----------------------------------------------------------------------
 
+/**
+ * Render the application header with logo, title, and action buttons.
+ * Includes the theme toggle button inside the #headerActions container.
+ */
 function renderAppHeader(): string {
   return `
     <header class="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -137,6 +148,9 @@ function renderAppHeader(): string {
 // App Footer
 // -----------------------------------------------------------------------
 
+/**
+ * Render the application footer with keyboard shortcut hint and credits.
+ */
 function renderAppFooter(): string {
   return `
     <footer class="px-4 py-3 border-t border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -156,6 +170,10 @@ function renderAppFooter(): string {
 // SVG Icons
 // -----------------------------------------------------------------------
 
+/**
+ * Lucide SVG icon strings used throughout the UI.
+ * Each value is a complete inline SVG markup string.
+ */
 const icons = {
   mic: '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 8-9.04 9.06a2.82 2.82 0 1 0 3.98 3.98L16 12"/><circle cx="17" cy="7" r="5"/></svg>',
   copy: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>',
@@ -173,6 +191,11 @@ const icons = {
 // Section renderers
 // -----------------------------------------------------------------------
 
+/**
+ * Render the collapsible settings panel with all configuration fields:
+ * model, operation mode, recording mode, language, prompt, temperature,
+ * response format, and rate limit info.
+ */
 function renderSettingsPanel(): string {
   return `
     <details class="group mb-5 rounded-xl bg-[var(--color-surface)] shadow-[var(--shadow-card)] overflow-hidden border border-[var(--color-border)] transition-shadow duration-[var(--transition-normal)] hover:shadow-[var(--shadow-card-hover)]">
@@ -233,6 +256,12 @@ function renderSettingsPanel(): string {
   `;
 }
 
+/**
+ * Render the status bar area that shows recording instructions
+ * and real-time status messages.
+ *
+ * @param modifierLabel - OS-specific modifier key label ("⌥" or "Ctrl")
+ */
 function renderStatusBar(modifierLabel: string): string {
   return `
     <div id="status" class="text-center text-base font-medium text-[var(--color-text-secondary)] mb-4 min-h-[1.75em] transition-colors duration-[var(--transition-fast)]">
@@ -245,6 +274,10 @@ function renderStatusBar(modifierLabel: string): string {
   `;
 }
 
+/**
+ * Render the waveform canvas and timer overlay.
+ * The canvas displays real-time audio visualization during recording.
+ */
 function renderVisualizerArea(): string {
   return `
     <div class="relative mb-4 rounded-xl overflow-hidden border border-[var(--color-border)] bg-[var(--color-surface)]">
@@ -254,6 +287,9 @@ function renderVisualizerArea(): string {
   `;
 }
 
+/**
+ * Render the output section with text area, word count, and toolbar buttons.
+ */
 function renderOutputSection(): string {
   return `
     <div class="space-y-2">
@@ -271,6 +307,10 @@ function renderOutputSection(): string {
   `;
 }
 
+/**
+ * Render the fixed-position toast notification container.
+ * Positioned in the bottom-right corner of the viewport.
+ */
 function renderToastContainer(): string {
   return `<div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>`;
 }
@@ -279,6 +319,13 @@ function renderToastContainer(): string {
 // Field helpers
 // -----------------------------------------------------------------------
 
+/**
+ * Render a labeled select dropdown with options.
+ *
+ * @param id      - DOM element ID
+ * @param label   - Visible field label
+ * @param options - Array of value/label/selected option objects
+ */
 function renderSelectField(
   id: string,
   label: string,
@@ -294,6 +341,14 @@ function renderSelectField(
     </div>`;
 }
 
+/**
+ * Render a labeled textarea input.
+ *
+ * @param id          - DOM element ID
+ * @param label       - Visible field label
+ * @param placeholder - Placeholder text
+ * @param rows        - Number of visible text rows
+ */
 function renderTextareaField(id: string, label: string, placeholder: string, rows: number): string {
   return `
     <div class="space-y-1">
@@ -302,6 +357,10 @@ function renderTextareaField(id: string, label: string, placeholder: string, row
     </div>`;
 }
 
+/**
+ * Render the temperature slider with live value display.
+ * Controls the sampling temperature for the Whisper model (0–1).
+ */
 function renderTemperatureControl(): string {
   return `
     <div class="space-y-1">
@@ -313,6 +372,10 @@ function renderTemperatureControl(): string {
     </div>`;
 }
 
+/**
+ * Render the response format selector with a word-level timestamp toggle.
+ * The toggle is only active when verbose_json format is selected.
+ */
 function renderResponseFormatControl(): string {
   const options = RESPONSE_FORMATS.map(
     (f) =>
@@ -330,6 +393,9 @@ function renderResponseFormatControl(): string {
     </div>`;
 }
 
+/**
+ * Render the Groq free-tier rate limit information panel.
+ */
 function renderRateLimits(): string {
   return `
     <div class="rounded-lg bg-[var(--color-surface-muted)] p-3 text-xs text-[var(--color-text-muted)] text-left">
@@ -341,6 +407,13 @@ function renderRateLimits(): string {
     </div>`;
 }
 
+/**
+ * Render a small icon-only toolbar button.
+ *
+ * @param id        - DOM element ID
+ * @param iconSvg   - Inline SVG icon markup
+ * @param ariaLabel - Accessible label for screen readers
+ */
 function renderToolbarButton(id: string, iconSvg: string, ariaLabel: string): string {
   return `<button id="${id}" type="button" class="p-1.5 rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-muted)] transition-all duration-[var(--transition-fast)] cursor-pointer" aria-label="${ariaLabel}">${iconSvg}</button>`;
 }

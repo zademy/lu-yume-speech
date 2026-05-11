@@ -93,11 +93,20 @@ export class ThemeManager {
     this.toggleBtn.appendChild(this.moonIcon);
   }
 
+  /**
+   * Initialize the theme manager.
+   * Reads the stored preference (or detects system preference) and applies it.
+   * Also wires the toggle button click handler.
+   */
   init(): void {
     this.apply(this.current);
     this.toggleBtn.addEventListener('click', () => this.toggle());
   }
 
+  /**
+   * Cycle to the next theme (light ↔ dark).
+   * Persists the user's choice to localStorage.
+   */
   toggle(): void {
     const resolved = this.resolved();
     const next = resolved === 'dark' ? 'light' : 'dark';
@@ -106,11 +115,21 @@ export class ThemeManager {
     save(STORAGE_KEY, next);
   }
 
+  /**
+   * Resolve the effective theme, accounting for the 'system' option.
+   * When set to 'system', queries the OS prefers-color-scheme media query.
+   */
   private resolved(): 'light' | 'dark' {
     if (this.current !== 'system') return this.current;
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   }
 
+  /**
+   * Apply a theme by toggling the 'dark' class on the <html> element
+   * and updating the icon visibility on the toggle button.
+   *
+   * @param theme - Theme to apply ('light', 'dark', or 'system')
+   */
   private apply(theme: Theme): void {
     const isDark =
       theme === 'dark' ||
