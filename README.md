@@ -1,166 +1,361 @@
 <div align="center">
   <img src="public/favicon.svg" alt="LU YUME logo" width="64" height="64" />
-  <h1>LU YUME — Speech to Text</h1>
-  <p><strong>Browser-based voice dictation powered by Groq Whisper</strong></p>
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-6.0-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Vite](https://img.shields.io/badge/Vite-8-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
-[![ESLint](https://img.shields.io/badge/ESLint-10-4B32C3?logo=eslint&logoColor=white)](https://eslint.org/)
-[![Prettier](https://img.shields.io/badge/Prettier-3-F7B93E?logo=prettier&logoColor=black)](https://prettier.io/)
-[![Groq](https://img.shields.io/badge/Groq_Whisper-API-F55036?logo=groq&logoColor=white)](https://groq.com/)
+  <h1>LU YUME — Speech-to-Text</h1>
 
+  <p>
+    Browser-based speech-to-text transcription powered by
+    <strong>Groq Whisper</strong>. Record your voice, get instant text —
+    no backend, no server, runs entirely in the browser.
+  </p>
+
+  <p>
+    <img src="https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
+    <img src="https://img.shields.io/badge/Vite-6.x-646CFF?logo=vite&logoColor=white" alt="Vite" />
+    <img src="https://img.shields.io/badge/Tailwind_CSS-4.x-06B6D4?logo=tailwindcss&logoColor=white" alt="Tailwind CSS" />
+    <img src="https://img.shields.io/badge/License-MIT-green" alt="License" />
+  </p>
+
+  <img src="https://img.shields.io/badge/PRs-welcome-brightgreen" alt="PRs welcome" />
 </div>
 
 ---
 
-## What is this?
+## Table of Contents
 
-LU YUME is a single-page web application that turns your microphone input into text in real time. It sends your audio to the [Groq Whisper API](https://console.groq.com/) for transcription or translation, then copies the result to your clipboard automatically.
+- [Features](#features)
+- [Architecture](#architecture)
+- [Tech Stack](#tech-stack)
+- [Getting Started](#getting-started)
+- [Project Structure](#project-structure)
+- [Module Overview](#module-overview)
+- [Keyboard Shortcuts](#keyboard-shortcuts)
+- [Environment Variables](#environment-variables)
+- [Scripts](#scripts)
+- [License](#license)
 
-No backend, no database, no server — just a static site that runs entirely in the browser.
+---
 
 ## Features
 
-- **Voice transcription** — record audio and get text back in the original language
-- **Translation mode** — translate any spoken language to English
-- **Real-time waveform** — live audio visualization while recording
-- **Silence detection** — auto-stops after 3 seconds of silence
-- **Push-to-talk and toggle modes** — choose your preferred recording style
-- **Keyboard shortcut** — `Alt+Space` (macOS) / `Ctrl+Space` (others)
-- **Transcription history** — sidebar with up to 100 past entries stored in `localStorage`
-- **Dark mode** — light, dark, or system preference
-- **Auto-copy** — transcribed text is copied to clipboard automatically
-- **Download as `.txt`** — export your transcriptions
-- **Configurable** — model selection, language, temperature, response format, context prompt
-- **Accessibility** — focus rings, semantic HTML, reduced-motion support
+- **Real-time transcription** — Record audio from the microphone and send it to Groq Whisper for instant speech-to-text conversion.
+- **Translation mode** — Switch between transcription (same language) and translation (to English) with a single dropdown.
+- **Waveform visualization** — Live audio waveform rendered on a `<canvas>` element during recording.
+- **Silence detection** — Automatically stops recording after a configurable silence threshold.
+- **Transcription history** — Persistent sidebar with full CRUD: restore past transcriptions, delete individual entries, or clear all history. Data survives page reloads via `localStorage`.
+- **Metadata panel** — When using `verbose_json` format, displays detected language, confidence, segment timestamps, and duration.
+- **Output toolbar** — Copy to clipboard, clear text, or download as `.txt`.
+- **Dark / Light theme** — Toggle between themes with system preference detection. Choice persists across sessions.
+- **Keyboard shortcuts** — OS-aware shortcuts (Cmd on macOS, Ctrl elsewhere) for record start/stop.
+- **Responsive design** — Works on desktop and mobile viewports.
+- **No backend required** — All logic runs client-side. The only external call is to the Groq API.
 
-## Tech Stack
-
-| Layer      | Technology                                                    |
-| ---------- | ------------------------------------------------------------- |
-| Language   | TypeScript 6                                                  |
-| Build      | Vite 8                                                        |
-| Styling    | Tailwind CSS 4 (via `@tailwindcss/vite` plugin)               |
-| Linting    | ESLint 10 + typescript-eslint                                 |
-| Formatting | Prettier 3                                                    |
-| Pre-commit | Husky 9 + lint-staged                                         |
-| API        | [Groq Whisper](https://console.groq.com/) (OpenAI-compatible) |
+---
 
 ## Architecture
 
-The application follows a modular, event-driven architecture with strict separation of concerns:
+The application follows a **modular event-driven architecture** built around a typed `EventBus`. No module imports another module directly — they communicate exclusively through events, adhering to the **Dependency Inversion Principle**.
 
-```
-src/
-├── api/
-│   └── groq-client.ts        # Groq API HTTP client
-├── audio/
-│   ├── audio-analyzer.ts     # Web Audio API RMS + waveform data
-│   ├── recorder.ts           # MediaRecorder wrapper
-│   ├── recording-timer.ts    # Elapsed time tracker
-│   └── waveform-visualizer.ts # Canvas waveform renderer
-├── core/
-│   └── event-bus.ts          # Typed publish/subscribe event system
-├── ui/
-│   ├── history-card.ts       # Single history entry component
-│   ├── metadata-panel.ts     # Transcription metadata display
-│   ├── renderer.ts           # Full DOM layout builder
-│   ├── sidebar.ts            # Transcription history panel
-│   └── toast.ts              # Toast notification system
-├── utils/
-│   ├── clipboard.ts          # Clipboard API helper
-│   ├── history-repo.ts       # localStorage CRUD for history
-│   ├── keyboard.ts           # OS-aware keyboard shortcut manager
-│   ├── os-detect.ts          # Platform detection utility
-│   ├── settings.ts           # DOM → typed settings reader
-│   ├── storage.ts            # localStorage wrapper
-│   ├── theme.ts              # Light/dark theme manager
-│   └── time-ago.ts           # Relative time formatter
-├── main.ts                   # Composition root — wires all modules
-├── style.css                 # Design system tokens + Tailwind import
-└── types.ts                  # Shared type definitions and constants
+```mermaid
+graph TD
+    subgraph "Entry"
+        MAIN["main.ts<br/><i>Composition Root</i>"]
+    end
+
+    subgraph "Core"
+        BUS["EventBus<br/><i>Typed Pub/Sub</i>"]
+    end
+
+    subgraph "Audio Layer"
+        REC["Recorder"]
+        ANA["AudioAnalyzer"]
+        TIM["RecordingTimer"]
+        WF["WaveformVisualizer"]
+    end
+
+    subgraph "API Layer"
+        GROQ["GroqClient"]
+    end
+
+    subgraph "UI Layer"
+        REN["Renderer"]
+        SB["Sidebar + History"]
+        META["MetadataPanel"]
+        TOAST["Toast"]
+        THEME["ThemeManager"]
+    end
+
+    subgraph "Utils"
+        KB["Keyboard"]
+        SET["Settings"]
+        STORE["Storage"]
+        HIST["HistoryRepo"]
+        CLIP["Clipboard"]
+    end
+
+    MAIN --> BUS
+    MAIN --> REC
+    MAIN --> ANA
+    MAIN --> TIM
+    MAIN --> GROQ
+    MAIN --> REN
+    MAIN --> SB
+    MAIN --> THEME
+    MAIN --> KB
+
+    REC -->|"audio:blob-ready"| BUS
+    ANA -->|"recording:level"| BUS
+    TIM -->|"recording:timer"| BUS
+    BUS -->|"recording:start / stop"| WF
+    BUS -->|"audio:blob-ready"| GROQ
+    GROQ -->|"transcription:success / error"| BUS
+    BUS -->|"transcription:success"| META
+    BUS -->|"transcription:success"| TOAST
+    BUS -->|"transcription:success"| SB
 ```
 
-**Key design principle:** No module imports another module directly. All inter-module communication flows through a typed `EventBus` (Dependency Inversion Principle). `main.ts` is the only file that knows about every module.
+### Data Flow
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Keyboard
+    participant Recorder
+    participant EventBus
+    participant Analyzer
+    participant GroqClient
+    participant UI
+
+    User->>Keyboard: Press shortcut (Ctrl+R)
+    Keyboard->>Recorder: start()
+    Recorder->>EventBus: emit("recording:start")
+    EventBus->>Analyzer: start()
+    EventBus->>UI: Status → "Listening..."
+
+    loop Every animation frame
+        Analyzer->>EventBus: emit("recording:level")
+        EventBus->>UI: Draw waveform frame
+    end
+
+    User->>Keyboard: Press shortcut (Ctrl+S)
+    Keyboard->>Recorder: stop()
+    Recorder->>EventBus: emit("recording:stop")
+    Recorder->>EventBus: emit("audio:blob-ready", blob)
+    EventBus->>GroqClient: transcribe(blob, options)
+
+    alt Success
+        GroqClient->>EventBus: emit("transcription:success", result)
+        EventBus->>UI: Render text + metadata
+        EventBus->>UI: Copy to clipboard
+        EventBus->>UI: Save to history
+    else Error
+        GroqClient->>EventBus: emit("transcription:error", error)
+        EventBus->>UI: Show error toast
+    end
+```
+
+---
+
+## Tech Stack
+
+| Layer            | Technology                 | Purpose                                        |
+| ---------------- | -------------------------- | ---------------------------------------------- |
+| Language         | TypeScript 5.x             | Type-safe development                          |
+| Build tool       | Vite 6.x                   | Fast dev server and optimized production build |
+| Styling          | Tailwind CSS 4.x           | Utility-first CSS with design system tokens    |
+| Linting          | ESLint + typescript-eslint | Static analysis and code quality               |
+| Formatting       | Prettier                   | Consistent code style                          |
+| Pre-commit hooks | Husky + lint-staged        | Run lint/format on staged files before commit  |
+| API              | Groq Whisper API           | Speech-to-text / translation                   |
+| Storage          | localStorage               | Persistent history and user preferences        |
+| Audio            | MediaRecorder + Web Audio  | Microphone capture and real-time analysis      |
+
+---
 
 ## Getting Started
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) (v20+)
-- [pnpm](https://pnpm.io/) (or npm/yarn)
-- A [Groq API key](https://console.groq.com/)
+- **Node.js** ≥ 18
+- **npm** (comes with Node.js)
+- A **Groq API key** — get one at [console.groq.com](https://console.groq.com)
 
-### Install
+### Installation
 
 ```bash
-git clone <your-repo-url>
+# Clone the repository
+git clone https://github.com/<your-username>/speech-to-text.git
 cd speech-to-text
-pnpm install
+
+# Install dependencies
+npm install
+
+# Create your environment file
+cp .env.example .env
 ```
 
-### Configure
-
-Create a `.env` file in the project root:
+Edit `.env` and add your Groq API key:
 
 ```env
 VITE_GROQ_API_KEY=your_groq_api_key_here
 ```
 
-> If no key is configured in `.env`, the app will prompt you for one on first use and store it in `sessionStorage` for the duration of the browser session.
-
-### Run
+### Development
 
 ```bash
-pnpm dev
+npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173) in your browser.
+Open [http://localhost:5173](http://localhost:5173) in your browser. Grant microphone access when prompted.
 
-### Build
+### Production Build
 
 ```bash
-pnpm build
+npm run build
 ```
 
-Runs ESLint, Prettier check, TypeScript compilation, and Vite production build in sequence. Output goes to `dist/`.
+Output goes to `dist/`. Serve it with any static file server.
 
 ### Preview Production Build
 
 ```bash
-pnpm preview
+npm run preview
 ```
 
-## Available Scripts
+---
 
-| Script              | Description                                         |
-| ------------------- | --------------------------------------------------- |
-| `pnpm dev`          | Start dev server with HMR                           |
-| `pnpm build`        | Lint → format check → type check → production build |
-| `pnpm preview`      | Preview the production build locally                |
-| `pnpm lint`         | Run ESLint on `src/`                                |
-| `pnpm lint:fix`     | Run ESLint with auto-fix                            |
-| `pnpm format`       | Format all source files with Prettier               |
-| `pnpm format:check` | Check formatting without writing                    |
+## Project Structure
 
-## Whisper Models
+```
+speech-to-text/
+├── public/
+│   ├── favicon.svg            # LU YUME brand icon
+│   └── icons.svg              # Shared SVG sprite
+├── src/
+│   ├── api/
+│   │   └── groq-client.ts     # Groq Whisper API client
+│   ├── audio/
+│   │   ├── audio-analyzer.ts  # Web Audio API real-time analyzer
+│   │   ├── recorder.ts        # MediaRecorder wrapper
+│   │   ├── recording-timer.ts # Elapsed time tracker
+│   │   └── waveform-visualizer.ts # Canvas waveform renderer
+│   ├── core/
+│   │   └── event-bus.ts       # Typed pub/sub event system
+│   ├── ui/
+│   │   ├── history-card.ts    # Single history entry renderer
+│   │   ├── metadata-panel.ts  # Verbose JSON metadata display
+│   │   ├── renderer.ts        # Full app DOM layout builder
+│   │   ├── sidebar.ts         # Floating history panel
+│   │   └── toast.ts           # Non-blocking notification toasts
+│   ├── utils/
+│   │   ├── clipboard.ts       # Clipboard API wrapper
+│   │   ├── history-repo.ts    # CRUD over localStorage history
+│   │   ├── keyboard.ts        # Global shortcut manager
+│   │   ├── os-detect.ts       # Platform detection (macOS vs other)
+│   │   ├── settings.ts        # Reads UI state into typed config
+│   │   ├── storage.ts         # Type-safe localStorage wrapper
+│   │   ├── theme.ts           # Light/dark theme manager
+│   │   └── time-ago.ts        # Relative time formatter (Spanish)
+│   ├── main.ts                # Composition root / entry point
+│   ├── style.css              # Design system tokens + Tailwind
+│   └── types.ts               # Shared type definitions
+├── index.html                 # SPA shell
+├── vite.config.ts             # Vite configuration
+├── eslint.config.js           # ESLint flat config
+├── package.json
+└── tsconfig.json
+```
 
-The app supports two Groq Whisper models:
+---
 
-| Model                    | Description                     |
-| ------------------------ | ------------------------------- |
-| `whisper-large-v3-turbo` | Faster, lower latency (default) |
-| `whisper-large-v3`       | Higher accuracy, slower         |
+## Module Overview
 
-## Supported Languages
+### Core
 
-Auto-detect, Spanish, English, French, German, Portuguese, Italian, Japanese, Korean, Chinese, Russian, Arabic, Hindi, Dutch, Polish, Swedish, Turkish, Ukrainian.
+| Module         | Responsibility                                                                                                        |
+| -------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `event-bus.ts` | Typed publish/subscribe system. The backbone of the architecture — all inter-module communication flows through this. |
 
-## Rate Limits (Groq Free Tier)
+### Audio
 
-- 20 requests/min
-- 2,000 requests/day
-- ~8 hours of audio/day
+| Module                   | Responsibility                                                                                                                                        |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `recorder.ts`            | Wraps the browser `MediaRecorder` API. Manages microphone access, start/stop lifecycle, and emits `audio:blob-ready` events with the recorded `Blob`. |
+| `audio-analyzer.ts`      | Connects to a `MediaStream` via the Web Audio API. Provides real-time volume levels and waveform data for the visualizer. Includes silence detection. |
+| `recording-timer.ts`     | Tracks elapsed recording time. Emits periodic `recording:timer` ticks so the UI can display a running clock.                                          |
+| `waveform-visualizer.ts` | Draws a real-time audio waveform on an HTML `<canvas>`. Reads byte time-domain data from the analyzer.                                                |
 
-Check your limits at [console.groq.com/settings/limits](https://console.groq.com/settings/limits).
+### API
+
+| Module           | Responsibility                                                                                                                                                                      |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `groq-client.ts` | Handles HTTP communication with the Groq Whisper API. Supports both `/transcriptions` and `/translations` endpoints. Emits `transcription:success` or `transcription:error` events. |
+
+### UI
+
+| Module              | Responsibility                                                                                                                                                        |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `renderer.ts`       | Builds the complete DOM layout using design system tokens. Returns typed element references (`AppElements`) for programmatic access.                                  |
+| `sidebar.ts`        | Floating collapsible panel with transcription history. Provides entry population, prepend, removal, and clear operations.                                             |
+| `history-card.ts`   | Renders a single transcription entry in the sidebar. Handles copy, restore, and delete actions per card.                                                              |
+| `metadata-panel.ts` | Displays enriched transcription details from `verbose_json` responses: detected language, confidence, segments, and duration.                                         |
+| `toast.ts`          | Non-blocking notification system. Renders brief messages in the bottom-right corner with auto-dismiss and type-based styling (`success`, `error`, `warning`, `info`). |
+
+### Utils
+
+| Module            | Responsibility                                                                                                                      |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `storage.ts`      | Type-safe `localStorage` wrapper with JSON serialization and error handling.                                                        |
+| `history-repo.ts` | CRUD operations over a bounded list of `HistoryEntry` objects stored in `localStorage`. Enforces a maximum entry count.             |
+| `settings.ts`     | Reads current UI control values (model, language, temperature, format, etc.) into typed `TranscriptionOptions` objects.             |
+| `keyboard.ts`     | Registers global keyboard shortcuts with OS-aware modifier key detection (Cmd on macOS, Ctrl elsewhere).                            |
+| `clipboard.ts`    | Wraps the Clipboard API with graceful error handling and a boolean return for success/failure.                                      |
+| `theme.ts`        | Manages light/dark/system theme. Persists choice to `localStorage`. Applies a `dark` class on `<html>` and toggles icon visibility. |
+| `os-detect.ts`    | Detects the user's platform from the user agent string and returns the correct modifier key label.                                  |
+| `time-ago.ts`     | Converts Unix timestamps to human-readable relative time strings in Spanish ("ahora", "hace 5 min", "hace 2 horas").                |
+
+---
+
+## Keyboard Shortcuts
+
+| Action          | macOS       | Linux / Windows |
+| --------------- | ----------- | --------------- |
+| Start recording | `Cmd` + `R` | `Ctrl` + `R`    |
+| Stop recording  | `Cmd` + `S` | `Ctrl` + `S`    |
+
+Shortcuts adapt to the selected recording mode:
+
+- **Toggle mode** — Shortcut starts recording; press again to stop.
+- **Push-to-talk mode** — Hold shortcut to record; release to stop.
+
+---
+
+## Environment Variables
+
+| Variable            | Required | Description                                                                                            |
+| ------------------- | -------- | ------------------------------------------------------------------------------------------------------ |
+| `VITE_GROQ_API_KEY` | Yes      | Your Groq API key for Whisper transcription. Obtain from [console.groq.com](https://console.groq.com). |
+
+Create a `.env` file in the project root (it is gitignored):
+
+```env
+VITE_GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxx
+```
+
+---
+
+## Scripts
+
+| Command           | Description                                                    |
+| ----------------- | -------------------------------------------------------------- |
+| `npm run dev`     | Start the Vite development server with hot module replacement. |
+| `npm run build`   | Type-check and build for production. Output in `dist/`.        |
+| `npm run preview` | Preview the production build locally.                          |
+| `npm run lint`    | Run ESLint across the project.                                 |
+| `npm run format`  | Format all files with Prettier.                                |
+
+---
+
+## License
+
+This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.

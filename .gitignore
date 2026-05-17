@@ -40,3 +40,5 @@ Thumbs.db
 .husky/_
 
 .playwright-mcp
+# Local Pi runtime state
+.atl/
