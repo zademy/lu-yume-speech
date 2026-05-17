@@ -37,14 +37,14 @@
       {
         "path": "/Users/sadot/Documents/GitHub/speech-to-text/.github/workflows/ci.yml",
         "lastGrindSent": "2026-05-17T05:44:33.170Z",
-        "grindCount": 1,
-        "lastGrindIteration": 1
+        "grindCount": 0,
+        "lastGrindIteration": 0
       }
     ],
     "sessionChangedPaths": [
       "/Users/sadot/Documents/GitHub/speech-to-text/.github/workflows/ci.yml"
     ],
-    "sessionGrindIteration": 1,
+    "sessionGrindIteration": 0,
     "task": {
       "state": "IDLE",
       "currentWorkstream": "unknown",
