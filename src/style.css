@@ -1,11 +1,11 @@
 /**
- * Design system stylesheet.
+ * Design system stylesheet — LU YUME.
  *
  * - Imports Tailwind CSS v4 (build-time, no CDN)
- * - Defines semantic color tokens from the UI/UX Pro Max design system
+ * - Semantic color tokens (light + dark)
+ * - Premium gradient mesh background, glass surfaces, layered shadows
  * - Inter font family (loaded via Google Fonts in index.html)
- * - Full dark mode support via CSS custom properties
- * - Accessible contrast ratios (WCAG AA+)
+ * - Accessible contrast (WCAG AA+), respects prefers-reduced-motion
  */
 
 @import 'tailwindcss';
@@ -44,19 +44,23 @@
   --color-accent-800: #9a3412;
   --color-accent-900: #7c2d12;
 
-  /* Surfaces */
-  --color-surface: #ffffff;
-  --color-surface-muted: #f8fafc;
-  --color-surface-overlay: rgba(0, 0, 0, 0.5);
+  /* Surfaces — light defaults (slate-tinted, never flat white) */
+  --color-surface: #f8fafc;
+  --color-surface-muted: #f1f5f9;
+  --color-surface-sunken: #e2e8f0;
+  --color-surface-overlay: rgba(15, 23, 42, 0.5);
+  --color-surface-glass: rgba(248, 250, 252, 0.72);
+  --color-surface-glass-strong: rgba(248, 250, 252, 0.88);
 
   /* Borders */
-  --color-border: #e2e8f0;
-  --color-border-strong: #cbd5e1;
+  --color-border: #cbd5e1;
+  --color-border-strong: #94a3b8;
+  --color-border-subtle: #e2e8f0;
 
   /* Text */
-  --color-text-primary: #134e4a;
-  --color-text-secondary: #475569;
-  --color-text-muted: #94a3b8;
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #334155;
+  --color-text-muted: #64748b;
   --color-text-inverse: #f0fdfa;
 
   /* Status */
@@ -66,71 +70,99 @@
   --color-status-warning: #f59e0b;
   --color-status-error: #ef4444;
 
-  /* Shadows */
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-card-hover: 0 10px 15px rgba(0, 0, 0, 0.06), 0 4px 6px rgba(0, 0, 0, 0.04);
-  --shadow-elevated: 0 20px 25px rgba(0, 0, 0, 0.08), 0 8px 10px rgba(0, 0, 0, 0.04);
+  /* Shadows — layered, soft, premium */
+  --shadow-card: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-card-hover: 0 4px 8px rgba(15, 23, 42, 0.06), 0 10px 24px rgba(15, 23, 42, 0.08);
+  --shadow-elevated:
+    0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 16px rgba(15, 23, 42, 0.06),
+    0 24px 48px rgba(15, 23, 42, 0.08);
+  --shadow-glow-primary: 0 0 0 1px rgba(20, 184, 166, 0.15), 0 8px 24px rgba(20, 184, 166, 0.18);
+  --shadow-glow-accent: 0 0 0 1px rgba(249, 115, 22, 0.15), 0 8px 24px rgba(249, 115, 22, 0.18);
 
   /* Border radius */
   --radius-sm: 0.375rem;
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
   --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+  --radius-full: 9999px;
 
-  /* Transitions */
-  --transition-fast: 150ms ease;
-  --transition-normal: 250ms ease;
-  --transition-slow: 350ms ease;
+  /* Transitions — eased */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 350ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Brand gradients */
+  --gradient-brand: linear-gradient(135deg, #14b8a6 0%, #f97316 100%);
+  --gradient-brand-soft: linear-gradient(
+    135deg,
+    rgba(20, 184, 166, 0.85) 0%,
+    rgba(249, 115, 22, 0.85) 100%
+  );
 }
 
 /* -----------------------------------------------------------------------
- * Dark mode — override tokens
+ * Dark mode — override tokens (controlled by ThemeManager `dark` class)
  * ----------------------------------------------------------------------- */
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-surface: #0f1a1a;
-    --color-surface-muted: #1a2727;
-    --color-surface-overlay: rgba(0, 0, 0, 0.7);
-    --color-border: #1e2d2d;
-    --color-border-strong: #2a3d3d;
-    --color-text-primary: #ccfbf1;
-    --color-text-secondary: #94a3b8;
-    --color-text-muted: #64748b;
-    --color-text-inverse: #134e4a;
-    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
-    --shadow-card-hover: 0 10px 15px rgba(0, 0, 0, 0.3), 0 4px 6px rgba(0, 0, 0, 0.2);
-    --shadow-elevated: 0 20px 25px rgba(0, 0, 0, 0.4), 0 8px 10px rgba(0, 0, 0, 0.3);
-  }
-}
-
-/* Manual dark mode toggle (overrides prefers-color-scheme) */
 .dark {
-  --color-surface: #0f1a1a;
-  --color-surface-muted: #1a2727;
-  --color-surface-overlay: rgba(0, 0, 0, 0.7);
-  --color-border: #1e2d2d;
-  --color-border-strong: #2a3d3d;
-  --color-text-primary: #ccfbf1;
+  /* Midnight blue depth — avoids the washed-out green-black look */
+  --color-surface: #0f172a;
+  --color-surface-muted: #111827;
+  --color-surface-sunken: #030712;
+  --color-surface-overlay: rgba(2, 6, 23, 0.75);
+  --color-surface-glass: rgba(15, 23, 42, 0.72);
+  --color-surface-glass-strong: rgba(15, 23, 42, 0.88);
+  --color-border: #1e293b;
+  --color-border-strong: #334155;
+  --color-border-subtle: #0f172a;
+  --color-text-primary: #f8fafc;
   --color-text-secondary: #94a3b8;
-  --color-text-muted: #64748b;
+  --color-text-muted: #475569;
   --color-text-inverse: #134e4a;
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
-  --shadow-card-hover: 0 10px 15px rgba(0, 0, 0, 0.3), 0 4px 6px rgba(0, 0, 0, 0.2);
-  --shadow-elevated: 0 20px 25px rgba(0, 0, 0, 0.4), 0 8px 10px rgba(0, 0, 0, 0.3);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.35);
+  --shadow-card-hover: 0 4px 10px rgba(0, 0, 0, 0.45), 0 14px 28px rgba(0, 0, 0, 0.5);
+  --shadow-elevated:
+    0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 20px rgba(0, 0, 0, 0.5), 0 24px 56px rgba(0, 0, 0, 0.55);
+  --shadow-glow-primary: 0 0 0 1px rgba(45, 212, 191, 0.25), 0 10px 28px rgba(20, 184, 166, 0.25);
+  --shadow-glow-accent: 0 0 0 1px rgba(251, 146, 60, 0.25), 0 10px 28px rgba(249, 115, 22, 0.25);
 }
 
 /* -----------------------------------------------------------------------
  * Base styles
  * ----------------------------------------------------------------------- */
 
+html {
+  color-scheme: light dark;
+}
+
 body {
   margin: 0;
   font-family: var(--font-sans);
-  background-color: var(--color-surface-muted);
   color: var(--color-text-primary);
+  background-color: var(--color-surface-muted);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  min-height: 100vh;
+
+  /* Premium ambient mesh background (light) — richer, more visible */
+  background-image:
+    radial-gradient(at 8% 0%, rgba(20, 184, 166, 0.18) 0px, transparent 55%),
+    radial-gradient(at 92% 6%, rgba(249, 115, 22, 0.14) 0px, transparent 55%),
+    radial-gradient(at 50% 100%, rgba(14, 165, 233, 0.12) 0px, transparent 60%),
+    radial-gradient(at 25% 80%, rgba(20, 184, 166, 0.08) 0px, transparent 50%);
+  background-attachment: fixed;
+}
+
+.dark body {
+  background-color: var(--color-surface-sunken);
+  background-image:
+    radial-gradient(at 8% 0%, rgba(20, 184, 166, 0.22) 0px, transparent 55%),
+    radial-gradient(at 92% 6%, rgba(249, 115, 22, 0.18) 0px, transparent 55%),
+    radial-gradient(at 50% 100%, rgba(14, 165, 233, 0.14) 0px, transparent 60%),
+    radial-gradient(at 25% 80%, rgba(20, 184, 166, 0.1) 0px, transparent 50%);
 }
 
 /* Focus rings — accessible and consistent */
@@ -138,6 +170,11 @@ body {
   outline: 2px solid var(--color-primary-500);
   outline-offset: 2px;
   border-radius: var(--radius-sm);
+}
+
+::selection {
+  background-color: rgba(20, 184, 166, 0.25);
+  color: var(--color-text-primary);
 }
 
 /* Reduced motion — respect user preference */
@@ -152,27 +189,105 @@ body {
   }
 }
 
-/* Scrollbar styling */
+/* -----------------------------------------------------------------------
+ * Scrollbar styling — thin, themed
+ * ----------------------------------------------------------------------- */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+
 ::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
   background: var(--color-border-strong);
-  border-radius: 3px;
+  border-radius: var(--radius-full);
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-muted);
+  background-clip: padding-box;
+  border: 2px solid transparent;
 }
 
 /* -----------------------------------------------------------------------
- * Line clamp (for history card text preview)
+ * Utilities
  * ----------------------------------------------------------------------- */
+
 .line-clamp-2 {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Glass surface — translucent + blur */
+.glass {
+  background-color: var(--color-surface-glass);
+  -webkit-backdrop-filter: saturate(180%) blur(14px);
+  backdrop-filter: saturate(180%) blur(14px);
+}
+
+.glass-strong {
+  background-color: var(--color-surface-glass-strong);
+  -webkit-backdrop-filter: saturate(180%) blur(18px);
+  backdrop-filter: saturate(180%) blur(18px);
+}
+
+/* Brand gradient text */
+.text-brand-gradient {
+  background: var(--gradient-brand);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Recording pulse halo (used by the mic indicator) */
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.7;
+  }
+  70% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 1.6s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* Soft entrance for cards / panels */
+@keyframes slide-up-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up-fade {
+  animation: slide-up-fade 280ms cubic-bezier(0.4, 0, 0.2, 1) both;
 }

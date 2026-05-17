@@ -58,17 +58,17 @@ async function main(): Promise<void> {
 
   // Compose layout: centered container with sidebar + app side by side
   const appDiv = document.querySelector<HTMLDivElement>('#app')!;
-  appDiv.className = 'flex items-start justify-center gap-4 p-4 min-h-screen';
+  appDiv.className = 'flex items-start justify-center gap-4 p-4 md:p-6 min-h-screen';
 
-  // Wrapper for sidebar + main content
+  // Wrapper for sidebar + main content — wider to comfortably host the sidebar.
   const wrapper = document.createElement('div');
-  wrapper.className = 'flex items-start gap-4 w-full max-w-5xl';
+  wrapper.className = 'flex items-start gap-4 md:gap-6 w-full max-w-6xl';
 
   wrapper.appendChild(sidebar.root);
 
   const mainEl = document.createElement('main');
   mainEl.className =
-    'flex-1 min-w-0 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-elevated)] overflow-hidden';
+    'flex-1 min-w-0 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-elevated)] overflow-hidden animate-slide-up-fade';
   mainEl.appendChild(elements.root);
   wrapper.appendChild(mainEl);
 
@@ -91,13 +91,10 @@ async function main(): Promise<void> {
   const client = new GroqClient(bus);
   const visualizer = new WaveformVisualizer(elements.waveformCanvas);
 
-  // Microphone access
+  // Microphone access — reuse the same stream for both recorder and analyzer
   let stream: MediaStream;
   try {
-    await recorder.init();
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
+    stream = await recorder.init();
     analyzer.connect(stream);
   } catch (error) {
     console.error('[App] Microphone access denied:', error);
@@ -176,13 +173,10 @@ function wireRecordingHandlers(
     visualizer.drawIdle();
   });
 
-  bus.on('recording:level', (level) => {
+  bus.on('recording:level', (_level) => {
     const data = analyzer.getWaveformData();
     if (data) visualizer.drawFrame(data);
-
-    const bars = Math.round(level * 10);
-    const barStr = '|'.repeat(bars) + '.'.repeat(10 - bars);
-    elements.statusDiv.textContent = `Escuchando  [${barStr}]`;
+    // Canvas communicates level visually — status stays stable.
   });
 
   bus.on('recording:timer', (elapsed) => {
@@ -347,16 +341,43 @@ function wireOutputToolbar(elements: AppElements): void {
 
 const STATUS_STYLES: Record<StatusUpdate['level'], string> = {
   idle: 'text-[var(--color-text-secondary)]',
-  recording: 'text-[var(--color-status-recording)] animate-pulse',
+  recording: 'text-[var(--color-status-recording)]',
   processing: 'text-[var(--color-status-processing)]',
   success: 'text-[var(--color-status-success)]',
   error: 'text-[var(--color-status-error)]',
   warning: 'text-[var(--color-status-warning)]',
 };
 
+const STATUS_DOT: Record<StatusUpdate['level'], string> = {
+  idle: 'bg-[var(--color-text-muted)]',
+  recording: 'bg-[var(--color-status-recording)]',
+  processing: 'bg-[var(--color-status-processing)]',
+  success: 'bg-[var(--color-status-success)]',
+  error: 'bg-[var(--color-status-error)]',
+  warning: 'bg-[var(--color-status-warning)]',
+};
+
 function setStatus(elements: AppElements, update: StatusUpdate): void {
-  elements.statusDiv.textContent = update.message;
-  elements.statusDiv.className = `text-center text-base font-medium mb-4 min-h-[1.75em] transition-colors duration-[var(--transition-fast)] ${STATUS_STYLES[update.level]}`;
+  elements.statusDiv.replaceChildren();
+  elements.statusDiv.className = `flex items-center justify-center gap-2 text-center text-[15px] font-medium mb-4 min-h-[2em] transition-colors duration-[var(--transition-fast)] ${STATUS_STYLES[update.level]}`;
+
+  // Status dot with optional halo when recording.
+  const dotWrap = document.createElement('span');
+  dotWrap.className = 'relative inline-flex w-2 h-2 shrink-0';
+  const dot = document.createElement('span');
+  dot.className = `relative inline-flex w-2 h-2 rounded-full ${STATUS_DOT[update.level]}`;
+  dotWrap.appendChild(dot);
+  if (update.level === 'recording') {
+    const halo = document.createElement('span');
+    halo.className = `absolute inline-flex w-2 h-2 rounded-full ${STATUS_DOT[update.level]} animate-pulse-ring`;
+    dotWrap.appendChild(halo);
+  }
+
+  const label = document.createElement('span');
+  label.textContent = update.message;
+
+  elements.statusDiv.appendChild(dotWrap);
+  elements.statusDiv.appendChild(label);
 }
 
 function updateWordCount(elements: AppElements): void {

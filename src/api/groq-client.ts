@@ -55,7 +55,7 @@ export class GroqClient {
   ): Promise<void> {
     if (!this.apiKey) {
       this.bus.emit('status:change', {
-        message: '⚠️ Configura tu API Key en .env',
+        message: 'Configura tu API Key en .env',
         level: 'warning',
       });
       return;
@@ -63,7 +63,7 @@ export class GroqClient {
 
     this.bus.emit('transcription:start', options.model);
     this.bus.emit('status:change', {
-      message: `⚡ Procesando con ${options.model}...`,
+      message: `Procesando con ${options.model}...`,
       level: 'processing',
     });
 

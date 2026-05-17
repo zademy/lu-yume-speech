@@ -38,13 +38,14 @@ export function createSidebar(
   onDelete: (id: string) => void,
   onClear: () => void,
 ): SidebarElements {
-  const isOpen = load<boolean>(HISTORY_SIDEBAR_KEY, false);
+  // Default to OPEN so users immediately see their conversation history on load.
+  const isOpen = load<boolean>(HISTORY_SIDEBAR_KEY, true);
 
   const root = document.createElement('aside');
   root.id = 'sidebar';
   root.className = [
     'hidden md:flex flex-col',
-    'w-72 shrink-0',
+    'w-80 shrink-0',
     'rounded-2xl',
     'border border-[var(--color-border)]',
     'bg-[var(--color-surface)]',
@@ -54,33 +55,48 @@ export function createSidebar(
     'self-start',
     'sticky top-4',
     'max-h-[calc(100vh-2rem)]',
+    'animate-slide-up-fade',
   ].join(' ');
+  root.setAttribute('aria-label', 'Historial de conversaciones');
 
   if (!isOpen) {
     root.classList.remove('md:flex');
     root.classList.add('md:hidden');
   }
 
-  // Header
+  // Header — premium glass with gradient accent rule
   const header = document.createElement('div');
   header.className =
-    'flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)] shrink-0';
+    'flex items-center justify-between px-4 py-3.5 border-b border-[var(--color-border-subtle)] shrink-0 glass-strong';
+
+  const titleWrap = document.createElement('div');
+  titleWrap.className = 'flex items-center gap-2';
+
+  const titleDot = document.createElement('span');
+  titleDot.className = 'w-2 h-2 rounded-full';
+  titleDot.style.backgroundImage = 'var(--gradient-brand)';
 
   const title = document.createElement('h2');
-  title.className = 'text-sm font-semibold text-[var(--color-text-primary)]';
+  title.className =
+    'text-[13px] font-bold tracking-wide uppercase text-[var(--color-text-secondary)]';
   title.textContent = 'Historial';
+
+  titleWrap.appendChild(titleDot);
+  titleWrap.appendChild(title);
 
   const headerActions = document.createElement('div');
   headerActions.className = 'flex items-center gap-1';
 
   const countDisplay = document.createElement('span');
-  countDisplay.className = 'text-[10px] text-[var(--color-text-muted)] mr-1';
-  countDisplay.textContent = '';
+  countDisplay.className =
+    'inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full text-[10px] font-semibold text-[var(--color-text-secondary)] bg-[var(--color-surface-muted)] border border-[var(--color-border-subtle)]';
+  countDisplay.textContent = '0';
 
   const clearAllBtn = document.createElement('button');
   clearAllBtn.className =
-    'p-1.5 rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-status-error)] hover:bg-red-50 dark:hover:bg-red-950 transition-all duration-[var(--transition-fast)] cursor-pointer';
+    'p-1.5 rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-status-error)] hover:bg-red-50 dark:hover:bg-red-950 active:scale-95 transition-all duration-[var(--transition-fast)] cursor-pointer';
   clearAllBtn.setAttribute('aria-label', 'Limpiar historial');
+  clearAllBtn.setAttribute('title', 'Limpiar historial');
   clearAllBtn.appendChild(createTrashAllIcon());
   clearAllBtn.addEventListener('click', () => {
     if (confirm('¿Eliminar todo el historial?')) {
@@ -90,24 +106,29 @@ export function createSidebar(
 
   headerActions.appendChild(countDisplay);
   headerActions.appendChild(clearAllBtn);
-  header.appendChild(title);
+  header.appendChild(titleWrap);
   header.appendChild(headerActions);
 
   // Card list (scrollable)
   const list = document.createElement('div');
   list.className = 'flex-1 overflow-y-auto p-3 space-y-2 min-h-0';
+  list.setAttribute('role', 'list');
 
-  // Empty state
+  // Empty state — premium with subtle illustration
   const emptyState = document.createElement('div');
-  emptyState.className = 'flex flex-col items-center justify-center py-12 px-4 text-center';
-  emptyState.appendChild(createEmptyIcon());
+  emptyState.className = 'flex flex-col items-center justify-center py-14 px-6 text-center';
+  const emptyIconWrap = document.createElement('div');
+  emptyIconWrap.className =
+    'w-14 h-14 rounded-2xl bg-[var(--color-surface-muted)] border border-[var(--color-border-subtle)] flex items-center justify-center mb-3';
+  emptyIconWrap.appendChild(createEmptyIcon());
+  emptyState.appendChild(emptyIconWrap);
   const emptyText = document.createElement('p');
-  emptyText.className = 'text-sm text-[var(--color-text-muted)] mt-3';
-  emptyText.textContent = 'Sin transcripciones';
+  emptyText.className = 'text-[13px] font-semibold text-[var(--color-text-secondary)]';
+  emptyText.textContent = 'Sin transcripciones aún';
   emptyState.appendChild(emptyText);
   const emptyHint = document.createElement('p');
-  emptyHint.className = 'text-xs text-[var(--color-text-muted)] opacity-60 mt-1';
-  emptyHint.textContent = 'Las grabaciones aparecerán aquí';
+  emptyHint.className = 'text-[11px] text-[var(--color-text-muted)] mt-1 leading-relaxed';
+  emptyHint.textContent = 'Tus grabaciones aparecerán aquí automáticamente';
   emptyState.appendChild(emptyHint);
 
   list.appendChild(emptyState);
@@ -118,11 +139,15 @@ export function createSidebar(
   // Toggle button (inserted into app header by main.ts)
   const toggleBtn = document.createElement('button');
   toggleBtn.className =
-    'p-2 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-muted)] transition-colors duration-[var(--transition-fast)] cursor-pointer';
-  toggleBtn.setAttribute('aria-label', 'Toggle historial');
+    'p-2 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-muted)] active:scale-95 transition-all duration-[var(--transition-fast)] cursor-pointer';
+  toggleBtn.setAttribute('aria-label', 'Mostrar/ocultar historial');
+  toggleBtn.setAttribute('title', 'Mostrar/ocultar historial');
+  toggleBtn.setAttribute('aria-controls', 'sidebar');
+  toggleBtn.setAttribute('aria-expanded', String(isOpen));
   toggleBtn.appendChild(createPanelIcon());
   toggleBtn.addEventListener('click', () => {
-    toggleSidebar(root);
+    const opened = toggleSidebar(root);
+    toggleBtn.setAttribute('aria-expanded', String(opened));
   });
 
   return {
@@ -155,7 +180,7 @@ export function populateEntries(elements: SidebarElements, entries: HistoryEntry
     elements.list.appendChild(card);
   }
 
-  elements.countDisplay.textContent = entries.length > 0 ? String(entries.length) : '';
+  elements.countDisplay.textContent = String(entries.length);
 }
 
 /**
@@ -179,6 +204,8 @@ export function prependEntry(elements: SidebarElements, entry: HistoryEntry): vo
 
   const total = elements.list.querySelectorAll('[data-history-card]').length;
   elements.countDisplay.textContent = String(total);
+  // Subtle entrance animation for the new card
+  card.classList.add('animate-slide-up-fade');
 }
 
 /**
@@ -193,7 +220,7 @@ export function removeCard(elements: SidebarElements, id: string): void {
   if (card) card.remove();
 
   const remaining = elements.list.querySelectorAll('[data-history-card]').length;
-  elements.countDisplay.textContent = remaining > 0 ? String(remaining) : '';
+  elements.countDisplay.textContent = String(remaining);
   elements.emptyState.classList.toggle('hidden', remaining > 0);
 }
 
@@ -207,7 +234,7 @@ export function clearCards(elements: SidebarElements): void {
   const cards = elements.list.querySelectorAll('[data-history-card]');
   cards.forEach((c) => c.remove());
   elements.emptyState.classList.remove('hidden');
-  elements.countDisplay.textContent = '';
+  elements.countDisplay.textContent = '0';
 }
 
 // -----------------------------------------------------------------------
@@ -217,18 +244,21 @@ export function clearCards(elements: SidebarElements): void {
 /**
  * Toggle the sidebar visibility and persist the state to localStorage.
  * Handles responsive show/hide by toggling 'md:flex' / 'md:hidden' classes.
+ *
+ * @returns whether the sidebar is now open
  */
-function toggleSidebar(root: HTMLElement): void {
+function toggleSidebar(root: HTMLElement): boolean {
   const isHidden = root.classList.contains('md:hidden');
   if (isHidden) {
     root.classList.remove('md:hidden');
     root.classList.add('md:flex');
     save(HISTORY_SIDEBAR_KEY, true);
-  } else {
-    root.classList.remove('md:flex');
-    root.classList.add('md:hidden');
-    save(HISTORY_SIDEBAR_KEY, false);
+    return true;
   }
+  root.classList.remove('md:flex');
+  root.classList.add('md:hidden');
+  save(HISTORY_SIDEBAR_KEY, false);
+  return false;
 }
 
 // -----------------------------------------------------------------------

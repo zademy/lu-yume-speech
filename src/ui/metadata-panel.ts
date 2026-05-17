@@ -21,74 +21,127 @@ import type { TranscriptionResult } from '../types';
 export function renderMetadata(panel: HTMLDivElement, result: TranscriptionResult): void {
   const hasMetadata = result.language || result.duration || result.segments?.length;
 
+  // Clear via DOM API (no innerHTML).
+  panel.replaceChildren();
+
   if (!hasMetadata) {
     panel.classList.add('hidden');
-    panel.innerHTML = '';
     return;
   }
 
   panel.classList.remove('hidden');
 
-  const parts: string[] = [];
+  // Summary row — premium chips
+  const summary = document.createElement('div');
+  summary.className = 'flex flex-wrap gap-1.5';
 
   if (result.language) {
-    parts.push(`<span><strong>Idioma:</strong> ${result.language}</span>`);
+    summary.appendChild(createChip('Idioma', result.language.toUpperCase(), 'primary'));
   }
 
   if (result.duration !== undefined) {
-    const formatted = result.duration.toFixed(1);
-    parts.push(`<span><strong>Duración:</strong> ${formatted}s</span>`);
+    summary.appendChild(createChip('Duración', `${result.duration.toFixed(1)}s`, 'muted'));
   }
 
   if (result.segments?.length) {
-    parts.push(`<span><strong>Segmentos:</strong> ${result.segments.length}</span>`);
-    const avgConfidence = computeAverageConfidence(result.segments);
-    parts.push(`<span><strong>Confianza:</strong> ${avgConfidence}</span>`);
+    summary.appendChild(createChip('Segmentos', String(result.segments.length), 'muted'));
+    summary.appendChild(
+      createChip('Confianza', computeAverageConfidence(result.segments), 'accent'),
+    );
   }
 
   if (result.words?.length) {
-    parts.push(`<span><strong>Palabras:</strong> ${result.words.length}</span>`);
+    summary.appendChild(createChip('Palabras', String(result.words.length), 'muted'));
   }
 
-  // Summary row
-  let html = `<div class="flex flex-wrap gap-3">${parts.join('')}</div>`;
+  panel.appendChild(summary);
 
   // Segment details (collapsible)
   if (result.segments?.length) {
-    html += renderSegmentTable(result.segments);
+    panel.appendChild(buildSegmentDetails(result.segments));
   }
-
-  panel.innerHTML = html;
 }
 
 /**
- * Render a compact segment table with timestamps.
+ * Build a labeled chip element (label + value).
  */
-function renderSegmentTable(segments: TranscriptionResult['segments']): string {
-  if (!segments) return '';
+function createChip(
+  label: string,
+  value: string,
+  variant: 'primary' | 'muted' | 'accent',
+): HTMLElement {
+  const variants: Record<string, string> = {
+    primary:
+      'bg-[var(--color-primary-100)] text-[var(--color-primary-700)] dark:bg-[var(--color-primary-900)] dark:text-[var(--color-primary-300)]',
+    muted:
+      'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)]',
+    accent:
+      'bg-[var(--color-accent-100)] text-[var(--color-accent-700)] dark:bg-[var(--color-accent-900)] dark:text-[var(--color-accent-300)]',
+  };
 
-  const rows = segments
-    .map((s, i) => {
-      const start = formatTimestamp(s.start);
-      const end = formatTimestamp(s.end);
-      return `
-      <tr class="border-b border-gray-200 last:border-0">
-        <td class="py-1 pr-3 text-gray-400 font-mono">${i + 1}</td>
-        <td class="py-1 pr-3 font-mono text-orange-600">${start} → ${end}</td>
-        <td class="py-1">${escapeHtml(s.text)}</td>
-      </tr>
-    `;
-    })
-    .join('');
+  const chip = document.createElement('span');
+  chip.className = `inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10.5px] font-medium ${variants[variant]}`;
 
-  return `
-    <details class="mt-2">
-      <summary class="cursor-pointer font-medium text-gray-600">Ver segmentos</summary>
-      <table class="w-full mt-1 text-xs">
-        <tbody>${rows}</tbody>
-      </table>
-    </details>
-  `;
+  const labelEl = document.createElement('span');
+  labelEl.className = 'opacity-70';
+  labelEl.textContent = label;
+
+  const valueEl = document.createElement('span');
+  valueEl.className = 'font-semibold';
+  valueEl.textContent = value;
+
+  chip.appendChild(labelEl);
+  chip.appendChild(valueEl);
+  return chip;
+}
+
+/**
+ * Build the collapsible segment table via DOM APIs.
+ */
+function buildSegmentDetails(
+  segments: NonNullable<TranscriptionResult['segments']>,
+): HTMLDetailsElement {
+  const details = document.createElement('details');
+  details.className = 'mt-3';
+
+  const summary = document.createElement('summary');
+  summary.className =
+    'cursor-pointer text-[11px] font-semibold text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors duration-[var(--transition-fast)] select-none';
+  summary.textContent = `Ver segmentos (${segments.length})`;
+
+  const table = document.createElement('table');
+  table.className = 'w-full mt-2 text-[11px] font-mono';
+
+  const tbody = document.createElement('tbody');
+
+  segments.forEach((s, i) => {
+    const tr = document.createElement('tr');
+    tr.className = 'border-b border-[var(--color-border-subtle)] last:border-0';
+
+    const idxTd = document.createElement('td');
+    idxTd.className = 'py-1 pr-3 text-[var(--color-text-muted)] tabular-nums';
+    idxTd.textContent = String(i + 1);
+
+    const timeTd = document.createElement('td');
+    timeTd.className =
+      'py-1 pr-3 text-[var(--color-accent-600)] dark:text-[var(--color-accent-400)] whitespace-nowrap';
+    timeTd.textContent = `${formatTimestamp(s.start)} → ${formatTimestamp(s.end)}`;
+
+    const textTd = document.createElement('td');
+    textTd.className = 'py-1 text-[var(--color-text-primary)] font-sans';
+    // textContent is XSS-safe — no escaping needed.
+    textTd.textContent = s.text;
+
+    tr.appendChild(idxTd);
+    tr.appendChild(timeTd);
+    tr.appendChild(textTd);
+    tbody.appendChild(tr);
+  });
+
+  table.appendChild(tbody);
+  details.appendChild(summary);
+  details.appendChild(table);
+  return details;
 }
 
 // -----------------------------------------------------------------------
@@ -102,9 +155,9 @@ function renderSegmentTable(segments: TranscriptionResult['segments']): string {
 function computeAverageConfidence(segments: NonNullable<TranscriptionResult['segments']>): string {
   const avg = segments.reduce((sum, s) => sum + s.avg_logprob, 0) / segments.length;
 
-  if (avg > -0.3) return 'Alta ✅';
-  if (avg > -0.6) return 'Media ⚠️';
-  return 'Baja ❌';
+  if (avg > -0.3) return 'Alta';
+  if (avg > -0.6) return 'Media';
+  return 'Baja';
 }
 
 /**
@@ -118,16 +171,4 @@ function formatTimestamp(seconds: number): string {
     return `${mins}:${secs.padStart(4, '0')}`;
   }
   return `${secs}s`;
-}
-
-/**
- * Escape HTML special characters to prevent injection.
- * Used because segment text comes from the API (external data).
- */
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }

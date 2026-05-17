@@ -52,12 +52,14 @@ export class Recorder {
    * Initialize the recorder by requesting microphone access.
    * Must be called before `start()` / `stop()`.
    *
+   * @returns The acquired MediaStream so callers can share it with other modules (e.g., AudioAnalyzer).
    * @throws Error if the user denies microphone permission.
    */
-  async init(constraints: MediaStreamConstraints = DEFAULT_CONSTRAINTS): Promise<void> {
+  async init(constraints: MediaStreamConstraints = DEFAULT_CONSTRAINTS): Promise<MediaStream> {
     this.stream = await navigator.mediaDevices.getUserMedia(constraints);
     this.mimeType = this.detectMimeType();
     this.mediaRecorder = this.buildRecorder(this.stream);
+    return this.stream;
   }
 
   /**
@@ -95,6 +97,9 @@ export class Recorder {
    * Call this when the recorder is permanently discarded.
    */
   dispose(): void {
+    if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
+      this.mediaRecorder.stop();
+    }
     this.stream?.getTracks().forEach((track) => track.stop());
     this.stream = null;
     this.mediaRecorder = null;

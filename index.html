@@ -1,24 +1,68 @@
 <!doctype html>
-<html lang="es">
+<html lang="es" dir="ltr">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#f6f8fa" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0a1313" />
     <meta
       name="description"
-      content="Dictado por voz con inteligencia artificial. Transcripción en tiempo real usando Groq Whisper."
+      content="LU YUME — Dictado por voz con IA. Transcripción y traducción en tiempo real con Groq Whisper."
     />
+    <meta name="author" content="LU YUME" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="LU YUME — Dictado por Voz" />
+    <meta
+      property="og:description"
+      content="Dictado por voz con IA. Transcripción y traducción en tiempo real con Groq Whisper."
+    />
+    <meta property="og:image" content="/favicon.svg" />
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>LU YUME — Dictado por Voz</title>
+
+    <!-- No-flash dark mode bootstrap: apply class before first paint -->
+    <script>
+      (function () {
+        try {
+          var stored = JSON.parse(localStorage.getItem('theme'));
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var theme = stored || 'system';
+          var isDark = theme === 'dark' || (theme === 'system' && prefersDark);
+          if (isDark) document.documentElement.classList.add('dark');
+        } catch (e) {}
+      })();
+    </script>
 
     <!-- Fonts: Inter (body) + JetBrains Mono (code/mono) — preconnect for performance -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
   </head>
   <body class="min-h-screen font-sans antialiased">
     <div id="app"></div>
+    <noscript>
+      <div
+        style="
+          padding: 1.5rem;
+          margin: 2rem auto;
+          max-width: 32rem;
+          text-align: center;
+          font-family: system-ui, sans-serif;
+          border: 1px solid #cbd5e1;
+          border-radius: 0.75rem;
+          background: #ffffff;
+        "
+      >
+        Esta aplicación requiere JavaScript habilitado para funcionar.
+      </div>
+    </noscript>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

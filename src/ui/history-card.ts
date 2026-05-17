@@ -27,21 +27,32 @@ export function createHistoryCard(
   const card = document.createElement('div');
   card.className = [
     'group relative',
-    'p-3 rounded-lg',
+    'p-3 pl-3.5 rounded-xl',
     'border border-[var(--color-border)]',
     'bg-[var(--color-surface)]',
     'hover:border-[var(--color-border-strong)]',
-    'hover:shadow-sm',
+    'hover:shadow-[var(--shadow-card-hover)]',
+    'hover:-translate-y-px',
     'transition-all duration-[var(--transition-fast)]',
     'cursor-pointer',
+    'overflow-hidden',
   ].join(' ');
-  card.setAttribute('role', 'button');
+  card.setAttribute('role', 'listitem');
   card.setAttribute('tabindex', '0');
   card.setAttribute('aria-label', `Restaurar transcripción: ${entry.text.slice(0, 50)}`);
 
+  // Gradient indicator bar (left edge), only visible on hover/focus
+  const indicator = document.createElement('span');
+  indicator.className =
+    'absolute left-0 top-2 bottom-2 w-[3px] rounded-full opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-[var(--transition-fast)]';
+  indicator.style.backgroundImage = 'var(--gradient-brand)';
+  indicator.setAttribute('aria-hidden', 'true');
+  card.appendChild(indicator);
+
   // Text preview — 2 lines max
   const textP = document.createElement('p');
-  textP.className = 'text-sm text-[var(--color-text-primary)] leading-snug line-clamp-2 text-left';
+  textP.className =
+    'text-[13.5px] text-[var(--color-text-primary)] leading-snug line-clamp-2 text-left pr-6';
   textP.textContent = entry.text;
 
   // Meta row: badges + time
@@ -73,19 +84,21 @@ export function createHistoryCard(
   time.textContent = timeAgo(entry.createdAt);
   meta.appendChild(time);
 
-  // Delete button (visible on hover)
+  // Delete button (visible on hover/focus-within)
   const deleteBtn = document.createElement('button');
   deleteBtn.className = [
     'absolute top-2 right-2',
-    'p-1 rounded',
+    'p-1.5 rounded-md',
     'text-[var(--color-text-muted)]',
-    'opacity-0 group-hover:opacity-100',
+    'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100',
     'hover:text-[var(--color-status-error)]',
-    'hover:bg-red-50 dark:hover:bg-red-950',
+    'hover:bg-red-50 dark:hover:bg-red-950/50',
+    'active:scale-90',
     'transition-all duration-[var(--transition-fast)]',
     'cursor-pointer',
   ].join(' ');
-  deleteBtn.setAttribute('aria-label', 'Eliminar');
+  deleteBtn.setAttribute('aria-label', 'Eliminar entrada del historial');
+  deleteBtn.setAttribute('title', 'Eliminar');
   deleteBtn.appendChild(createTrashIcon());
 
   deleteBtn.addEventListener('click', (e) => {

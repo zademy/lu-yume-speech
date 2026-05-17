@@ -55,7 +55,7 @@ export class AudioAnalyzer {
   private audioContext: AudioContext | null = null;
   private analyserNode: AnalyserNode | null = null;
   private sourceNode: MediaStreamAudioSourceNode | null = null;
-  private timeDomainData: Uint8Array<ArrayBuffer> | null = null;
+  private timeDomainData: Uint8Array | null = null;
   private animationFrame: number | null = null;
   private sampleTimer: ReturnType<typeof setInterval> | null = null;
   private consecutiveSilenceCount = 0;
@@ -81,9 +81,7 @@ export class AudioAnalyzer {
     this.sourceNode = this.audioContext.createMediaStreamSource(stream);
     this.sourceNode.connect(this.analyserNode);
 
-    this.timeDomainData = new Uint8Array(
-      this.analyserNode.frequencyBinCount,
-    ) as Uint8Array<ArrayBuffer>;
+    this.timeDomainData = new Uint8Array(this.analyserNode.frequencyBinCount);
   }
 
   /**
@@ -96,7 +94,9 @@ export class AudioAnalyzer {
     this.consecutiveSilenceCount = 0;
 
     this.sampleTimer = setInterval(() => {
-      this.analyserNode!.getByteTimeDomainData(this.timeDomainData!);
+      // TS 6.0 uses generic Uint8Array<ArrayBuffer>; standard TS does not.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      this.analyserNode!.getByteTimeDomainData(this.timeDomainData! as any);
       const rms = this.computeRMS(this.timeDomainData!);
 
       this.bus.emit('recording:level', rms);
@@ -132,10 +132,12 @@ export class AudioAnalyzer {
    * Returns a copy so consumers can't mutate the internal buffer.
    * Returns null when not connected.
    */
-  getWaveformData(): Uint8Array<ArrayBuffer> | null {
+  getWaveformData(): Uint8Array | null {
     if (!this.analyserNode || !this.timeDomainData) return null;
-    this.analyserNode.getByteTimeDomainData(this.timeDomainData);
-    return new Uint8Array(this.timeDomainData) as Uint8Array<ArrayBuffer>;
+    // TS 6.0 uses generic Uint8Array<ArrayBuffer>; standard TS does not.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    this.analyserNode.getByteTimeDomainData(this.timeDomainData as any);
+    return new Uint8Array(this.timeDomainData);
   }
 
   /**
@@ -165,7 +167,7 @@ export class AudioAnalyzer {
    * The AnalyserNode provides unsigned byte data centered at 128.
    * We subtract 128 to get signed values, then compute RMS.
    */
-  private computeRMS(data: Uint8Array<ArrayBuffer>): number {
+  private computeRMS(data: Uint8Array): number {
     let sum = 0;
     for (let i = 0; i < data.length; i++) {
       const sample = (data[i] - 128) / 128;
