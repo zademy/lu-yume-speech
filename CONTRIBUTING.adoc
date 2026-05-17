@@ -1,0 +1,173 @@
+= Contributing to LU YUME — Speech-to-Text
+:toc: left
+:toclevels: 3
+:sectanchors:
+
+Thank you for your interest in contributing! This guide covers everything you need to set up the project, make changes, and submit them for review.
+
+== Quick Start
+
+=== Prerequisites
+
+* **Node.js** >= 18
+* **npm** (bundled with Node.js)
+* A **Groq API key** from https://console.groq.com[console.groq.com]
+
+=== Setup
+
+[source,bash]
+----
+# Clone your fork
+git clone https://github.com/<your-username>/speech-to-text.git
+cd speech-to-text
+
+# Install dependencies
+npm install
+
+# Create environment file
+cp .env.example .env
+# Edit .env and add your VITE_GROQ_API_KEY
+
+# Start development server
+npm run dev
+----
+
+Open http://localhost:5173 in your browser.
+
+== Development Workflow
+
+=== Branch Naming
+
+Use descriptive branch names with a prefix:
+
+|===
+| Prefix | Purpose | Example
+
+| `feat/` | New feature | `feat/silence-threshold-slider`
+| `fix/` | Bug fix | `fix/waveform-render-crash`
+| `docs/` | Documentation | `docs/add-api-reference`
+| `refactor/` | Code restructuring | `refactor/extract-audio-module`
+| `chore/` | Tooling / maintenance | `chore/upgrade-vite`
+|===
+
+=== Making Changes
+
+. Create a new branch from `main`.
+. Make your changes in small, focused commits.
+. Follow the existing code style — the project uses **Prettier** and **ESLint**.
+. Pre-commit hooks (Husky + lint-staged) will automatically lint and format staged files.
+. Run the full check before pushing:
+
+[source,bash]
+----
+npm run lint
+npm run build
+----
+
+Both must pass with zero errors.
+
+=== Commit Messages
+
+Write clear, descriptive commit messages. Follow the https://www.conventionalcommits.org/[Conventional Commits] format:
+
+----
+<type>(<scope>): <description>
+
+[optional body]
+
+[optional footer]
+----
+
+Examples:
+
+----
+feat(audio): add silence detection threshold setting
+fix(groq-client): handle empty audio blob gracefully
+docs(readme): update architecture diagram
+refactor(event-bus): simplify event type inference
+----
+
+== Code Style
+
+This project enforces consistent style through tooling:
+
+* **TypeScript** — strict mode enabled. All new code must be type-safe.
+* **ESLint** — configured with `typescript-eslint`. Run with `npm run lint`.
+* **Prettier** — handles formatting. Run with `npm run format`.
+* **No `any`** — avoid `any` types. Use proper type definitions in `src/types.ts` or near the module that owns them.
+* **JSDoc** — every module has a file-level JSDoc comment describing its single responsibility. Maintain this convention.
+
+=== Architecture Conventions
+
+The application follows an **event-driven modular architecture**:
+
+* All inter-module communication flows through the `EventBus` (`src/core/event-bus.ts`).
+* Modules do **not** import each other directly. They emit and listen to events.
+* `src/main.ts` is the **only** composition root — it wires everything together.
+* Each module has a single responsibility (SRP).
+
+When adding a new feature:
+
+. Add type definitions to `src/types.ts` if they are shared.
+. If the feature needs to communicate, define new event types and emit/listen via the EventBus.
+. Keep the module self-contained. Do not reach into another module's internals.
+
+== Project Structure
+
+[source]
+----
+src/
+├── api/          # External API clients (Groq)
+├── audio/        # Microphone, waveform, analyzer, timer
+├── core/         # EventBus (pub/sub backbone)
+├── ui/           # DOM rendering, sidebar, toast, metadata
+├── utils/        # Clipboard, keyboard, storage, theme, settings
+├── main.ts       # Composition root
+├── style.css     # Design system tokens + Tailwind
+└── types.ts      # Shared type definitions
+----
+
+See the README for a detailed module-by-module description.
+
+== Submitting a Pull Request
+
+. Push your branch to your fork.
+. Open a Pull Request against the `main` branch of this repository.
+. Fill in the PR template (if present) with:
+** What changed and why.
+** How to test it.
+** Any screenshots or screen recordings for UI changes.
+. Make sure `npm run lint` and `npm run build` pass on your branch.
+. Keep PRs small and focused. Large PRs may be asked to be split.
+
+=== PR Review Criteria
+
+Reviewers will check for:
+
+* Correctness — does the change do what it claims?
+* Type safety — no `any`, no missing types.
+* Architecture — does it respect the event-driven pattern?
+* No regressions — existing functionality still works.
+* No secrets — no API keys, tokens, or credentials in the diff.
+
+== Reporting Issues
+
+Use https://github.com/<your-username>/speech-to-text/issues[GitHub Issues] to report bugs or request features.
+
+When filing a bug report, include:
+
+. Steps to reproduce.
+. Expected behavior.
+. Actual behavior.
+. Browser and OS.
+. Console errors (if any).
+
+== Security Vulnerabilities
+
+**Do not file a public issue for security vulnerabilities.**
+
+Report them privately via GitHub's **Security** tab → **Report a vulnerability**. See link:SECURITY.md[SECURITY.md] for the full policy.
+
+== License
+
+By contributing, you agree that your contributions will be licensed under the https://opensource.org/licenses/MIT[MIT License].
