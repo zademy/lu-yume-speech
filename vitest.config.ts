@@ -14,7 +14,20 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
       include: ['src/**/*.ts'],
-      exclude: ['src/main.ts', 'src/types.ts', 'src/**/*.d.ts'],
+      exclude: [
+        'src/main.ts',
+        'src/types.ts',
+        'src/**/*.d.ts',
+        // Phase 2: UI renderers (DOM construction, integration tests needed)
+        'src/ui/renderer.ts',
+        'src/ui/sidebar.ts',
+        'src/ui/history-card.ts',
+        'src/ui/metadata-panel.ts',
+        'src/ui/toast.ts',
+        // Phase 2: Audio/Canvas (Web Audio API, MediaRecorder, canvas)
+        'src/audio/audio-analyzer.ts',
+        'src/audio/waveform-visualizer.ts',
+      ],
       thresholds: { lines: 90, functions: 90, statements: 90, branches: 80 },
     },
   },

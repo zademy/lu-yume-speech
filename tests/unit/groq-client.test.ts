@@ -104,4 +104,30 @@ describe('GroqClient', () => {
     await client.transcribe(blob(), opts);
     expect(events).toEqual(['start', 'success']);
   });
+
+  it('sends verbose_json format and timestamp granularities in FormData', async () => {
+    let capturedFormData: FormData | null = null;
+    server.use(
+      http.post('https://api.groq.com/openai/v1/audio/transcriptions', async ({ request }) => {
+        const form = await request.formData();
+        capturedFormData = form;
+        return HttpResponse.json({
+          text: 'verbose result',
+          segments: [{ id: 0, text: 'verbose result', start: 0, end: 1 }],
+        });
+      }),
+    );
+    const client = createClient('gsk_test-key');
+    const verboseOpts: TranscriptionOptions = {
+      model: 'whisper-large-v3-turbo',
+      temperature: 0,
+      responseFormat: 'verbose_json',
+      timestampGranularities: ['word', 'segment'],
+    };
+    const result = await client.transcribe(blob(), verboseOpts);
+    expect(result.text).toBe('verbose result');
+    expect(capturedFormData).not.toBeNull();
+    expect(capturedFormData!.get('response_format')).toBe('verbose_json');
+    expect(capturedFormData!.getAll('timestamp_granularities[]')).toEqual(['word', 'segment']);
+  });
 });

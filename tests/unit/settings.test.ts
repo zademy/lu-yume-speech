@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readTranscriptionOptions } from '../../src/utils/settings';
+import { readTranscriptionOptions, readOperationMode } from '../../src/utils/settings';
 import type { AppElements } from '../../src/ui/renderer';
 
 /** Create a <select> whose .value is a plain data property (jsdom-safe). */
@@ -85,5 +85,48 @@ describe('settings — readTranscriptionOptions', () => {
       languageSelect: selectWithValue('auto'),
     });
     expect(readTranscriptionOptions(elements).language).toBeUndefined();
+  });
+
+  it('returns [segment] for verbose_json without word toggle', () => {
+    const elements = makeElements({
+      responseFormatSelect: selectWithValue('verbose_json'),
+      timestampToggle: Object.assign(document.createElement('input'), {
+        checked: false,
+      }) as HTMLInputElement,
+    });
+    expect(readTranscriptionOptions(elements).timestampGranularities).toEqual(['segment']);
+  });
+
+  it('returns [word, segment] for verbose_json with word toggle', () => {
+    const elements = makeElements({
+      responseFormatSelect: selectWithValue('verbose_json'),
+      timestampToggle: Object.assign(document.createElement('input'), {
+        checked: true,
+      }) as HTMLInputElement,
+    });
+    expect(readTranscriptionOptions(elements).timestampGranularities).toEqual(['word', 'segment']);
+  });
+
+  it('omits timestampGranularities for non-verbose_json formats', () => {
+    const elements = makeElements({
+      responseFormatSelect: selectWithValue('json'),
+    });
+    expect(readTranscriptionOptions(elements).timestampGranularities).toBeUndefined();
+  });
+});
+
+describe('settings — readOperationMode', () => {
+  it('returns the current operation mode value', () => {
+    const elements = makeElements({
+      operationModeSelect: selectWithValue('translate'),
+    });
+    expect(readOperationMode(elements)).toBe('translate');
+  });
+
+  it('returns transcribe when set', () => {
+    const elements = makeElements({
+      operationModeSelect: selectWithValue('transcribe'),
+    });
+    expect(readOperationMode(elements)).toBe('transcribe');
   });
 });

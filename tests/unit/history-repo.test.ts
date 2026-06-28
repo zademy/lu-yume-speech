@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { addEntry, getAll, removeEntry, clearAll } from '../../src/utils/history-repo';
+import { addEntry, getAll, getById, removeEntry, clearAll } from '../../src/utils/history-repo';
 import type { HistoryEntry } from '../../src/types';
 
 const entry = (i: number): HistoryEntry => ({
@@ -50,5 +50,39 @@ describe('history-repo', () => {
   it('survives corrupt stored data (returns empty)', () => {
     localStorage.setItem('stt_history', 'corrupt{');
     expect(getAll()).toEqual([]);
+  });
+
+  it('getById finds existing entry', () => {
+    addEntry(entry(1));
+    addEntry(entry(2));
+    const found = getById('id-2');
+    expect(found).toBeDefined();
+    expect(found?.text).toBe('text-2');
+  });
+
+  it('getById returns undefined for unknown id', () => {
+    addEntry(entry(1));
+    expect(getById('nonexistent')).toBeUndefined();
+  });
+
+  it('eviction finds oldest when it is not at index 0', () => {
+    // Add entries with reverse timestamps so oldest is last, not first.
+    // This exercises the inner-loop comparison that updates oldestIdx.
+    for (let i = 100; i >= 0; i--) {
+      addEntry({
+        id: `rev-${i}`,
+        text: `rev-text-${i}`,
+        language: 'es',
+        model: 'whisper-large-v3-turbo',
+        createdAt: 1_700_000_000_000 + i,
+        operationMode: 'transcribe',
+      });
+    }
+    const all = getAll();
+    expect(all).toHaveLength(100);
+    // The entry with the smallest timestamp (rev-0, createdAt=1_700_000_000_000) should be evicted
+    expect(all.some((e) => e.id === 'rev-0')).toBe(false);
+    // The entry with the largest timestamp (rev-100) should remain
+    expect(all.some((e) => e.id === 'rev-100')).toBe(true);
   });
 });
