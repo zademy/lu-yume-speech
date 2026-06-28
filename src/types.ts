@@ -306,3 +306,16 @@ export const LANGUAGES: readonly LanguageOption[] = [
  * and avoids `as any` casts when calling `getByteTimeDomainData`.
  */
 export type AnalyserByteData = Uint8Array<ArrayBuffer>;
+
+/**
+ * Thrown when `navigator.mediaDevices` is unavailable.
+ * Happens on insecure contexts (HTTP non-localhost) or very old browsers.
+ */
+export class MicNotSupportedError extends Error {
+  constructor(
+    message = 'MediaRecorder/navigator.mediaDevices not available in this context (requires HTTPS or localhost).',
+  ) {
+    super(message);
+    this.name = 'MicNotSupportedError';
+  }
+}

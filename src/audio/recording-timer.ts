@@ -82,4 +82,13 @@ export class RecordingTimer {
     }
     return this.elapsedAtPause / 1000;
   }
+
+  /**
+   * Stop the timer and reset state.
+   * Safe to call multiple times.
+   */
+  dispose(): void {
+    this.stop();
+    this.reset();
+  }
 }
