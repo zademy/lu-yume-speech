@@ -28,7 +28,7 @@
     <script>
       (function () {
         try {
-          var stored = JSON.parse(localStorage.getItem('theme'));
+          var stored = JSON.parse(localStorage.getItem('stt_theme'));
           var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
           var theme = stored || 'system';
           var isDark = theme === 'dark' || (theme === 'system' && prefersDark);
