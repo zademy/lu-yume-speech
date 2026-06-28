@@ -9,8 +9,10 @@ Thank you for your interest in contributing! This guide covers everything you ne
 
 === Prerequisites
 
-* **Node.js** >= 18
-* **npm** (bundled with Node.js)
+* **Node.js** >= 20
+* **pnpm** >= 9 (install via `npm install -g pnpm` or https://nodejs.org/api/corepack.html[corepack])
+* **Rust** stable (install via https://rustup.rs[rustup]) — required for desktop builds
+* https://tauri.app/start/prerequisites/[Tauri system dependencies] for your OS
 * A **Groq API key** from https://console.groq.com[console.groq.com]
 
 === Setup
@@ -22,17 +24,16 @@ git clone https://github.com/<your-username>/speech-to-text.git
 cd speech-to-text
 
 # Install dependencies
-npm install
+pnpm install
 
-# Create environment file
-cp .env.example .env
-# Edit .env and add your VITE_GROQ_API_KEY
+# Start desktop development shell (recommended)
+pnpm tauri dev
 
-# Start development server
-npm run dev
+# OR start web-only dev server (fallback)
+pnpm dev
 ----
 
-Open http://localhost:5173 in your browser.
+The desktop shell opens in a native window. The web-only server is at http://localhost:5173.
 
 == Development Workflow
 
@@ -60,11 +61,13 @@ Use descriptive branch names with a prefix:
 
 [source,bash]
 ----
-npm run lint
-npm run build
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
 ----
 
-Both must pass with zero errors.
+All must pass with zero errors.
 
 === Commit Messages
 
@@ -92,8 +95,8 @@ refactor(event-bus): simplify event type inference
 This project enforces consistent style through tooling:
 
 * **TypeScript** — strict mode enabled. All new code must be type-safe.
-* **ESLint** — configured with `typescript-eslint`. Run with `npm run lint`.
-* **Prettier** — handles formatting. Run with `npm run format`.
+* **ESLint** — configured with `typescript-eslint` (type-aware rules). Run with `pnpm lint`.
+* **Prettier** — handles formatting. Run with `pnpm format`.
 * **No `any`** — avoid `any` types. Use proper type definitions in `src/types.ts` or near the module that owns them.
 * **JSDoc** — every module has a file-level JSDoc comment describing its single responsibility. Maintain this convention.
 
@@ -137,7 +140,7 @@ See the README for a detailed module-by-module description.
 ** What changed and why.
 ** How to test it.
 ** Any screenshots or screen recordings for UI changes.
-. Make sure `npm run lint` and `npm run build` pass on your branch.
+. Make sure `pnpm lint`, `pnpm typecheck`, and `pnpm test` pass on your branch.
 . Keep PRs small and focused. Large PRs may be asked to be split.
 
 === PR Review Criteria
@@ -167,6 +170,57 @@ When filing a bug report, include:
 **Do not file a public issue for security vulnerabilities.**
 
 Report them privately via GitHub's **Security** tab → **Report a vulnerability**. See link:SECURITY.md[SECURITY.md] for the full policy.
+
+== Running Tests
+
+The project uses Vitest with jsdom for DOM APIs and MSW for HTTP mocking.
+
+[source,bash]
+----
+# Run all tests once
+pnpm test
+
+# Watch mode
+pnpm test:watch
+
+# Coverage report (thresholds: 90% lines/functions/statements, 80% branches)
+pnpm test:coverage
+----
+
+=== Adding a Pure-Module Test
+
+Most utility and core modules are pure functions with no DOM or network
+dependencies. Test them following the patterns in `tests/unit/`:
+
+[source,typescript]
+----
+import { describe, it, expect } from 'vitest';
+import { myFunction } from '../../src/utils/my-module';
+
+describe('myFunction', () => {
+  it('should do the expected thing', () => {
+    expect(myFunction(input)).toBe(expected);
+  });
+});
+----
+
+For modules that use `localStorage` or `sessionStorage`, the polyfills in
+`tests/helpers/setup.ts` are loaded automatically via `vitest.config.ts`.
+
+For modules that make HTTP requests, use MSW handlers. See
+`tests/helpers/msw-handlers.ts` for the Groq API mock setup and
+`tests/unit/groq-client.test.ts` for usage examples.
+
+== Adding a Tauri Command
+
+See link:ARCHITECTURE.md#5-how-to-add-a-new-tauri-command[ARCHITECTURE.md §5]
+for the full guide. Summary:
+
+. Write the `#[tauri::command]` function in `src-tauri/src/commands/<area>.rs`.
+. Register it in `src-tauri/src/lib.rs` via `generate_handler!`.
+. Declare any needed permissions in `src-tauri/capabilities/default.json`.
+. Add a method to the `Platform` interface and implement in both bridges.
+. Write a unit test for the web-bridge fallback path.
 
 == License
 
