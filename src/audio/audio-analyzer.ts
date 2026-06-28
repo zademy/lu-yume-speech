@@ -59,6 +59,7 @@ export class AudioAnalyzer {
   private animationFrame: number | null = null;
   private sampleTimer: ReturnType<typeof setInterval> | null = null;
   private consecutiveSilenceCount = 0;
+  private ownsContext = false;
 
   constructor(bus: EventBus<EventMap>, config: AnalyzerConfig = DEFAULT_ANALYZER_CONFIG) {
     this.bus = bus;
@@ -74,6 +75,7 @@ export class AudioAnalyzer {
    */
   connect(stream: MediaStream): void {
     this.audioContext = new AudioContext();
+    this.ownsContext = true;
     this.analyserNode = this.audioContext.createAnalyser();
     this.analyserNode.fftSize = this.config.fftSize;
     this.analyserNode.smoothingTimeConstant = 0.8;
@@ -82,6 +84,18 @@ export class AudioAnalyzer {
     this.sourceNode.connect(this.analyserNode);
 
     this.timeDomainData = new Uint8Array(this.analyserNode.frequencyBinCount);
+  }
+
+  /**
+   * Connect using a pre-existing AnalyserNode (shared with AudioProcessor).
+   * The analyzer does NOT own the AudioContext in this mode.
+   */
+  connectAnalyser(analyser: AnalyserNode): void {
+    this.analyserNode = analyser;
+    this.analyserNode.fftSize = this.config.fftSize;
+    this.analyserNode.smoothingTimeConstant = 0.8;
+    this.timeDomainData = new Uint8Array(this.analyserNode.frequencyBinCount);
+    this.ownsContext = false;
   }
 
   /**
@@ -146,11 +160,12 @@ export class AudioAnalyzer {
     this.sourceNode?.disconnect();
     this.sourceNode = null;
     this.analyserNode = null;
-    if (this.audioContext?.state !== 'closed') {
+    if (this.ownsContext && this.audioContext?.state !== 'closed') {
       void this.audioContext?.close();
     }
     this.audioContext = null;
     this.timeDomainData = null;
+    this.ownsContext = false;
   }
 
   // -----------------------------------------------------------------------

@@ -23,6 +23,8 @@ import { Recorder } from './audio/recorder';
 import { AudioAnalyzer } from './audio/audio-analyzer';
 import { RecordingTimer } from './audio/recording-timer';
 import { WaveformVisualizer } from './audio/waveform-visualizer';
+import { AudioProcessor } from './audio/audio-processor';
+import type { NoiseReductionMode } from './audio/audio-processor';
 import { GroqClient } from './api/groq-client';
 import { renderApp } from './ui/renderer';
 import type { AppElements } from './ui/renderer';
@@ -194,18 +196,32 @@ async function bootstrap(): Promise<void> {
   // Wire live UI interactions
   wireLiveControls(elements);
 
+  // Noise reduction mode switch
+  elements.noiseReductionSelect.addEventListener('change', () => {
+    const mode = elements.noiseReductionSelect.value as NoiseReductionMode;
+    void audioProcessor.setMode(mode).then(() => {
+      showToast(
+        elements.toastContainer,
+        `Reducción de ruido: ${elements.noiseReductionSelect.selectedOptions[0]?.textContent ?? mode}`,
+        'info',
+      );
+    });
+  });
+
   // Service modules (DIP: they receive the bus, not each other)
   const recorder = new Recorder(bus);
   const analyzer = new AudioAnalyzer(bus);
   const timer = new RecordingTimer(bus);
   const client = new GroqClient(bus, apiKey ?? '');
   const visualizer = new WaveformVisualizer(elements.waveformCanvas);
+  const audioProcessor = new AudioProcessor();
 
-  // Microphone access — reuse the same stream for both recorder and analyzer
-  let stream: MediaStream;
+  // Microphone access — process through audio enhancement chain before recording
   try {
-    stream = await recorder.init();
-    analyzer.connect(stream);
+    const rawStream = await recorder.init();
+    const processed = await audioProcessor.process(rawStream, 'dsp');
+    recorder.setRecordingStream(processed.stream);
+    analyzer.connectAnalyser(processed.analyser);
   } catch (error) {
     console.error('[App] Microphone access denied:', error);
     showToast(elements.toastContainer, 'No se pudo acceder al micrófono', 'error');
@@ -241,6 +257,7 @@ async function bootstrap(): Promise<void> {
     visualizer.stop();
     timer.dispose();
     analyzer.dispose();
+    audioProcessor.dispose();
     recorder.dispose();
     bus.clear();
   });

@@ -40,6 +40,7 @@ export interface AppElements {
   modelSelect: HTMLSelectElement;
   operationModeSelect: HTMLSelectElement;
   recordModeSelect: HTMLSelectElement;
+  noiseReductionSelect: HTMLSelectElement;
   languageSelect: HTMLSelectElement;
   promptInput: HTMLTextAreaElement;
   temperatureSlider: HTMLInputElement;
@@ -89,6 +90,7 @@ export function renderApp(): AppElements {
     modelSelect: root.querySelector('#modelSelect')!,
     operationModeSelect: root.querySelector('#operationModeSelect')!,
     recordModeSelect: root.querySelector('#recordModeSelect')!,
+    noiseReductionSelect: root.querySelector('#noiseReductionSelect')!,
     languageSelect: root.querySelector('#languageSelect')!,
     promptInput: root.querySelector('#promptInput')!,
     temperatureSlider: root.querySelector('#temperatureSlider')!,
@@ -242,6 +244,11 @@ function renderSettingsPanel(): string {
             selected: m.value === DEFAULT_SETTINGS.recordMode,
           })),
         )}
+        ${renderSelectField('noiseReductionSelect', 'Reducción de ruido', [
+          { value: 'off', label: 'Desactivada', selected: false },
+          { value: 'dsp', label: 'Básica (filtros)', selected: true },
+          { value: 'rnnoise', label: 'AI (RNNoise)', selected: false },
+        ])}
         ${renderSelectField(
           'languageSelect',
           'Idioma',

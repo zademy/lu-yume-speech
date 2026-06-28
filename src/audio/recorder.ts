@@ -67,6 +67,18 @@ export class Recorder {
   }
 
   /**
+   * Switch the recording target to a processed MediaStream.
+   * Used when an AudioProcessor cleans the audio before capture.
+   * Rebuilds the internal MediaRecorder on the new stream.
+   */
+  setRecordingStream(stream: MediaStream): void {
+    if (this.mediaRecorder?.state === 'recording') {
+      this.mediaRecorder.stop();
+    }
+    this.mediaRecorder = this.buildRecorder(stream);
+  }
+
+  /**
    * Start capturing audio.
    * No-op if already recording or not initialized.
    */
