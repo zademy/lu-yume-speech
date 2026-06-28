@@ -37,6 +37,87 @@ import { registerKeyboardShortcuts } from './utils/keyboard';
 import { readTranscriptionOptions, readOperationMode } from './utils/settings';
 import { copyToClipboard } from './utils/clipboard';
 import { detectPlatform } from './platform/platform';
+import type { Platform } from './platform/platform';
+import { apiKeySchema } from './platform/api-key.schema';
+
+// ===========================================================================
+// API Key Modal
+// ===========================================================================
+
+async function promptApiKey(platform: Platform): Promise<string | null> {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText =
+      'position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px)';
+
+    overlay.innerHTML = `
+      <div role="dialog" aria-modal="true" aria-labelledby="apikey-title" style="background:var(--color-surface,#1e1e2e);border-radius:16px;padding:2rem;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.5);border:1px solid var(--color-border,#3b3b50)">
+        <h2 id="apikey-title" style="color:var(--color-text,#cdd6f4);font-family:Inter,sans-serif;font-size:1.25rem;font-weight:700;margin:0 0 0.5rem">
+          🔑 Groq API Key
+        </h2>
+        <p style="color:var(--color-text-muted,#9399b2);font-family:Inter,sans-serif;font-size:0.875rem;margin:0 0 1.5rem">
+          Obtén tu key gratis en <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:#06b6d4">console.groq.com/keys</a>
+        </p>
+        <input
+          type="password"
+          id="apikey-input"
+          placeholder="gsk_..."
+          autocomplete="off"
+          spellcheck="false"
+          style="width:100%;box-sizing:border-box;padding:0.75rem 1rem;border-radius:8px;border:1px solid var(--color-border,#3b3b50);background:var(--color-bg,#181825);color:var(--color-text,#cdd6f4);font-family:'JetBrains Mono',monospace;font-size:0.875rem;outline:none;margin-bottom:0.5rem"
+        />
+        <p id="apikey-error" style="color:#f38ba8;font-family:Inter,sans-serif;font-size:0.75rem;margin:0 0 1rem;min-height:1rem"></p>
+        <div style="display:flex;gap:0.75rem;justify-content:flex-end">
+          <button id="apikey-cancel" style="padding:0.6rem 1.25rem;border-radius:8px;border:1px solid var(--color-border,#3b3b50);background:transparent;color:var(--color-text-muted,#9399b2);font-family:Inter,sans-serif;font-size:0.875rem;cursor:pointer">
+            Cancelar
+          </button>
+          <button id="apikey-save" style="padding:0.6rem 1.25rem;border-radius:8px;border:none;background:linear-gradient(135deg,#14b8a6,#0d9488);color:#fff;font-family:Inter,sans-serif;font-size:0.875rem;font-weight:600;cursor:pointer">
+            Guardar
+          </button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const input = overlay.querySelector<HTMLInputElement>('#apikey-input')!;
+    const error = overlay.querySelector<HTMLParagraphElement>('#apikey-error')!;
+    const saveBtn = overlay.querySelector<HTMLButtonElement>('#apikey-save')!;
+    const cancelBtn = overlay.querySelector<HTMLButtonElement>('#apikey-cancel')!;
+
+    input.focus();
+
+    const close = (result: string | null) => {
+      overlay.remove();
+      resolve(result);
+    };
+
+    const submit = async () => {
+      const key = input.value.trim();
+      if (!key) {
+        error.textContent = 'Pega tu API key aquí.';
+        return;
+      }
+      const result = apiKeySchema.safeParse(key);
+      if (!result.success) {
+        error.textContent =
+          'Formato inválido. Debe empezar con gsk_ y tener al menos 44 caracteres.';
+        return;
+      }
+      saveBtn.textContent = 'Guardando...';
+      saveBtn.disabled = true;
+      await platform.setApiKey(key);
+      close(key);
+    };
+
+    saveBtn.addEventListener('click', () => void submit());
+    cancelBtn.addEventListener('click', () => close(null));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') void submit();
+      if (e.key === 'Escape') close(null);
+    });
+  });
+}
 
 // ===========================================================================
 // Bootstrap
@@ -59,9 +140,12 @@ async function bootstrap(): Promise<void> {
 
   // Platform bridge — desktop (Tauri keychain) or web (localStorage fallback)
   const platform = await detectPlatform();
-  const apiKey = await platform.getApiKey();
+  let apiKey = await platform.getApiKey();
   if (!apiKey) {
-    console.warn('[App] No Groq API key configured. Transcription will fail until set.');
+    apiKey = await promptApiKey(platform);
+    if (apiKey) {
+      console.warn('[App] API key saved.');
+    }
   }
 
   const elements = renderApp();
