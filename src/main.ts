@@ -48,9 +48,15 @@ async function main(): Promise<void> {
 
   // Sidebar
   const sidebar = createSidebar(
-    (id) => bus.emit('history:restore', id),
-    (id) => bus.emit('history:delete', id),
-    () => bus.emit('history:clear', undefined),
+    (id) => {
+      bus.emit('history:restore', id);
+    },
+    (id) => {
+      bus.emit('history:delete', id);
+    },
+    () => {
+      bus.emit('history:clear', undefined);
+    },
   );
 
   // Load existing history into sidebar
@@ -105,7 +111,9 @@ async function main(): Promise<void> {
   // Canvas sizing
   visualizer.syncSize();
   visualizer.drawIdle();
-  window.addEventListener('resize', () => visualizer.syncSize());
+  window.addEventListener('resize', () => {
+    visualizer.syncSize();
+  });
 
   // Wire everything through the event bus
   wireTranscriptionPipeline(bus, client, elements, sidebar);
@@ -115,8 +123,12 @@ async function main(): Promise<void> {
 
   // Keyboard shortcuts
   const cleanup = registerKeyboardShortcuts({
-    onRecordStart: () => recorder.start(),
-    onRecordStop: () => recorder.stop(),
+    onRecordStart: () => {
+      recorder.start();
+    },
+    onRecordStop: () => {
+      recorder.stop();
+    },
     getMode: () => elements.recordModeSelect.value as 'push-to-talk' | 'toggle',
   });
 
@@ -205,7 +217,7 @@ function wireTranscriptionPipeline(
     const options: TranscriptionOptions = readTranscriptionOptions(elements);
     const mode = readOperationMode(elements);
     const endpoint = mode === 'translate' ? 'translations' : 'transcriptions';
-    client.transcribe(blob, options, endpoint);
+    void client.transcribe(blob, options, endpoint);
     setStatus(elements, { message: `Procesando con ${options.model}...`, level: 'processing' });
   });
 
@@ -396,6 +408,6 @@ function formatDuration(totalSeconds: number): string {
 // Start
 // ===========================================================================
 
-main().catch((error) => {
+main().catch((error: unknown) => {
   console.error('[App] Fatal error during initialization:', error);
 });

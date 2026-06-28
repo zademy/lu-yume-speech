@@ -29,7 +29,7 @@ export function load<T>(key: string, defaultValue: T): T {
  * Write a typed value to localStorage.
  * Silently fails when storage is unavailable or full.
  */
-export function save<T>(key: string, value: T): void {
+export function save(key: string, value: unknown): void {
   try {
     localStorage.setItem(PREFIX + key, JSON.stringify(value));
   } catch {

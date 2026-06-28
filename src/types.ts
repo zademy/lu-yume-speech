@@ -299,3 +299,10 @@ export const LANGUAGES: readonly LanguageOption[] = [
   { code: 'tr', label: 'Türkçe' },
   { code: 'uk', label: 'Українська' },
 ] as const;
+
+/**
+ * Typed alias for the analyser byte data shape used by Web Audio.
+ * TS 6.0 tracks the generic parameter; this alias keeps call sites clean
+ * and avoids `as any` casts when calling `getByteTimeDomainData`.
+ */
+export type AnalyserByteData = Uint8Array<ArrayBuffer>;

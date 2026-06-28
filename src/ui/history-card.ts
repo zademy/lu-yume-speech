@@ -112,7 +112,7 @@ export function createHistoryCard(
   card.appendChild(deleteBtn);
 
   // Click to restore
-  card.addEventListener('click', () => onRestore(entry.id));
+  card.addEventListener('click', () => { onRestore(entry.id); });
   card.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();

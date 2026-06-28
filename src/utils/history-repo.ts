@@ -27,7 +27,9 @@ export function addEntry(entry: HistoryEntry): void {
   while (entries.length > HISTORY_MAX_ENTRIES) {
     let oldestIdx = 0;
     for (let i = 1; i < entries.length; i++) {
-      if (entries[i].createdAt < entries[oldestIdx].createdAt) {
+      const current = entries[i];
+      const oldest = entries[oldestIdx];
+      if (current && oldest && current.createdAt < oldest.createdAt) {
         oldestIdx = i;
       }
     }

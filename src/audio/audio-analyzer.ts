@@ -26,7 +26,7 @@
  */
 
 import type { EventBus } from '../core/event-bus';
-import type { EventMap } from '../types';
+import type { AnalyserByteData, EventMap } from '../types';
 
 /** Analysis configuration with sensible defaults for speech. */
 export interface AnalyzerConfig {
@@ -55,7 +55,7 @@ export class AudioAnalyzer {
   private audioContext: AudioContext | null = null;
   private analyserNode: AnalyserNode | null = null;
   private sourceNode: MediaStreamAudioSourceNode | null = null;
-  private timeDomainData: Uint8Array | null = null;
+  private timeDomainData: AnalyserByteData | null = null;
   private animationFrame: number | null = null;
   private sampleTimer: ReturnType<typeof setInterval> | null = null;
   private consecutiveSilenceCount = 0;
@@ -94,10 +94,9 @@ export class AudioAnalyzer {
     this.consecutiveSilenceCount = 0;
 
     this.sampleTimer = setInterval(() => {
-      // TS 6.0 uses generic Uint8Array<ArrayBuffer>; standard TS does not.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      this.analyserNode!.getByteTimeDomainData(this.timeDomainData! as any);
-      const rms = this.computeRMS(this.timeDomainData!);
+      if (!this.analyserNode || !this.timeDomainData) return;
+      this.analyserNode.getByteTimeDomainData(this.timeDomainData);
+      const rms = this.computeRMS(this.timeDomainData);
 
       this.bus.emit('recording:level', rms);
 
@@ -134,9 +133,7 @@ export class AudioAnalyzer {
    */
   getWaveformData(): Uint8Array | null {
     if (!this.analyserNode || !this.timeDomainData) return null;
-    // TS 6.0 uses generic Uint8Array<ArrayBuffer>; standard TS does not.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    this.analyserNode.getByteTimeDomainData(this.timeDomainData as any);
+    this.analyserNode.getByteTimeDomainData(this.timeDomainData);
     return new Uint8Array(this.timeDomainData);
   }
 
@@ -150,7 +147,7 @@ export class AudioAnalyzer {
     this.sourceNode = null;
     this.analyserNode = null;
     if (this.audioContext?.state !== 'closed') {
-      this.audioContext?.close();
+      void this.audioContext?.close();
     }
     this.audioContext = null;
     this.timeDomainData = null;
@@ -170,7 +167,9 @@ export class AudioAnalyzer {
   private computeRMS(data: Uint8Array): number {
     let sum = 0;
     for (let i = 0; i < data.length; i++) {
-      const sample = (data[i] - 128) / 128;
+      const value = data[i];
+      if (value === undefined) break;
+      const sample = (value - 128) / 128;
       sum += sample * sample;
     }
     return Math.sqrt(sum / data.length);

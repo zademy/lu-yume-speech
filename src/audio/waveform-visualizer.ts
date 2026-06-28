@@ -18,6 +18,8 @@
  * ```
  */
 
+import type { AnalyserByteData } from '../types';
+
 /** Visual style configuration for the waveform. */
 export interface WaveformStyle {
   /** Bar fill — single color or linear gradient stops */
@@ -54,7 +56,7 @@ export class WaveformVisualizer {
   private readonly style: WaveformStyle;
   private animationFrame: number | null = null;
   private analyserSource: AnalyserNode | null = null;
-  private dataArray: Uint8Array | null = null;
+  private dataArray: AnalyserByteData | null = null;
   /** Cached logical (CSS-pixel) dimensions — refreshed by syncSize() */
   private logicalWidth = 0;
   private logicalHeight = 0;
@@ -77,9 +79,7 @@ export class WaveformVisualizer {
 
     const loop = (): void => {
       if (!this.analyserSource || !this.dataArray) return;
-      // TS 6.0 uses generic Uint8Array<ArrayBuffer>; standard TS does not.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      this.analyserSource.getByteTimeDomainData(this.dataArray as any);
+      this.analyserSource.getByteTimeDomainData(this.dataArray);
       this.draw(this.dataArray);
       this.animationFrame = requestAnimationFrame(loop);
     };
@@ -186,7 +186,8 @@ export class WaveformVisualizer {
       const startIdx = i * samplesPerBar;
       const endIdx = Math.min(startIdx + samplesPerBar, data.length);
       for (let j = startIdx; j < endIdx; j++) {
-        sum += Math.abs(data[j] - 128);
+        const value = data[j];
+        if (value !== undefined) sum += Math.abs(value - 128);
       }
       const avg = sum / (endIdx - startIdx); // 0–127
       // Non-linear easing so quiet input still shows visible motion.

@@ -20,6 +20,10 @@
  *      modifying existing consumers.
  */
 
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access --
+   Task 9 replaces response parsing with Zod schema validation, which will
+   eliminate all unsafe-any usage in this file. Suppressing until then. */
+
 import type { EventBus } from '../core/event-bus';
 import type { EventMap, TranscriptionOptions, TranscriptionResult } from '../types';
 
@@ -167,7 +171,7 @@ export class GroqClient {
    * 3. Interactive prompt (stored in session for reuse)
    */
   private resolveApiKey(): string {
-    const envKey = import.meta.env.VITE_GROQ_API_KEY as string | undefined;
+    const envKey: string | undefined = import.meta.env.VITE_GROQ_API_KEY;
     if (envKey && envKey !== 'TU_API_KEY_AQUI') return envKey;
 
     const stored = sessionStorage.getItem('groq_api_key');

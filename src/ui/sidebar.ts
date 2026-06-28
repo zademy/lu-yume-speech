@@ -171,7 +171,7 @@ export function createSidebar(
  */
 export function populateEntries(elements: SidebarElements, entries: HistoryEntry[]): void {
   const cards = elements.list.querySelectorAll('[data-history-card]');
-  cards.forEach((c) => c.remove());
+  cards.forEach((c) => { c.remove(); });
   elements.emptyState.classList.toggle('hidden', entries.length > 0);
 
   for (const entry of entries) {
@@ -232,7 +232,7 @@ export function removeCard(elements: SidebarElements, id: string): void {
  */
 export function clearCards(elements: SidebarElements): void {
   const cards = elements.list.querySelectorAll('[data-history-card]');
-  cards.forEach((c) => c.remove());
+  cards.forEach((c) => { c.remove(); });
   elements.emptyState.classList.remove('hidden');
   elements.countDisplay.textContent = '0';
 }
