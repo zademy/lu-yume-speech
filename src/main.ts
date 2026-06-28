@@ -41,6 +41,23 @@ import { copyToClipboard } from './utils/clipboard';
 // Bootstrap
 // ===========================================================================
 
+/**
+ * Resolve the API key with a three-tier strategy.
+ * TODO(Task 12): Replace with platform bridge (Tauri keychain / Web fallback).
+ */
+function resolveApiKey(): string {
+  const envKey: string | undefined = import.meta.env.VITE_GROQ_API_KEY as string | undefined;
+  if (envKey && envKey !== 'TU_API_KEY_AQUI') return envKey;
+  const stored = sessionStorage.getItem('groq_api_key');
+  if (stored) return stored;
+  const key = prompt('Ingresa tu Groq API Key:')?.trim();
+  if (key) {
+    sessionStorage.setItem('groq_api_key', key);
+    return key;
+  }
+  return '';
+}
+
 async function main(): Promise<void> {
   const bus = new EventBus<EventMap>();
 
@@ -94,7 +111,8 @@ async function main(): Promise<void> {
   const recorder = new Recorder(bus);
   const analyzer = new AudioAnalyzer(bus);
   const timer = new RecordingTimer(bus);
-  const client = new GroqClient(bus);
+  const apiKey = resolveApiKey();
+  const client = new GroqClient(bus, apiKey);
   const visualizer = new WaveformVisualizer(elements.waveformCanvas);
 
   // Microphone access — reuse the same stream for both recorder and analyzer
@@ -217,7 +235,9 @@ function wireTranscriptionPipeline(
     const options: TranscriptionOptions = readTranscriptionOptions(elements);
     const mode = readOperationMode(elements);
     const endpoint = mode === 'translate' ? 'translations' : 'transcriptions';
-    void client.transcribe(blob, options, endpoint);
+    void client.transcribe(blob, options, endpoint).catch(() => {
+      // Error already emitted on the bus via transcription:error
+    });
     setStatus(elements, { message: `Procesando con ${options.model}...`, level: 'processing' });
   });
 

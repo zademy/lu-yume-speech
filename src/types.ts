@@ -319,3 +319,35 @@ export class MicNotSupportedError extends Error {
     this.name = 'MicNotSupportedError';
   }
 }
+
+// ---------------------------------------------------------------------------
+// Groq API errors
+// ---------------------------------------------------------------------------
+
+/** Discriminated union of all Groq API failure modes. */
+export type GroqError =
+  | ({ kind: 'auth' } & ErrorPayload)
+  | ({ kind: 'rate-limit'; retryAfterMs?: number } & ErrorPayload)
+  | ({ kind: 'network' } & ErrorPayload)
+  | ({ kind: 'parse' } & ErrorPayload)
+  | ({ kind: 'server'; status: number } & ErrorPayload);
+
+interface ErrorPayload {
+  message: string;
+  cause?: unknown;
+}
+
+/**
+ * Typed error thrown by `GroqClient.transcribe()`.
+ * Also emitted on the event bus as `transcription:error`
+ * (satisfies `EventMap['transcription:error']: Error`).
+ */
+export class GroqApiError extends Error {
+  readonly detail: GroqError;
+  constructor(detail: GroqError) {
+    super(detail.message);
+    this.name = 'GroqApiError';
+    this.detail = detail;
+    if (detail.cause !== undefined) this.cause = detail.cause;
+  }
+}

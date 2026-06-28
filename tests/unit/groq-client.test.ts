@@ -1,0 +1,107 @@
+// @vitest-environment node
+import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
+import { setupServer } from 'msw/node';
+import { http, HttpResponse } from 'msw';
+import { handlers } from '../helpers/msw-handlers';
+import { GroqClient } from '../../src/api/groq-client';
+import { GroqApiError } from '../../src/types';
+import { EventBus } from '../../src/core/event-bus';
+import type { EventMap, TranscriptionOptions } from '../../src/types';
+
+const server = setupServer(...handlers);
+beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+afterEach(() => server.resetHandlers());
+afterAll(() => server.close());
+
+function createClient(apiKey: string): GroqClient {
+  const bus = new EventBus<EventMap>();
+  return new GroqClient(bus, apiKey);
+}
+
+const opts: TranscriptionOptions = {
+  model: 'whisper-large-v3-turbo',
+  language: 'es',
+  temperature: 0,
+  responseFormat: 'json',
+};
+
+const blob = () => new Blob(['audio'], { type: 'audio/webm' });
+
+describe('GroqClient', () => {
+  it('returns parsed text on 200', async () => {
+    const client = createClient('gsk_test-key');
+    const result = await client.transcribe(blob(), opts);
+    expect(result.text).toBe('hello world');
+  });
+
+  it('throws GroqApiError kind=auth on 401', async () => {
+    const client = createClient('invalid');
+    await expect(client.transcribe(blob(), opts)).rejects.toMatchObject({
+      detail: { kind: 'auth' },
+    });
+  });
+
+  it('throws GroqApiError kind=network when no API key', async () => {
+    const client = createClient('');
+    await expect(client.transcribe(blob(), opts)).rejects.toMatchObject({
+      detail: { kind: 'auth' },
+    });
+  });
+
+  it('aborts when external signal fires', async () => {
+    server.use(
+      http.post('https://api.groq.com/openai/v1/audio/transcriptions', async () => {
+        await new Promise((r) => setTimeout(r, 5000));
+        return HttpResponse.json({ text: 'late' });
+      }),
+    );
+    const ctrl = new AbortController();
+    const client = createClient('gsk_test-key');
+    setTimeout(() => ctrl.abort(), 50);
+    await expect(
+      client.transcribe(blob(), opts, 'transcriptions', ctrl.signal),
+    ).rejects.toMatchObject({
+      detail: { kind: 'network' },
+    });
+  });
+
+  it('retries 429 then succeeds', async () => {
+    let attempts = 0;
+    server.use(
+      http.post('https://api.groq.com/openai/v1/audio/transcriptions', () => {
+        attempts++;
+        if (attempts < 3) {
+          return HttpResponse.json(
+            { error: { message: 'rate' } },
+            { status: 429, headers: { 'Retry-After': '0' } },
+          );
+        }
+        return HttpResponse.json({ text: 'ok' });
+      }),
+    );
+    const client = createClient('gsk_test-key');
+    const result = await client.transcribe(blob(), opts);
+    expect(result.text).toBe('ok');
+    expect(attempts).toBe(3);
+  });
+
+  it('emits transcription:error on the bus when throwing', async () => {
+    const bus = new EventBus<EventMap>();
+    const client = new GroqClient(bus, 'invalid');
+    const errors: Error[] = [];
+    bus.on('transcription:error', (e: Error) => errors.push(e));
+    await expect(client.transcribe(blob(), opts)).rejects.toThrow();
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toBeInstanceOf(GroqApiError);
+  });
+
+  it('emits transcription:start and transcription:success on happy path', async () => {
+    const bus = new EventBus<EventMap>();
+    const client = new GroqClient(bus, 'gsk_test-key');
+    const events: string[] = [];
+    bus.on('transcription:start', () => events.push('start'));
+    bus.on('transcription:success', () => events.push('success'));
+    await client.transcribe(blob(), opts);
+    expect(events).toEqual(['start', 'success']);
+  });
+});

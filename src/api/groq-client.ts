@@ -4,28 +4,26 @@
  * Handles all HTTP communication with the Groq speech-to-text API.
  * Supports both transcription (same language) and translation (to English).
  *
+ * Features:
+ * - 30s request timeout via AbortController
+ * - Automatic retry on 429 / 503 / 504 (max 3, exponential backoff + jitter)
+ * - External AbortSignal support for user-initiated cancellation
+ * - Zod schema validation of the API response
+ * - Typed error union (`GroqError`) surfaced via `GroqApiError`
+ *
  * Responsibilities (SRP — one reason to change: Groq API contract):
  * - Build and send multipart form requests
  * - Authenticate with API key
  * - Parse responses into typed objects
  * - Surface HTTP and network errors through the event bus
  *
- * It does NOT know about:
- * - Audio recording (that's Recorder)
- * - UI state (that's the renderer)
- * - Keyboard shortcuts (that's keyboard.ts)
- *
  * DIP: Depends on EventBus abstraction, not on concrete consumers.
- * OCP: New API parameters can be added to TranscriptionOptions without
- *      modifying existing consumers.
  */
 
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access --
-   Task 9 replaces response parsing with Zod schema validation, which will
-   eliminate all unsafe-any usage in this file. Suppressing until then. */
-
+import { z } from 'zod';
 import type { EventBus } from '../core/event-bus';
-import type { EventMap, TranscriptionOptions, TranscriptionResult } from '../types';
+import type { EventMap, GroqError, TranscriptionOptions, TranscriptionResult } from '../types';
+import { GroqApiError } from '../types';
 
 /** Groq API base URL (OpenAI-compatible). */
 const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
@@ -33,13 +31,31 @@ const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
 /** Audio endpoints supported by Groq. */
 type AudioEndpoint = 'transcriptions' | 'translations';
 
+/** Request timeout in milliseconds. */
+const TIMEOUT_MS = 30_000;
+/** Maximum retry attempts for transient failures. */
+const MAX_RETRIES = 3;
+/** HTTP status codes eligible for retry. */
+const RETRYABLE = new Set([429, 503, 504]);
+
+/** Zod schema for the Groq transcription response. */
+const TRANSCRIPTION_SCHEMA = z
+  .object({
+    text: z.string().default(''),
+    language: z.string().optional(),
+    duration: z.number().optional(),
+    segments: z.array(z.any()).optional(),
+    words: z.array(z.any()).optional(),
+  })
+  .passthrough();
+
 export class GroqClient {
   private readonly bus: EventBus<EventMap>;
-  private apiKey: string;
+  private readonly apiKey: string;
 
-  constructor(bus: EventBus<EventMap>) {
+  constructor(bus: EventBus<EventMap>, apiKey: string) {
     this.bus = bus;
-    this.apiKey = this.resolveApiKey();
+    this.apiKey = apiKey;
   }
 
   /**
@@ -48,49 +64,121 @@ export class GroqClient {
    * Emits `transcription:start`, then either `transcription:success`
    * or `transcription:error` through the event bus.
    *
-   * @param audioBlob - Recorded audio data
-   * @param options   - Transcription parameters
-   * @param endpoint  - 'transcriptions' (same language) or 'translations' (→ English)
+   * @returns The parsed transcription result.
+   * @throws {GroqApiError} on any failure (auth, rate-limit, network, parse, server).
    */
   async transcribe(
-    audioBlob: Blob,
+    blob: Blob,
     options: TranscriptionOptions,
     endpoint: AudioEndpoint = 'transcriptions',
-  ): Promise<void> {
+    externalSignal?: AbortSignal,
+  ): Promise<TranscriptionResult> {
     if (!this.apiKey) {
-      this.bus.emit('status:change', {
-        message: 'Configura tu API Key en .env',
-        level: 'warning',
+      throw this.fail({
+        kind: 'auth',
+        message: 'Falta la API key de Groq. Configúrala desde Ajustes.',
       });
-      return;
     }
 
+    const url = `${GROQ_BASE_URL}/audio/${endpoint}`;
     this.bus.emit('transcription:start', options.model);
     this.bus.emit('status:change', {
       message: `Procesando con ${options.model}...`,
       level: 'processing',
     });
 
-    const formData = this.buildFormData(audioBlob, options);
-
-    try {
-      const response = await fetch(`${GROQ_BASE_URL}/audio/${endpoint}`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${this.apiKey}` },
-        body: formData,
-      });
-
-      if (!response.ok) {
-        await this.handleHttpError(response);
-        return;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+      if (externalSignal) {
+        if (externalSignal.aborted) ctrl.abort();
+        else externalSignal.addEventListener('abort', () => ctrl.abort(), { once: true });
       }
 
-      const result = await this.parseResponse(response, options.responseFormat);
-      this.bus.emit('transcription:success', result);
-    } catch (error) {
-      const err = error instanceof Error ? error : new Error(String(error));
-      this.bus.emit('transcription:error', err);
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${this.apiKey}` },
+          body: this.buildFormData(blob, options, endpoint),
+          signal: ctrl.signal,
+        });
+
+        if (res.ok) {
+          const rawData: unknown = await res.json().catch(() => ({}));
+          const parsed = TRANSCRIPTION_SCHEMA.safeParse(rawData);
+          if (!parsed.success) {
+            throw this.fail({
+              kind: 'parse',
+              message: 'Respuesta inesperada del servidor.',
+              cause: parsed.error,
+            });
+          }
+          const result: TranscriptionResult = {
+            text: parsed.data.text,
+            language: parsed.data.language,
+            duration: parsed.data.duration,
+            segments: parsed.data.segments,
+            words: parsed.data.words,
+          };
+          this.bus.emit('transcription:success', result);
+          return result;
+        }
+
+        const status = res.status;
+        const body: unknown = await res.json().catch(() => ({}));
+        const apiMsg =
+          typeof body === 'object' &&
+          body !== null &&
+          'error' in body &&
+          typeof (body as { error?: { message?: unknown } }).error?.message === 'string'
+            ? (body as { error: { message: string } }).error.message
+            : undefined;
+        const msg = apiMsg ?? `HTTP ${status}`;
+
+        if (RETRYABLE.has(status) && attempt < MAX_RETRIES) {
+          const retryAfter = Number(res.headers.get('Retry-After') ?? 0);
+          const backoff = (retryAfter || 2 ** attempt) * 1000;
+          const jitter = Math.random() * 250;
+          await new Promise((r) => setTimeout(r, backoff + jitter));
+          continue;
+        }
+
+        const kind: GroqError['kind'] =
+          status === 401 || status === 403
+            ? 'auth'
+            : status === 429
+              ? 'rate-limit'
+              : status >= 500
+                ? 'server'
+                : 'network';
+        const err: GroqError =
+          kind === 'rate-limit'
+            ? {
+                kind,
+                message: msg,
+                retryAfterMs: Number(res.headers.get('Retry-After') ?? 0) * 1000,
+              }
+            : kind === 'server'
+              ? { kind, message: msg, status }
+              : { kind, message: msg };
+        throw this.fail(err);
+      } catch (e) {
+        if (e instanceof GroqApiError) throw e;
+        if (e instanceof DOMException && e.name === 'AbortError') {
+          if (externalSignal?.aborted) {
+            throw this.fail({ kind: 'network', message: 'Transcripción cancelada.', cause: e });
+          }
+          if (attempt < MAX_RETRIES) continue;
+          throw this.fail({ kind: 'network', message: 'Tiempo de espera agotado.', cause: e });
+        }
+        throw this.fail({ kind: 'network', message: 'Error de red.', cause: e });
+      } finally {
+        clearTimeout(timeout);
+      }
     }
+
+    // Unreachable — loop either returns or throws
+    throw this.fail({ kind: 'network', message: 'Reintentos agotados.' });
   }
 
   // -----------------------------------------------------------------------
@@ -101,12 +189,18 @@ export class GroqClient {
    * Build the multipart form payload for the API request.
    * Only appends parameters that have values — avoids sending empty strings.
    */
-  private buildFormData(blob: Blob, options: TranscriptionOptions): FormData {
+  private buildFormData(
+    blob: Blob,
+    options: TranscriptionOptions,
+    endpoint: AudioEndpoint,
+  ): FormData {
     const form = new FormData();
     form.append('file', blob, 'audio.webm');
     form.append('model', options.model);
 
-    if (options.language) form.append('language', options.language);
+    if (options.language && endpoint === 'transcriptions') {
+      form.append('language', options.language);
+    }
     if (options.prompt) form.append('prompt', options.prompt);
     if (options.temperature !== undefined) form.append('temperature', String(options.temperature));
     if (options.responseFormat && options.responseFormat !== 'json') {
@@ -122,67 +216,11 @@ export class GroqClient {
   }
 
   /**
-   * Parse the raw API response into a TranscriptionResult.
-   * Handles both text and JSON response formats.
+   * Emit the error on the bus and return a `GroqApiError` for the caller to throw.
    */
-  private async parseResponse(response: Response, format?: string): Promise<TranscriptionResult> {
-    if (format === 'text') {
-      const text = await response.text();
-      return { text };
-    }
-
-    const data = await response.json();
-
-    return {
-      text: data.text ?? '',
-      language: data.language,
-      duration: data.duration,
-      segments: data.segments,
-      words: data.words,
-    };
-  }
-
-  /**
-   * Convert HTTP error responses into user-friendly error messages.
-   */
-  private async handleHttpError(response: Response): Promise<void> {
-    let message = `Error HTTP ${response.status}`;
-
-    try {
-      const data = await response.json();
-      message = data.error?.message || message;
-    } catch {
-      // Response body is not JSON — keep the default message
-    }
-
-    if (response.status === 429) {
-      message = 'Rate limit alcanzado. Espera un momento e intenta de nuevo.';
-    } else if (response.status === 401) {
-      message = 'API Key inválida. Verifica tu configuración.';
-    }
-
-    this.bus.emit('transcription:error', new Error(message));
-  }
-
-  /**
-   * Resolve the API key with a three-tier strategy:
-   * 1. Vite env variable (VITE_GROQ_API_KEY in .env)
-   * 2. Session storage (survives page reloads within the session)
-   * 3. Interactive prompt (stored in session for reuse)
-   */
-  private resolveApiKey(): string {
-    const envKey: string | undefined = import.meta.env.VITE_GROQ_API_KEY;
-    if (envKey && envKey !== 'TU_API_KEY_AQUI') return envKey;
-
-    const stored = sessionStorage.getItem('groq_api_key');
-    if (stored) return stored;
-
-    const key = prompt('Ingresa tu Groq API Key:')?.trim();
-    if (key) {
-      sessionStorage.setItem('groq_api_key', key);
-      return key;
-    }
-
-    return '';
+  private fail(detail: GroqError): GroqApiError {
+    const error = new GroqApiError(detail);
+    this.bus.emit('transcription:error', error);
+    return error;
   }
 }
