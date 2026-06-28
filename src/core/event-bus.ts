@@ -43,7 +43,9 @@ export class EventBus<TEventMap extends Record<string, any>> {
     }
     set.add(listener as Listener<unknown>);
 
-    return () => { this.off(event, listener); };
+    return () => {
+      this.off(event, listener);
+    };
   }
 
   /**

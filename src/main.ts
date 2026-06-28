@@ -36,30 +36,33 @@ import * as historyRepo from './utils/history-repo';
 import { registerKeyboardShortcuts } from './utils/keyboard';
 import { readTranscriptionOptions, readOperationMode } from './utils/settings';
 import { copyToClipboard } from './utils/clipboard';
+import { detectPlatform } from './platform/platform';
 
 // ===========================================================================
 // Bootstrap
 // ===========================================================================
 
-/**
- * Resolve the API key with a three-tier strategy.
- * TODO(Task 12): Replace with platform bridge (Tauri keychain / Web fallback).
- */
-function resolveApiKey(): string {
-  const envKey: string | undefined = import.meta.env.VITE_GROQ_API_KEY as string | undefined;
-  if (envKey && envKey !== 'TU_API_KEY_AQUI') return envKey;
-  const stored = sessionStorage.getItem('groq_api_key');
-  if (stored) return stored;
-  const key = prompt('Ingresa tu Groq API Key:')?.trim();
-  if (key) {
-    sessionStorage.setItem('groq_api_key', key);
-    return key;
+async function main(): Promise<void> {
+  try {
+    await bootstrap();
+  } catch (err) {
+    console.error('[App] Fatal error during initialization:', err);
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<div role="alert" style="position:fixed;bottom:1rem;right:1rem;background:#dc2626;color:#fff;padding:1rem;border-radius:8px;z-index:9999;font-family:sans-serif">No se pudo iniciar la app. Revisa la consola.</div>',
+    );
   }
-  return '';
 }
 
-async function main(): Promise<void> {
+async function bootstrap(): Promise<void> {
   const bus = new EventBus<EventMap>();
+
+  // Platform bridge — desktop (Tauri keychain) or web (localStorage fallback)
+  const platform = await detectPlatform();
+  const apiKey = await platform.getApiKey();
+  if (!apiKey) {
+    console.warn('[App] No Groq API key configured. Transcription will fail until set.');
+  }
 
   const elements = renderApp();
 
@@ -111,8 +114,7 @@ async function main(): Promise<void> {
   const recorder = new Recorder(bus);
   const analyzer = new AudioAnalyzer(bus);
   const timer = new RecordingTimer(bus);
-  const apiKey = resolveApiKey();
-  const client = new GroqClient(bus, apiKey);
+  const client = new GroqClient(bus, apiKey ?? '');
   const visualizer = new WaveformVisualizer(elements.waveformCanvas);
 
   // Microphone access — reuse the same stream for both recorder and analyzer
@@ -129,9 +131,8 @@ async function main(): Promise<void> {
   // Canvas sizing
   visualizer.syncSize();
   visualizer.drawIdle();
-  window.addEventListener('resize', () => {
-    visualizer.syncSize();
-  });
+  const onResize = () => visualizer.syncSize();
+  window.addEventListener('resize', onResize);
 
   // Wire everything through the event bus
   wireTranscriptionPipeline(bus, client, elements, sidebar);
@@ -152,8 +153,12 @@ async function main(): Promise<void> {
 
   window.addEventListener('unload', () => {
     cleanup();
+    window.removeEventListener('resize', onResize);
+    visualizer.stop();
+    timer.dispose();
     analyzer.dispose();
     recorder.dispose();
+    bus.clear();
   });
 }
 
@@ -428,6 +433,12 @@ function formatDuration(totalSeconds: number): string {
 // Start
 // ===========================================================================
 
-main().catch((error: unknown) => {
-  console.error('[App] Fatal error during initialization:', error);
+window.addEventListener('error', (e) => {
+  console.error('[window error]', e.error);
 });
+
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('[unhandled rejection]', e.reason);
+});
+
+void main();

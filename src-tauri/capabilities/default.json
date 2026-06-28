@@ -8,6 +8,12 @@
     "shell:allow-open",
     "dialog:allow-open",
     "dialog:allow-save",
-    "event:default"
+    "event:default",
+    "fs:allow-read-file",
+    "fs:allow-write-file",
+    {
+      "identifier": "fs:scope",
+      "allow": [{ "path": "$APPDATA/lu-yume/*" }, { "path": "$APPCONFIG/lu-yume/*" }]
+    }
   ]
 }
