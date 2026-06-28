@@ -27,10 +27,30 @@ describe('storage wrapper', () => {
   });
 
   it('save swallows quota errors gracefully (does not throw)', () => {
-    const spy = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+    const spy = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
       throw new DOMException('quota', 'QuotaExceededError');
     });
     expect(() => save('k', 'v')).not.toThrow();
     spy.mockRestore();
+  });
+
+  it('save logs a console.warn on quota error', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const setSpy = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota', 'QuotaExceededError');
+    });
+    save('k', 'v');
+    expect(warnSpy).toHaveBeenCalled();
+    expect(warnSpy.mock.calls[0]?.[0]).toMatch(/quota|storage/i);
+    setSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
+
+  it('load logs a console.warn on corrupt JSON', () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    localStorage.setItem('stt_bad', '{not json');
+    load('bad', null);
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
   });
 });

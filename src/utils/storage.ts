@@ -16,11 +16,13 @@ const PREFIX = 'stt_';
  * Returns `defaultValue` when the key is missing or parsing fails.
  */
 export function load<T>(key: string, defaultValue: T): T {
+  const fullKey = PREFIX + key;
   try {
-    const raw = localStorage.getItem(PREFIX + key);
+    const raw = localStorage.getItem(fullKey);
     if (raw === null) return defaultValue;
     return JSON.parse(raw) as T;
-  } catch {
+  } catch (err) {
+    console.warn(`[storage] failed to parse "${fullKey}":`, err);
     return defaultValue;
   }
 }
@@ -30,10 +32,15 @@ export function load<T>(key: string, defaultValue: T): T {
  * Silently fails when storage is unavailable or full.
  */
 export function save(key: string, value: unknown): void {
+  const fullKey = PREFIX + key;
   try {
-    localStorage.setItem(PREFIX + key, JSON.stringify(value));
-  } catch {
-    // Storage full or unavailable — non-critical, ignore gracefully
+    localStorage.setItem(fullKey, JSON.stringify(value));
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'QuotaExceededError') {
+      console.warn(`[storage] quota exceeded writing "${fullKey}"`);
+    } else {
+      console.warn(`[storage] unexpected error writing "${fullKey}":`, err);
+    }
   }
 }
 
