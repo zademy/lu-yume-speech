@@ -291,3 +291,60 @@ body {
 .animate-slide-up-fade {
   animation: slide-up-fade 280ms cubic-bezier(0.4, 0, 0.2, 1) both;
 }
+
+/* =========================================================================
+   Recording state — waveform container + REC indicator
+   ========================================================================= */
+
+/* Animated gradient border glow when recording */
+@keyframes recording-glow {
+  0%,
+  100% {
+    border-color: rgba(20, 184, 166, 0.4);
+    box-shadow:
+      0 0 0 1px rgba(20, 184, 166, 0.15),
+      0 0 20px rgba(20, 184, 166, 0.12),
+      var(--shadow-card);
+  }
+  50% {
+    border-color: rgba(249, 115, 22, 0.5);
+    box-shadow:
+      0 0 0 1px rgba(249, 115, 22, 0.2),
+      0 0 28px rgba(249, 115, 22, 0.18),
+      var(--shadow-card);
+  }
+}
+
+.waveform-container.recording-active {
+  animation: recording-glow 2.5s ease-in-out infinite;
+}
+
+/* REC indicator — fade in when recording, with pulsing red dot */
+.rec-indicator {
+  pointer-events: none;
+}
+
+.waveform-container.recording-active .rec-indicator {
+  opacity: 1;
+}
+
+@keyframes rec-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.rec-dot {
+  animation: rec-blink 1.2s ease-in-out infinite;
+}
+
+/* Spinner for loading states */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

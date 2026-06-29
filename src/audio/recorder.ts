@@ -22,7 +22,7 @@
 
 import type { EventBus } from '../core/event-bus';
 import type { EventMap } from '../types';
-import { AUDIO_MIME_TYPES } from '../types';
+import { AUDIO_MIME_TYPES, MicNotSupportedError } from '../types';
 
 /** Optimal audio constraints for speech recognition. */
 const DEFAULT_CONSTRAINTS: MediaStreamConstraints = {
@@ -30,7 +30,7 @@ const DEFAULT_CONSTRAINTS: MediaStreamConstraints = {
     echoCancellation: true,
     noiseSuppression: true,
     autoGainControl: true,
-  } as MediaTrackConstraints,
+  },
 };
 
 export class Recorder {
@@ -56,10 +56,26 @@ export class Recorder {
    * @throws Error if the user denies microphone permission.
    */
   async init(constraints: MediaStreamConstraints = DEFAULT_CONSTRAINTS): Promise<MediaStream> {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- navigator.mediaDevices is typed as always-present but is undefined on insecure (HTTP non-localhost) contexts
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      throw new MicNotSupportedError();
+    }
     this.stream = await navigator.mediaDevices.getUserMedia(constraints);
     this.mimeType = this.detectMimeType();
     this.mediaRecorder = this.buildRecorder(this.stream);
     return this.stream;
+  }
+
+  /**
+   * Switch the recording target to a processed MediaStream.
+   * Used when an AudioProcessor cleans the audio before capture.
+   * Rebuilds the internal MediaRecorder on the new stream.
+   */
+  setRecordingStream(stream: MediaStream): void {
+    if (this.mediaRecorder?.state === 'recording') {
+      this.mediaRecorder.stop();
+    }
+    this.mediaRecorder = this.buildRecorder(stream);
   }
 
   /**
@@ -100,7 +116,9 @@ export class Recorder {
     if (this.mediaRecorder && this.mediaRecorder.state === 'recording') {
       this.mediaRecorder.stop();
     }
-    this.stream?.getTracks().forEach((track) => track.stop());
+    this.stream?.getTracks().forEach((track) => {
+      track.stop();
+    });
     this.stream = null;
     this.mediaRecorder = null;
   }

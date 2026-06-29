@@ -18,23 +18,31 @@ export function getAll(): HistoryEntry[] {
   return entries.sort((a, b) => b.createdAt - a.createdAt);
 }
 
-/** Add a new entry. Evicts the oldest entry if the cap is exceeded. */
-export function addEntry(entry: HistoryEntry): void {
+/** Add a new entry. Evicts the oldest entries if the cap is exceeded.
+ *  Returns the IDs of evicted entries (for cascading audio cleanup). */
+export function addEntry(entry: HistoryEntry): string[] {
   const entries = load<HistoryEntry[]>(HISTORY_ENTRIES_KEY, []);
   entries.push(entry);
+
+  const evictedIds: string[] = [];
 
   // FIFO eviction — remove oldest entries beyond the cap
   while (entries.length > HISTORY_MAX_ENTRIES) {
     let oldestIdx = 0;
     for (let i = 1; i < entries.length; i++) {
-      if (entries[i].createdAt < entries[oldestIdx].createdAt) {
+      const current = entries[i];
+      const oldest = entries[oldestIdx];
+      if (current && oldest && current.createdAt < oldest.createdAt) {
         oldestIdx = i;
       }
     }
+    const evicted = entries[oldestIdx];
+    if (evicted) evictedIds.push(evicted.id);
     entries.splice(oldestIdx, 1);
   }
 
   save(HISTORY_ENTRIES_KEY, entries);
+  return evictedIds;
 }
 
 /** Remove a single entry by ID. Returns true if found and removed. */

@@ -18,7 +18,7 @@
 
 import { load, save } from './storage';
 
-const STORAGE_KEY = 'theme';
+export const STORAGE_KEY = 'theme';
 
 type Theme = 'light' | 'dark' | 'system';
 
@@ -100,7 +100,9 @@ export class ThemeManager {
    */
   init(): void {
     this.apply(this.current);
-    this.toggleBtn.addEventListener('click', () => this.toggle());
+    this.toggleBtn.addEventListener('click', () => {
+      this.toggle();
+    });
   }
 
   /**

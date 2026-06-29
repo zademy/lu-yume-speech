@@ -10,6 +10,7 @@
 
 import type { HistoryEntry } from '../types';
 import { timeAgo } from '../utils/time-ago';
+import * as audioStore from '../audio/audio-store';
 
 /**
  * Create a history card DOM element for a given entry.
@@ -84,13 +85,46 @@ export function createHistoryCard(
   time.textContent = timeAgo(entry.createdAt);
   meta.appendChild(time);
 
-  // Delete button (visible on hover/focus-within)
-  const deleteBtn = document.createElement('button');
-  deleteBtn.className = [
-    'absolute top-2 right-2',
+  // Action buttons container (top-right, hover-revealed)
+  const actions = document.createElement('div');
+  actions.className =
+    'absolute top-1.5 right-1.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-[var(--transition-fast)]';
+
+  // Play button — toggles inline audio player
+  const playBtn = document.createElement('button');
+  playBtn.className = [
     'p-1.5 rounded-md',
     'text-[var(--color-text-muted)]',
-    'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100',
+    'hover:text-[var(--color-primary)]',
+    'hover:bg-[var(--color-surface-muted)]',
+    'active:scale-90',
+    'transition-all duration-[var(--transition-fast)]',
+    'cursor-pointer',
+  ].join(' ');
+  playBtn.setAttribute('aria-label', 'Reproducir audio');
+  playBtn.setAttribute('title', 'Reproducir');
+  playBtn.appendChild(createPlayIcon());
+
+  // Download button
+  const downloadBtn = document.createElement('button');
+  downloadBtn.className = [
+    'p-1.5 rounded-md',
+    'text-[var(--color-text-muted)]',
+    'hover:text-[var(--color-primary)]',
+    'hover:bg-[var(--color-surface-muted)]',
+    'active:scale-90',
+    'transition-all duration-[var(--transition-fast)]',
+    'cursor-pointer',
+  ].join(' ');
+  downloadBtn.setAttribute('aria-label', 'Descargar audio');
+  downloadBtn.setAttribute('title', 'Descargar audio');
+  downloadBtn.appendChild(createDownloadIcon());
+
+  // Delete button
+  const deleteBtn = document.createElement('button');
+  deleteBtn.className = [
+    'p-1.5 rounded-md',
+    'text-[var(--color-text-muted)]',
     'hover:text-[var(--color-status-error)]',
     'hover:bg-red-50 dark:hover:bg-red-950/50',
     'active:scale-90',
@@ -101,18 +135,97 @@ export function createHistoryCard(
   deleteBtn.setAttribute('title', 'Eliminar');
   deleteBtn.appendChild(createTrashIcon());
 
+  actions.appendChild(playBtn);
+  actions.appendChild(downloadBtn);
+  actions.appendChild(deleteBtn);
+
+  // Inline audio player (hidden by default, shown when play is clicked)
+  let audioEl: HTMLAudioElement | null = null;
+  let currentUrl: string | null = null;
+
+  const cleanupAudio = () => {
+    if (currentUrl) {
+      URL.revokeObjectURL(currentUrl);
+      currentUrl = null;
+    }
+    if (audioEl) {
+      audioEl.remove();
+      audioEl = null;
+    }
+    playBtn.replaceChildren(createPlayIcon());
+  };
+
+  playBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    // Toggle: if playing, stop and remove player
+    if (audioEl) {
+      cleanupAudio();
+      return;
+    }
+    // Load blob from IndexedDB and create audio player
+    playBtn.replaceChildren(createLoadingIcon());
+    try {
+      const clip = await audioStore.get(entry.id);
+      if (!clip) {
+        playBtn.replaceChildren(createPlayIcon());
+        return;
+      }
+      currentUrl = URL.createObjectURL(clip.blob);
+      audioEl = document.createElement('audio');
+      audioEl.controls = true;
+      audioEl.className = 'w-full mt-2';
+      audioEl.src = currentUrl;
+      audioEl.addEventListener('ended', () => {
+        playBtn.replaceChildren(createPlayIcon());
+      });
+      card.appendChild(audioEl);
+      playBtn.replaceChildren(createStopIcon());
+      void audioEl.play();
+    } catch {
+      playBtn.replaceChildren(createPlayIcon());
+    }
+  });
+
+  downloadBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    try {
+      const clip = await audioStore.get(entry.id);
+      if (!clip) return;
+      const url = URL.createObjectURL(clip.blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const ext = clip.mimeType.includes('webm')
+        ? 'webm'
+        : clip.mimeType.includes('ogg')
+          ? 'ogg'
+          : clip.mimeType.includes('mp4')
+            ? 'm4a'
+            : 'audio';
+      a.download = `audio-${new Date(entry.createdAt).toISOString().slice(0, 19).replace(/[:T]/g, '-')}.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      // silent
+    }
+  });
+
   deleteBtn.addEventListener('click', (e) => {
     e.stopPropagation();
+    cleanupAudio();
     onDelete(entry.id);
   });
 
   // Assemble
   card.appendChild(textP);
   card.appendChild(meta);
-  card.appendChild(deleteBtn);
+  card.appendChild(actions);
 
   // Click to restore
-  card.addEventListener('click', () => onRestore(entry.id));
+  card.addEventListener('click', () => {
+    onRestore(entry.id);
+  });
   card.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
@@ -147,6 +260,53 @@ function createBadge(text: string, variant: 'primary' | 'muted' | 'accent'): HTM
 }
 
 function createTrashIcon(): SVGElement {
+  const svg = createSvg();
+  const path1 = svgEl('path', { d: 'M3 6h18' });
+  const path2 = svgEl('path', { d: 'M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6' });
+  const path3 = svgEl('path', { d: 'M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2' });
+  svg.append(path1, path2, path3);
+  return svg;
+}
+
+function createPlayIcon(): SVGElement {
+  const svg = createSvg();
+  svg.append(svgEl('polygon', { points: '5 3 19 12 5 21 5 3' }));
+  return svg;
+}
+
+function createStopIcon(): SVGElement {
+  const svg = createSvg();
+  svg.append(svgEl('rect', { x: 6, y: 6, width: 12, height: 12, rx: 1 }));
+  return svg;
+}
+
+function createDownloadIcon(): SVGElement {
+  const svg = createSvg();
+  svg.append(
+    svgEl('path', { d: 'M21 15v4c0 1-1 2-2 2H5c-1 0-2-1-2-2v-4' }),
+    svgEl('polyline', { points: '7 10 12 15 17 10' }),
+    svgEl('line', { x1: 12, y1: 15, x2: 12, y2: 3 }),
+  );
+  return svg;
+}
+
+function createLoadingIcon(): SVGElement {
+  const svg = createSvg();
+  svg.append(
+    svgEl('line', { x1: 12, y1: 2, x2: 12, y2: 6 }),
+    svgEl('line', { x1: 12, y1: 18, x2: 12, y2: 22 }),
+    svgEl('line', { x1: 4.93, y1: 4.93, x2: 7.76, y2: 7.76 }),
+    svgEl('line', { x1: 16.24, y1: 16.24, x2: 19.07, y2: 19.07 }),
+    svgEl('line', { x1: 2, y1: 12, x2: 6, y2: 12 }),
+    svgEl('line', { x1: 18, y1: 12, x2: 22, y2: 12 }),
+  );
+  svg.style.animation = 'spin 1s linear infinite';
+  return svg;
+}
+
+// --- SVG helpers ---
+
+function createSvg(): SVGElement {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('width', '12');
   svg.setAttribute('height', '12');
@@ -156,16 +316,13 @@ function createTrashIcon(): SVGElement {
   svg.setAttribute('stroke-width', '2');
   svg.setAttribute('stroke-linecap', 'round');
   svg.setAttribute('stroke-linejoin', 'round');
-
-  const path1 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  path1.setAttribute('d', 'M3 6h18');
-  const path2 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  path2.setAttribute('d', 'M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6');
-  const path3 = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  path3.setAttribute('d', 'M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2');
-
-  svg.appendChild(path1);
-  svg.appendChild(path2);
-  svg.appendChild(path3);
   return svg;
+}
+
+function svgEl(tag: string, attrs: Record<string, string | number>): SVGElement {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
+  for (const [key, val] of Object.entries(attrs)) {
+    el.setAttribute(key, String(val));
+  }
+  return el;
 }

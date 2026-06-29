@@ -4,17 +4,16 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| main    | :white_check_mark: |
+| develop | :white_check_mark: |
 
-This project is in early development. Only the latest commit on `main` receives security updates.
+Only the latest commit on `develop` / `main` receives security updates.
 
 ## Reporting a Vulnerability
 
 **Do not file a public issue for security vulnerabilities.**
 
-Instead, use [GitHub's private vulnerability reporting][gh-advisory] for this
-repository. You can find it under the **Security** tab → **Report a
-vulnerability**.
+Use [GitHub's private vulnerability reporting][gh-advisory] for this repository
+(**Security** tab → **Report a vulnerability**).
 
 Please include:
 
@@ -28,28 +27,41 @@ assessment within **5 business days**.
 
 ## Known Security Considerations
 
-This application runs entirely in the browser. Be aware of the following:
+LU YUME is a desktop application built with Tauri 2 (Rust + native WebView).
 
-| Area                  | Detail                                                                                                                                                                                                                             |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **API key**           | The Groq API key is stored in the browser's `localStorage` and sent directly from the client to the Groq API. This key is visible in browser DevTools. Do not expose this project on a shared or public machine with a key loaded. |
-| **No server**         | There is no backend. All data processing happens client-side. No user data is transmitted anywhere except the audio sent to Groq for transcription.                                                                                |
-| **Microphone access** | The browser prompts the user for microphone permission before any audio is captured. No audio is recorded without explicit user consent.                                                                                           |
-| **localStorage**      | Transcription history and user preferences are stored in `localStorage`. This data persists across sessions but never leaves the browser. Clearing browser data removes it entirely.                                               |
+| Area                  | Detail                                                                                                                                                                                                                                                                                                                                       |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **API key storage**   | The Groq API key is stored in the OS-native credential store (macOS Keychain / Windows Credential Manager / Linux Secret Service) via Tauri's `keyring` backend. It is **never** written to `localStorage`, `sessionStorage`, the JS bundle, or disk. See `src-tauri/src/commands/api_key.rs`.                                              |
+| **Web / dev fallback** | When running outside Tauri (pure browser dev mode via `pnpm dev`), a `WebBridge` stores the key in `localStorage` under the `stt_groq_api_key` key. This is a **development convenience only** and is not a supported product path. Do not deploy the web build with a key loaded.                                                          |
+| **No backend**        | There is no backend server. All data processing happens client-side. The only network egress is `https://api.groq.com` (allowlisted in the Content Security Policy).                                                                                                                                                                         |
+| **Content Security Policy** | Enforced by Tauri: `default-src 'self'; connect-src 'self' https://api.groq.com ipc: http://ipc.localhost`. No inline scripts, no eval, no third-party origins. Defined in `src-tauri/tauri.conf.json`.                                                                                                                                |
+| **Microphone access** | The OS prompts the user for microphone permission before any audio is captured. No audio is recorded without explicit user consent.                                                                                                                                                                                                         |
+| **Transcription history** | Stored locally via the platform bridge (settings file on desktop, `localStorage` on web). Never transmitted anywhere except the audio sent to Groq for transcription.                                                                                                                                                                   |
+| **Bundle integrity**  | The previous architecture (`VITE_GROQ_API_KEY` prefix) inlined the key into the JS bundle. This has been removed. The key is now injected at runtime from the keychain — `grep -rn 'gsk_' dist/` returns no real keys.                                                                                                                         |
+
+### Key rotation history
+
+> The key `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`
+> was previously present in a local `.env` file (never committed to git).
+> It has been **revoked** at https://console.groq.com/keys as part of
+> the Tauri migration. If you find this key in any artifact, treat it
+> as compromised and report it immediately.
 
 ## Scope
 
-The following are **in scope** for security reports:
+**In scope:**
 
 - Cross-site scripting (XSS) in the rendered UI.
 - Unauthorized access to the Groq API key from a third-party context.
+- CSP bypass or WebView escape.
 - Manipulation of transcription history or settings via DOM injection.
-- Any vulnerability in the build output that could be exploited in a hosted deployment.
+- Any vulnerability in the Tauri command interface (`src-tauri/src/commands/`).
+- Any vulnerability in the build output that could be exploited in a distributed installer.
 
-The following are **out of scope**:
+**Out of scope:**
 
 - Groq API service outages or vulnerabilities on Groq's side.
-- Browser-level exploits (e.g., compromised browser extensions).
+- Browser / WebView-level exploits (e.g., compromised browser extensions).
 - Denial-of-service attacks against the Groq API triggered from the client.
 - Social engineering attacks.
 

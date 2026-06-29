@@ -299,3 +299,55 @@ export const LANGUAGES: readonly LanguageOption[] = [
   { code: 'tr', label: 'Türkçe' },
   { code: 'uk', label: 'Українська' },
 ] as const;
+
+/**
+ * Typed alias for the analyser byte data shape used by Web Audio.
+ * TS 6.0 tracks the generic parameter; this alias keeps call sites clean
+ * and avoids `as any` casts when calling `getByteTimeDomainData`.
+ */
+export type AnalyserByteData = Uint8Array<ArrayBuffer>;
+
+/**
+ * Thrown when `navigator.mediaDevices` is unavailable.
+ * Happens on insecure contexts (HTTP non-localhost) or very old browsers.
+ */
+export class MicNotSupportedError extends Error {
+  constructor(
+    message = 'MediaRecorder/navigator.mediaDevices not available in this context (requires HTTPS or localhost).',
+  ) {
+    super(message);
+    this.name = 'MicNotSupportedError';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Groq API errors
+// ---------------------------------------------------------------------------
+
+/** Discriminated union of all Groq API failure modes. */
+export type GroqError =
+  | ({ kind: 'auth' } & ErrorPayload)
+  | ({ kind: 'rate-limit'; retryAfterMs?: number } & ErrorPayload)
+  | ({ kind: 'network' } & ErrorPayload)
+  | ({ kind: 'parse' } & ErrorPayload)
+  | ({ kind: 'server'; status: number } & ErrorPayload);
+
+interface ErrorPayload {
+  message: string;
+  cause?: unknown;
+}
+
+/**
+ * Typed error thrown by `GroqClient.transcribe()`.
+ * Also emitted on the event bus as `transcription:error`
+ * (satisfies `EventMap['transcription:error']: Error`).
+ */
+export class GroqApiError extends Error {
+  readonly detail: GroqError;
+  constructor(detail: GroqError) {
+    super(detail.message);
+    this.name = 'GroqApiError';
+    this.detail = detail;
+    if (detail.cause !== undefined) this.cause = detail.cause;
+  }
+}

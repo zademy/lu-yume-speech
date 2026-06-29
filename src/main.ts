@@ -23,6 +23,9 @@ import { Recorder } from './audio/recorder';
 import { AudioAnalyzer } from './audio/audio-analyzer';
 import { RecordingTimer } from './audio/recording-timer';
 import { WaveformVisualizer } from './audio/waveform-visualizer';
+import { AudioProcessor } from './audio/audio-processor';
+import type { NoiseReductionMode } from './audio/audio-processor';
+import * as audioStore from './audio/audio-store';
 import { GroqClient } from './api/groq-client';
 import { renderApp } from './ui/renderer';
 import type { AppElements } from './ui/renderer';
@@ -36,21 +39,131 @@ import * as historyRepo from './utils/history-repo';
 import { registerKeyboardShortcuts } from './utils/keyboard';
 import { readTranscriptionOptions, readOperationMode } from './utils/settings';
 import { copyToClipboard } from './utils/clipboard';
+import { detectPlatform } from './platform/platform';
+import type { Platform } from './platform/platform';
+import { apiKeySchema } from './platform/api-key.schema';
+
+// ===========================================================================
+// API Key Modal
+// ===========================================================================
+
+async function promptApiKey(platform: Platform): Promise<string | null> {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText =
+      'position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px)';
+
+    overlay.innerHTML = `
+      <div role="dialog" aria-modal="true" aria-labelledby="apikey-title" style="background:var(--color-surface,#1e1e2e);border-radius:16px;padding:2rem;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.5);border:1px solid var(--color-border,#3b3b50)">
+        <h2 id="apikey-title" style="color:var(--color-text,#cdd6f4);font-family:Inter,sans-serif;font-size:1.25rem;font-weight:700;margin:0 0 0.5rem">
+          🔑 Groq API Key
+        </h2>
+        <p style="color:var(--color-text-muted,#9399b2);font-family:Inter,sans-serif;font-size:0.875rem;margin:0 0 1.5rem">
+          Obtén tu key gratis en <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:#06b6d4">console.groq.com/keys</a>
+        </p>
+        <input
+          type="password"
+          id="apikey-input"
+          placeholder="gsk_..."
+          autocomplete="off"
+          spellcheck="false"
+          style="width:100%;box-sizing:border-box;padding:0.75rem 1rem;border-radius:8px;border:1px solid var(--color-border,#3b3b50);background:var(--color-bg,#181825);color:var(--color-text,#cdd6f4);font-family:'JetBrains Mono',monospace;font-size:0.875rem;outline:none;margin-bottom:0.5rem"
+        />
+        <p id="apikey-error" style="color:#f38ba8;font-family:Inter,sans-serif;font-size:0.75rem;margin:0 0 1rem;min-height:1rem"></p>
+        <div style="display:flex;gap:0.75rem;justify-content:flex-end">
+          <button id="apikey-cancel" style="padding:0.6rem 1.25rem;border-radius:8px;border:1px solid var(--color-border,#3b3b50);background:transparent;color:var(--color-text-muted,#9399b2);font-family:Inter,sans-serif;font-size:0.875rem;cursor:pointer">
+            Cancelar
+          </button>
+          <button id="apikey-save" style="padding:0.6rem 1.25rem;border-radius:8px;border:none;background:linear-gradient(135deg,#14b8a6,#0d9488);color:#fff;font-family:Inter,sans-serif;font-size:0.875rem;font-weight:600;cursor:pointer">
+            Guardar
+          </button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    const input = overlay.querySelector<HTMLInputElement>('#apikey-input')!;
+    const error = overlay.querySelector<HTMLParagraphElement>('#apikey-error')!;
+    const saveBtn = overlay.querySelector<HTMLButtonElement>('#apikey-save')!;
+    const cancelBtn = overlay.querySelector<HTMLButtonElement>('#apikey-cancel')!;
+
+    input.focus();
+
+    const close = (result: string | null) => {
+      overlay.remove();
+      resolve(result);
+    };
+
+    const submit = async () => {
+      const key = input.value.trim();
+      if (!key) {
+        error.textContent = 'Pega tu API key aquí.';
+        return;
+      }
+      const result = apiKeySchema.safeParse(key);
+      if (!result.success) {
+        error.textContent =
+          'Formato inválido. Debe empezar con gsk_ y tener al menos 44 caracteres.';
+        return;
+      }
+      saveBtn.textContent = 'Guardando...';
+      saveBtn.disabled = true;
+      await platform.setApiKey(key);
+      close(key);
+    };
+
+    saveBtn.addEventListener('click', () => void submit());
+    cancelBtn.addEventListener('click', () => close(null));
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') void submit();
+      if (e.key === 'Escape') close(null);
+    });
+  });
+}
 
 // ===========================================================================
 // Bootstrap
 // ===========================================================================
 
 async function main(): Promise<void> {
+  try {
+    await bootstrap();
+  } catch (err) {
+    console.error('[App] Fatal error during initialization:', err);
+    document.body.insertAdjacentHTML(
+      'beforeend',
+      '<div role="alert" style="position:fixed;bottom:1rem;right:1rem;background:#dc2626;color:#fff;padding:1rem;border-radius:8px;z-index:9999;font-family:sans-serif">No se pudo iniciar la app. Revisa la consola.</div>',
+    );
+  }
+}
+
+async function bootstrap(): Promise<void> {
   const bus = new EventBus<EventMap>();
+
+  // Platform bridge — desktop (Tauri keychain) or web (localStorage fallback)
+  const platform = await detectPlatform();
+  let apiKey = await platform.getApiKey();
+  if (!apiKey) {
+    apiKey = await promptApiKey(platform);
+    if (apiKey) {
+      console.warn('[App] API key saved.');
+    }
+  }
 
   const elements = renderApp();
 
   // Sidebar
   const sidebar = createSidebar(
-    (id) => bus.emit('history:restore', id),
-    (id) => bus.emit('history:delete', id),
-    () => bus.emit('history:clear', undefined),
+    (id) => {
+      bus.emit('history:restore', id);
+    },
+    (id) => {
+      bus.emit('history:delete', id);
+    },
+    () => {
+      bus.emit('history:clear', undefined);
+    },
   );
 
   // Load existing history into sidebar
@@ -84,18 +197,44 @@ async function main(): Promise<void> {
   // Wire live UI interactions
   wireLiveControls(elements);
 
+  // Settings modal open/close
+  const openSettings = () => elements.settingsModal.classList.remove('hidden');
+  const closeSettings = () => elements.settingsModal.classList.add('hidden');
+  elements.settingsBtn.addEventListener('click', openSettings);
+  elements.settingsCloseBtn.addEventListener('click', closeSettings);
+  elements.settingsModal.addEventListener('click', (e) => {
+    if (e.target === elements.settingsModal) closeSettings();
+  });
+  elements.settingsModal.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeSettings();
+  });
+
+  // Noise reduction mode switch
+  elements.noiseReductionSelect.addEventListener('change', () => {
+    const mode = elements.noiseReductionSelect.value as NoiseReductionMode;
+    void audioProcessor.setMode(mode).then(() => {
+      showToast(
+        elements.toastContainer,
+        `Reducción de ruido: ${elements.noiseReductionSelect.selectedOptions[0]?.textContent ?? mode}`,
+        'info',
+      );
+    });
+  });
+
   // Service modules (DIP: they receive the bus, not each other)
   const recorder = new Recorder(bus);
   const analyzer = new AudioAnalyzer(bus);
   const timer = new RecordingTimer(bus);
-  const client = new GroqClient(bus);
+  const client = new GroqClient(bus, apiKey ?? '');
   const visualizer = new WaveformVisualizer(elements.waveformCanvas);
+  const audioProcessor = new AudioProcessor();
 
-  // Microphone access — reuse the same stream for both recorder and analyzer
-  let stream: MediaStream;
+  // Microphone access — process through audio enhancement chain before recording
   try {
-    stream = await recorder.init();
-    analyzer.connect(stream);
+    const rawStream = await recorder.init();
+    const processed = await audioProcessor.process(rawStream, 'dsp');
+    recorder.setRecordingStream(processed.stream);
+    analyzer.connectAnalyser(processed.analyser);
   } catch (error) {
     console.error('[App] Microphone access denied:', error);
     showToast(elements.toastContainer, 'No se pudo acceder al micrófono', 'error');
@@ -105,7 +244,8 @@ async function main(): Promise<void> {
   // Canvas sizing
   visualizer.syncSize();
   visualizer.drawIdle();
-  window.addEventListener('resize', () => visualizer.syncSize());
+  const onResize = () => visualizer.syncSize();
+  window.addEventListener('resize', onResize);
 
   // Wire everything through the event bus
   wireTranscriptionPipeline(bus, client, elements, sidebar);
@@ -115,15 +255,24 @@ async function main(): Promise<void> {
 
   // Keyboard shortcuts
   const cleanup = registerKeyboardShortcuts({
-    onRecordStart: () => recorder.start(),
-    onRecordStop: () => recorder.stop(),
+    onRecordStart: () => {
+      recorder.start();
+    },
+    onRecordStop: () => {
+      recorder.stop();
+    },
     getMode: () => elements.recordModeSelect.value as 'push-to-talk' | 'toggle',
   });
 
   window.addEventListener('unload', () => {
     cleanup();
+    window.removeEventListener('resize', onResize);
+    visualizer.stop();
+    timer.dispose();
     analyzer.dispose();
+    audioProcessor.dispose();
     recorder.dispose();
+    bus.clear();
   });
 }
 
@@ -164,12 +313,16 @@ function wireRecordingHandlers(
   bus.on('recording:start', () => {
     analyzer.start();
     timer.start();
+    visualizer.setRecording(true);
+    elements.waveformContainer.classList.add('recording-active');
     setStatus(elements, { message: 'Escuchando...', level: 'recording' });
   });
 
   bus.on('recording:stop', () => {
     analyzer.stop();
     timer.stop();
+    visualizer.setRecording(false);
+    elements.waveformContainer.classList.remove('recording-active');
     visualizer.drawIdle();
   });
 
@@ -201,11 +354,18 @@ function wireTranscriptionPipeline(
   elements: AppElements,
   sidebar: SidebarElements,
 ): void {
+  let lastBlob: Blob | null = null;
+  let lastMimeType = '';
+
   bus.on('audio:blob-ready', (blob) => {
+    lastBlob = blob;
+    lastMimeType = blob.type;
     const options: TranscriptionOptions = readTranscriptionOptions(elements);
     const mode = readOperationMode(elements);
     const endpoint = mode === 'translate' ? 'translations' : 'transcriptions';
-    client.transcribe(blob, options, endpoint);
+    void client.transcribe(blob, options, endpoint).catch(() => {
+      // Error already emitted on the bus via transcription:error
+    });
     setStatus(elements, { message: `Procesando con ${options.model}...`, level: 'processing' });
   });
 
@@ -237,8 +397,25 @@ function wireTranscriptionPipeline(
       createdAt: Date.now(),
       operationMode: mode,
     };
-    historyRepo.addEntry(entry);
+    const evictedIds = historyRepo.addEntry(entry);
     prependEntry(sidebar, entry);
+
+    // Save audio clip to IndexedDB (non-blocking — transcription already succeeded)
+    if (lastBlob) {
+      void audioStore
+        .save(entry.id, lastBlob, lastMimeType || 'audio/webm')
+        .catch((err: unknown) => {
+          console.warn('[App] Failed to save audio clip:', err);
+        });
+      lastBlob = null;
+    }
+
+    // Clean up audio for evicted history entries
+    if (evictedIds.length > 0) {
+      void audioStore.removeMany(evictedIds).catch((err: unknown) => {
+        console.warn('[App] Failed to clean up evicted audio:', err);
+      });
+    }
 
     const copied = await copyToClipboard(result.text);
     if (copied) {
@@ -281,12 +458,14 @@ function wireHistoryEvents(
 
   bus.on('history:delete', (id) => {
     historyRepo.removeEntry(id);
+    void audioStore.remove(id);
     removeCard(sidebar, id);
     showToast(elements.toastContainer, 'Entrada eliminada', 'info');
   });
 
   bus.on('history:clear', () => {
     historyRepo.clearAll();
+    void audioStore.clearAll();
     clearCards(sidebar);
     showToast(elements.toastContainer, 'Historial limpiado', 'info');
   });
@@ -396,6 +575,12 @@ function formatDuration(totalSeconds: number): string {
 // Start
 // ===========================================================================
 
-main().catch((error) => {
-  console.error('[App] Fatal error during initialization:', error);
+window.addEventListener('error', (e) => {
+  console.error('[window error]', e.error);
 });
+
+window.addEventListener('unhandledrejection', (e) => {
+  console.error('[unhandled rejection]', e.reason);
+});
+
+void main();

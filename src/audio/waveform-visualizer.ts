@@ -18,6 +18,8 @@
  * ```
  */
 
+import type { AnalyserByteData } from '../types';
+
 /** Visual style configuration for the waveform. */
 export interface WaveformStyle {
   /** Bar fill — single color or linear gradient stops */
@@ -54,17 +56,29 @@ export class WaveformVisualizer {
   private readonly style: WaveformStyle;
   private animationFrame: number | null = null;
   private analyserSource: AnalyserNode | null = null;
-  private dataArray: Uint8Array | null = null;
+  private dataArray: AnalyserByteData | null = null;
   /** Cached logical (CSS-pixel) dimensions — refreshed by syncSize() */
   private logicalWidth = 0;
   private logicalHeight = 0;
   /** Cached gradient (recomputed when size changes) */
   private cachedGradient: CanvasGradient | null = null;
+  /** Temporal smoothing — previous frame bar heights for interpolation */
+  private prevBarHeights: number[] = [];
+  /** Whether recording is active (toggles glow effect) */
+  private isRecording = false;
 
   constructor(canvas: HTMLCanvasElement, style: WaveformStyle = DEFAULT_STYLE) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d')!;
     this.style = style;
+  }
+
+  /**
+   * Toggle recording visual state (enables glow on bars).
+   */
+  setRecording(active: boolean): void {
+    this.isRecording = active;
+    if (!active) this.prevBarHeights = [];
   }
 
   /**
@@ -77,9 +91,7 @@ export class WaveformVisualizer {
 
     const loop = (): void => {
       if (!this.analyserSource || !this.dataArray) return;
-      // TS 6.0 uses generic Uint8Array<ArrayBuffer>; standard TS does not.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      this.analyserSource.getByteTimeDomainData(this.dataArray as any);
+      this.analyserSource.getByteTimeDomainData(this.dataArray);
       this.draw(this.dataArray);
       this.animationFrame = requestAnimationFrame(loop);
     };
@@ -180,24 +192,42 @@ export class WaveformVisualizer {
     }
     this.ctx.fillStyle = this.cachedGradient;
 
+    // Glow effect when recording — neon-like halo around bars
+    if (this.isRecording) {
+      this.ctx.shadowBlur = 6;
+      this.ctx.shadowColor = '#22c1c3';
+    } else {
+      this.ctx.shadowBlur = 0;
+    }
+
     for (let i = 0; i < barCount; i++) {
       // Average deviation from 128 (silence) for this bar's samples.
       let sum = 0;
       const startIdx = i * samplesPerBar;
       const endIdx = Math.min(startIdx + samplesPerBar, data.length);
       for (let j = startIdx; j < endIdx; j++) {
-        sum += Math.abs(data[j] - 128);
+        const value = data[j];
+        if (value !== undefined) sum += Math.abs(value - 128);
       }
       const avg = sum / (endIdx - startIdx); // 0–127
       // Non-linear easing so quiet input still shows visible motion.
       const norm = Math.pow(avg / 128, 0.85);
-      const barH = Math.max(minBarHeight, norm * height * 0.95);
+      const rawBarH = Math.max(minBarHeight, norm * height * 0.95);
+
+      // Temporal smoothing — interpolate from previous frame to reduce jitter
+      const prev = this.prevBarHeights[i];
+      const barH = prev !== undefined ? prev * 0.6 + rawBarH * 0.4 : rawBarH;
+      this.prevBarHeights[i] = barH;
+
       const x = i * step + barGap / 2;
       const y = midY - barH / 2;
 
       this.roundedRect(x, y, barWidth, barH, barRadius);
       this.ctx.fill();
     }
+
+    // Reset shadow after drawing
+    this.ctx.shadowBlur = 0;
   }
 
   /**

@@ -5,6 +5,9 @@ node_modules
 dist
 dist-ssr
 
+# Test coverage
+coverage
+
 # Environment
 .env
 .env.*
@@ -42,3 +45,4 @@ Thumbs.db
 .playwright-mcp
 # Local Pi runtime state
 .atl/
+/.opencode/error-explainer

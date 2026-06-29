@@ -2,29 +2,116 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
 
 jobs:
-  build:
-    name: Lint & Build
+  quality:
+    name: Lint, Typecheck, Test, Build
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm install
+        run: pnpm install --frozen-lockfile
 
       - name: Lint
-        run: npm run lint
+        run: pnpm lint
 
-      - name: Build
-        run: npm run build
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test with coverage
+        run: pnpm test:coverage
+
+      - name: Audit production dependencies
+        run: pnpm audit --prod || true
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+
+      - name: Build web SPA
+        run: pnpm build
+
+      - name: Verify no API key leaked in bundle
+        run: |
+          if grep -rn 'VITE_GROQ\|gsk_[A-Za-z0-9]\{40\}' dist/; then
+            echo "::error::API key or VITE_GROQ reference found in bundle"
+            exit 1
+          fi
+          echo "Bundle clean — no API key leaked"
+
+  desktop-build:
+    name: Tauri Build (${{ matrix.os }})
+    needs: quality
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rust-target: x86_64-pc-windows-msvc
+          - os: macos-latest
+            rust-target: aarch64-apple-darwin
+          - os: macos-latest
+            rust-target: x86_64-apple-darwin
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: 'src-tauri -> target'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build Tauri app
+        run: pnpm tauri build --target ${{ matrix.rust-target }}
+
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-${{ matrix.rust-target }}
+          path: |
+            src-tauri/target/${{ matrix.rust-target }}/release/bundle/**/*.msi
+            src-tauri/target/${{ matrix.rust-target }}/release/bundle/**/*.exe
+            src-tauri/target/${{ matrix.rust-target }}/release/bundle/**/*.dmg
+            src-tauri/target/${{ matrix.rust-target }}/release/bundle/**/*.app
+          retention-days: 14
+          if-no-files-found: warn
