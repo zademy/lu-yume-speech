@@ -49,6 +49,7 @@ export interface AppElements {
   timestampToggle: HTMLInputElement;
   statusDiv: HTMLDivElement;
   waveformCanvas: HTMLCanvasElement;
+  waveformContainer: HTMLDivElement;
   timerDisplay: HTMLSpanElement;
   outputArea: HTMLTextAreaElement;
   wordCount: HTMLSpanElement;
@@ -106,6 +107,7 @@ export function renderApp(): AppElements {
     timestampToggle: settingsModal.querySelector('#timestampToggle')!,
     statusDiv: root.querySelector('#status')!,
     waveformCanvas: root.querySelector('#waveformCanvas')!,
+    waveformContainer: root.querySelector('#waveformContainer')!,
     timerDisplay: root.querySelector('#timerDisplay')!,
     outputArea: root.querySelector('#output') as HTMLTextAreaElement,
     wordCount: root.querySelector('#wordCount')!,
@@ -308,9 +310,13 @@ function renderStatusBar(modifierLabel: string): string {
  */
 function renderVisualizerArea(): string {
   return `
-    <div class="relative mb-4 rounded-2xl overflow-hidden border border-[var(--color-border)] bg-gradient-to-b from-[var(--color-surface)] to-[var(--color-surface-muted)] shadow-[var(--shadow-card)]">
+    <div id="waveformContainer" class="waveform-container relative mb-4 rounded-2xl overflow-hidden border border-[var(--color-border)] bg-gradient-to-b from-[var(--color-surface)] to-[var(--color-surface-muted)] shadow-[var(--shadow-card)] transition-all duration-300">
       <canvas id="waveformCanvas" class="w-full h-20"></canvas>
       <span id="timerDisplay" class="absolute top-2.5 right-3 text-[11px] font-mono font-medium text-[var(--color-text-secondary)] glass px-2.5 py-1 rounded-full border border-[var(--color-border-subtle)] shadow-sm">00:00</span>
+      <span id="recIndicator" class="rec-indicator absolute top-2.5 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full glass border border-[var(--color-border-subtle)] shadow-sm opacity-0 transition-opacity duration-300">
+        <span class="rec-dot w-2 h-2 rounded-full bg-[var(--color-status-recording)]"></span>
+        <span class="text-[10px] font-bold tracking-wider text-[var(--color-status-recording)] uppercase">REC</span>
+      </span>
     </div>
   `;
 }

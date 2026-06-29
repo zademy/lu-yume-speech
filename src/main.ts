@@ -313,12 +313,16 @@ function wireRecordingHandlers(
   bus.on('recording:start', () => {
     analyzer.start();
     timer.start();
+    visualizer.setRecording(true);
+    elements.waveformContainer.classList.add('recording-active');
     setStatus(elements, { message: 'Escuchando...', level: 'recording' });
   });
 
   bus.on('recording:stop', () => {
     analyzer.stop();
     timer.stop();
+    visualizer.setRecording(false);
+    elements.waveformContainer.classList.remove('recording-active');
     visualizer.drawIdle();
   });
 
