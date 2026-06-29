@@ -36,6 +36,7 @@
     "@typescript-eslint/parser": "^8.59.2",
     "@vitest/coverage-v8": "^2.1.8",
     "eslint": "^10.3.0",
+    "fake-indexeddb": "^6.2.5",
     "globals": "^17.6.0",
     "husky": "^9.1.7",
     "jsdom": "^25.0.1",

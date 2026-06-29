@@ -25,6 +25,7 @@ import { RecordingTimer } from './audio/recording-timer';
 import { WaveformVisualizer } from './audio/waveform-visualizer';
 import { AudioProcessor } from './audio/audio-processor';
 import type { NoiseReductionMode } from './audio/audio-processor';
+import * as audioStore from './audio/audio-store';
 import { GroqClient } from './api/groq-client';
 import { renderApp } from './ui/renderer';
 import type { AppElements } from './ui/renderer';
@@ -337,7 +338,12 @@ function wireTranscriptionPipeline(
   elements: AppElements,
   sidebar: SidebarElements,
 ): void {
+  let lastBlob: Blob | null = null;
+  let lastMimeType = '';
+
   bus.on('audio:blob-ready', (blob) => {
+    lastBlob = blob;
+    lastMimeType = blob.type;
     const options: TranscriptionOptions = readTranscriptionOptions(elements);
     const mode = readOperationMode(elements);
     const endpoint = mode === 'translate' ? 'translations' : 'transcriptions';
@@ -375,8 +381,25 @@ function wireTranscriptionPipeline(
       createdAt: Date.now(),
       operationMode: mode,
     };
-    historyRepo.addEntry(entry);
+    const evictedIds = historyRepo.addEntry(entry);
     prependEntry(sidebar, entry);
+
+    // Save audio clip to IndexedDB (non-blocking — transcription already succeeded)
+    if (lastBlob) {
+      void audioStore
+        .save(entry.id, lastBlob, lastMimeType || 'audio/webm')
+        .catch((err: unknown) => {
+          console.warn('[App] Failed to save audio clip:', err);
+        });
+      lastBlob = null;
+    }
+
+    // Clean up audio for evicted history entries
+    if (evictedIds.length > 0) {
+      void audioStore.removeMany(evictedIds).catch((err: unknown) => {
+        console.warn('[App] Failed to clean up evicted audio:', err);
+      });
+    }
 
     const copied = await copyToClipboard(result.text);
     if (copied) {
@@ -419,12 +442,14 @@ function wireHistoryEvents(
 
   bus.on('history:delete', (id) => {
     historyRepo.removeEntry(id);
+    void audioStore.remove(id);
     removeCard(sidebar, id);
     showToast(elements.toastContainer, 'Entrada eliminada', 'info');
   });
 
   bus.on('history:clear', () => {
     historyRepo.clearAll();
+    void audioStore.clearAll();
     clearCards(sidebar);
     showToast(elements.toastContainer, 'Historial limpiado', 'info');
   });
