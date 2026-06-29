@@ -197,6 +197,18 @@ async function bootstrap(): Promise<void> {
   // Wire live UI interactions
   wireLiveControls(elements);
 
+  // Settings modal open/close
+  const openSettings = () => elements.settingsModal.classList.remove('hidden');
+  const closeSettings = () => elements.settingsModal.classList.add('hidden');
+  elements.settingsBtn.addEventListener('click', openSettings);
+  elements.settingsCloseBtn.addEventListener('click', closeSettings);
+  elements.settingsModal.addEventListener('click', (e) => {
+    if (e.target === elements.settingsModal) closeSettings();
+  });
+  elements.settingsModal.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeSettings();
+  });
+
   // Noise reduction mode switch
   elements.noiseReductionSelect.addEventListener('change', () => {
     const mode = elements.noiseReductionSelect.value as NoiseReductionMode;

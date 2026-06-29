@@ -58,6 +58,9 @@ export interface AppElements {
   copyAllBtn: HTMLButtonElement;
   clearBtn: HTMLButtonElement;
   downloadBtn: HTMLButtonElement;
+  settingsBtn: HTMLButtonElement;
+  settingsModal: HTMLDivElement;
+  settingsCloseBtn: HTMLButtonElement;
   headerActions: HTMLDivElement;
 }
 
@@ -74,7 +77,6 @@ export function renderApp(): AppElements {
     ${renderAppHeader()}
     <div class="flex-1 overflow-y-auto">
       <div class="max-w-xl mx-auto px-4 py-6">
-        ${renderSettingsPanel()}
         ${renderStatusBar(os.modifierLabel)}
         ${renderVisualizerArea()}
         ${renderOutputSection()}
@@ -82,6 +84,7 @@ export function renderApp(): AppElements {
     </div>
     ${renderAppFooter()}
     ${renderToastContainer()}
+    ${renderSettingsModal()}
   `,
   );
 
@@ -108,6 +111,9 @@ export function renderApp(): AppElements {
     copyAllBtn: root.querySelector('#copyAllBtn')!,
     clearBtn: root.querySelector('#clearBtn')!,
     downloadBtn: root.querySelector('#downloadBtn')!,
+    settingsBtn: root.querySelector('#settingsBtn')!,
+    settingsModal: root.querySelector('#settingsModal')!,
+    settingsCloseBtn: root.querySelector('#settingsCloseBtn')!,
     headerActions: root.querySelector('#headerActions')!,
   };
 }
@@ -135,6 +141,13 @@ function renderAppHeader(): string {
         </div>
       </div>
       <div id="headerActions" class="flex items-center gap-1">
+        <button
+          id="settingsBtn"
+          type="button"
+          class="p-2 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-muted)] transition-colors duration-[var(--transition-fast)] cursor-pointer"
+          aria-label="Abrir configuración"
+          title="Configuración"
+        >${icons.settings}</button>
         <button
           id="themeToggle"
           type="button"
@@ -202,20 +215,20 @@ const icons = {
  * model, operation mode, recording mode, language, prompt, temperature,
  * response format, and rate limit info.
  */
-function renderSettingsPanel(): string {
+function renderSettingsModal(): string {
   return `
-    <details class="group mb-5 rounded-2xl bg-[var(--color-surface)] shadow-[var(--shadow-card)] overflow-hidden border border-[var(--color-border)] transition-all duration-[var(--transition-normal)] hover:shadow-[var(--shadow-card-hover)] hover:border-[var(--color-border-strong)]">
-      <summary class="flex items-center justify-between gap-2 px-4 py-3 cursor-pointer select-none text-sm font-semibold text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] transition-colors duration-[var(--transition-fast)]">
-        <span class="flex items-center gap-2">
-          <span class="text-[var(--color-primary-600)] dark:text-[var(--color-primary-400)]">${icons.settings}</span>
-          Configuración
-        </span>
-        <span class="text-[var(--color-text-muted)] transition-transform duration-[var(--transition-fast)] group-open:rotate-180">
-          ${icons.chevronDown}
-        </span>
-      </summary>
-      <div class="px-4 pb-4 space-y-3 border-t border-[var(--color-border-subtle)]">
-        <div class="pt-3">
+    <div id="settingsModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background:rgba(0,0,0,0.6);backdrop-filter:blur(4px)">
+      <div role="dialog" aria-modal="true" aria-labelledby="settingsTitle" class="w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-[var(--shadow-elevated)]">
+        <div class="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border-subtle)] sticky top-0 bg-[var(--color-surface)] z-10">
+          <h2 id="settingsTitle" class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-primary)]">
+            <span class="text-[var(--color-primary-600)] dark:text-[var(--color-primary-400)]">${icons.settings}</span>
+            Configuración
+          </h2>
+          <button id="settingsCloseBtn" type="button" class="p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-muted)] transition-colors duration-[var(--transition-fast)] cursor-pointer" aria-label="Cerrar configuración">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div class="px-5 py-4 space-y-3">
           ${renderSelectField(
             'modelSelect',
             'Modelo',
@@ -225,45 +238,45 @@ function renderSettingsPanel(): string {
               selected: m === DEFAULT_SETTINGS.model,
             })),
           )}
+          ${renderSelectField(
+            'operationModeSelect',
+            'Modo',
+            OPERATION_MODES.map((m) => ({
+              value: m.value,
+              label: `${m.label} — ${m.description}`,
+              selected: m.value === DEFAULT_SETTINGS.operationMode,
+            })),
+          )}
+          ${renderSelectField(
+            'recordModeSelect',
+            'Grabación',
+            RECORD_MODES.map((m) => ({
+              value: m.value,
+              label: `${m.label} — ${m.description}`,
+              selected: m.value === DEFAULT_SETTINGS.recordMode,
+            })),
+          )}
+          ${renderSelectField('noiseReductionSelect', 'Reducción de ruido', [
+            { value: 'off', label: 'Desactivada', selected: false },
+            { value: 'dsp', label: 'Básica (filtros)', selected: true },
+            { value: 'rnnoise', label: 'AI (RNNoise)', selected: false },
+          ])}
+          ${renderSelectField(
+            'languageSelect',
+            'Idioma',
+            LANGUAGES.map((l) => ({
+              value: l.code,
+              label: l.label,
+              selected: l.code === DEFAULT_SETTINGS.language,
+            })),
+          )}
+          ${renderTextareaField('promptInput', 'Contexto', 'Terminología técnica, nombres propios...', 2)}
+          ${renderTemperatureControl()}
+          ${renderResponseFormatControl()}
+          ${renderRateLimits()}
         </div>
-        ${renderSelectField(
-          'operationModeSelect',
-          'Modo',
-          OPERATION_MODES.map((m) => ({
-            value: m.value,
-            label: `${m.label} — ${m.description}`,
-            selected: m.value === DEFAULT_SETTINGS.operationMode,
-          })),
-        )}
-        ${renderSelectField(
-          'recordModeSelect',
-          'Grabación',
-          RECORD_MODES.map((m) => ({
-            value: m.value,
-            label: `${m.label} — ${m.description}`,
-            selected: m.value === DEFAULT_SETTINGS.recordMode,
-          })),
-        )}
-        ${renderSelectField('noiseReductionSelect', 'Reducción de ruido', [
-          { value: 'off', label: 'Desactivada', selected: false },
-          { value: 'dsp', label: 'Básica (filtros)', selected: true },
-          { value: 'rnnoise', label: 'AI (RNNoise)', selected: false },
-        ])}
-        ${renderSelectField(
-          'languageSelect',
-          'Idioma',
-          LANGUAGES.map((l) => ({
-            value: l.code,
-            label: l.label,
-            selected: l.code === DEFAULT_SETTINGS.language,
-          })),
-        )}
-        ${renderTextareaField('promptInput', 'Contexto', 'Terminología técnica, nombres propios...', 2)}
-        ${renderTemperatureControl()}
-        ${renderResponseFormatControl()}
-        ${renderRateLimits()}
       </div>
-    </details>
+    </div>
   `;
 }
 
