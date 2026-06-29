@@ -45,3 +45,4 @@ Thumbs.db
 .playwright-mcp
 # Local Pi runtime state
 .atl/
+/.opencode/error-explainer
