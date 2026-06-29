@@ -84,22 +84,26 @@ export function renderApp(): AppElements {
     </div>
     ${renderAppFooter()}
     ${renderToastContainer()}
-    ${renderSettingsModal()}
   `,
   );
 
+  // Modal rendered OUTSIDE root to escape any overflow/transform containment
+  const settingsModal = document.createElement('div');
+  setTrustedHTML(settingsModal, renderSettingsModal());
+  document.body.appendChild(settingsModal);
+
   return {
     root,
-    modelSelect: root.querySelector('#modelSelect')!,
-    operationModeSelect: root.querySelector('#operationModeSelect')!,
-    recordModeSelect: root.querySelector('#recordModeSelect')!,
-    noiseReductionSelect: root.querySelector('#noiseReductionSelect')!,
-    languageSelect: root.querySelector('#languageSelect')!,
-    promptInput: root.querySelector('#promptInput')!,
-    temperatureSlider: root.querySelector('#temperatureSlider')!,
-    temperatureValue: root.querySelector('#temperatureValue')!,
-    responseFormatSelect: root.querySelector('#responseFormatSelect')!,
-    timestampToggle: root.querySelector('#timestampToggle')!,
+    modelSelect: settingsModal.querySelector('#modelSelect')!,
+    operationModeSelect: settingsModal.querySelector('#operationModeSelect')!,
+    recordModeSelect: settingsModal.querySelector('#recordModeSelect')!,
+    noiseReductionSelect: settingsModal.querySelector('#noiseReductionSelect')!,
+    languageSelect: settingsModal.querySelector('#languageSelect')!,
+    promptInput: settingsModal.querySelector('#promptInput')!,
+    temperatureSlider: settingsModal.querySelector('#temperatureSlider')!,
+    temperatureValue: settingsModal.querySelector('#temperatureValue')!,
+    responseFormatSelect: settingsModal.querySelector('#responseFormatSelect')!,
+    timestampToggle: settingsModal.querySelector('#timestampToggle')!,
     statusDiv: root.querySelector('#status')!,
     waveformCanvas: root.querySelector('#waveformCanvas')!,
     timerDisplay: root.querySelector('#timerDisplay')!,
@@ -112,8 +116,8 @@ export function renderApp(): AppElements {
     clearBtn: root.querySelector('#clearBtn')!,
     downloadBtn: root.querySelector('#downloadBtn')!,
     settingsBtn: root.querySelector('#settingsBtn')!,
-    settingsModal: root.querySelector('#settingsModal')!,
-    settingsCloseBtn: root.querySelector('#settingsCloseBtn')!,
+    settingsModal: settingsModal.querySelector('#settingsModal')!,
+    settingsCloseBtn: settingsModal.querySelector('#settingsCloseBtn')!,
     headerActions: root.querySelector('#headerActions')!,
   };
 }
