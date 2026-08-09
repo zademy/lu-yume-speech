@@ -326,7 +326,34 @@ details[open] > .summary-card-heading::after {
    Recording state — waveform container + REC indicator
    ========================================================================= */
 
-/* Monochrome border pulse when recording */
+/* Layered neutral field keeps the voice orb dimensional in both themes. */
+.waveform-container {
+  isolation: isolate;
+  background:
+    radial-gradient(
+      circle at center,
+      color-mix(in srgb, var(--color-text-primary) 8%, transparent) 0,
+      transparent 38%
+    ),
+    linear-gradient(to bottom, var(--color-surface), var(--color-surface-muted));
+}
+
+.waveform-container::after {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  content: '';
+  pointer-events: none;
+  opacity: 0.35;
+  background-image: radial-gradient(
+    circle at center,
+    transparent 0 31%,
+    color-mix(in srgb, var(--color-border-strong) 18%, transparent) 31.5%,
+    transparent 32%
+  );
+}
+
+/* Monochrome border pulse when recording. */
 @keyframes recording-glow {
   0%,
   100% {
@@ -346,6 +373,13 @@ details[open] > .summary-card-heading::after {
 
 .waveform-container.recording-active {
   animation: recording-glow 2.5s ease-in-out infinite;
+  background:
+    radial-gradient(
+      circle at center,
+      color-mix(in srgb, var(--color-text-primary) 13%, transparent) 0,
+      transparent 42%
+    ),
+    linear-gradient(to bottom, var(--color-surface), var(--color-surface-muted));
 }
 
 /* REC indicator — fade in when recording, with a pulsing dot */

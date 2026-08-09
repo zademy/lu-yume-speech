@@ -328,13 +328,13 @@ function renderStatusBar(modifierLabel: string): string {
 }
 
 /**
- * Render the waveform canvas and timer overlay.
- * The canvas displays real-time audio visualization during recording.
+ * Render the audio-orb canvas and recording overlays.
+ * The canvas is decorative; text status and timer expose the same state.
  */
 function renderVisualizerArea(): string {
   return `
-    <div id="waveformContainer" class="waveform-container relative mb-4 rounded-2xl overflow-hidden border border-[var(--color-border)] bg-gradient-to-b from-[var(--color-surface)] to-[var(--color-surface-muted)] shadow-[var(--shadow-card)] transition-all duration-300">
-      <canvas id="waveformCanvas" class="w-full h-20"></canvas>
+    <div id="waveformContainer" class="waveform-container relative mb-4 min-h-36 sm:min-h-40 rounded-2xl overflow-hidden border border-[var(--color-border)] shadow-[var(--shadow-card)] transition-all duration-300">
+      <canvas id="waveformCanvas" aria-hidden="true" class="block w-full h-36 sm:h-40"></canvas>
       <span id="timerDisplay" class="absolute top-2.5 right-3 text-[11px] font-mono font-medium text-[var(--color-text-secondary)] glass px-2.5 py-1 rounded-full border border-[var(--color-border-subtle)] shadow-sm">00:00</span>
       <span id="recIndicator" class="rec-indicator absolute top-2.5 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full glass border border-[var(--color-border-subtle)] shadow-sm opacity-0 transition-opacity duration-300">
         <span class="rec-dot w-2 h-2 rounded-full bg-[var(--color-text-primary)]"></span>
