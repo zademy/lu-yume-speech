@@ -277,8 +277,11 @@ async function bootstrap(): Promise<void> {
   // Canvas sizing
   visualizer.syncSize();
   visualizer.drawIdle();
-  const onResize = () => visualizer.syncSize();
-  window.addEventListener('resize', onResize);
+  const resizeObserver =
+    typeof ResizeObserver === 'function' ? new ResizeObserver(() => visualizer.syncSize()) : null;
+  resizeObserver?.observe(elements.waveformCanvas);
+  const onResize = resizeObserver ? null : () => visualizer.syncSize();
+  if (onResize) window.addEventListener('resize', onResize);
 
   // Live configuration: loaded once, refreshed on settings:change.
   let config: AppSettings = { ...DEFAULT_SETTINGS, ...((await platform.loadSettings()) ?? {}) };
@@ -312,7 +315,8 @@ async function bootstrap(): Promise<void> {
 
   window.addEventListener('unload', () => {
     cleanup();
-    window.removeEventListener('resize', onResize);
+    resizeObserver?.disconnect();
+    if (onResize) window.removeEventListener('resize', onResize);
     visualizer.stop();
     timer.dispose();
     analyzer.dispose();

@@ -23,6 +23,13 @@ function createContext(): CanvasRenderingContext2D {
     scale: vi.fn(),
     createRadialGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
     createLinearGradient: vi.fn(() => ({ addColorStop: vi.fn() })),
+    save: vi.fn(),
+    restore: vi.fn(),
+    translate: vi.fn(),
+    rotate: vi.fn(),
+    ellipse: vi.fn(),
+    setLineDash: vi.fn(),
+    globalCompositeOperation: 'source-over',
     shadowBlur: 0,
     shadowColor: '',
     moveTo: vi.fn(),
@@ -56,6 +63,7 @@ describe('WaveformVisualizer styles', () => {
   let context: CanvasRenderingContext2D;
 
   beforeEach(() => {
+    vi.restoreAllMocks();
     context = createContext();
     canvas = document.createElement('canvas');
     canvas.width = 100;
@@ -89,6 +97,16 @@ describe('WaveformVisualizer styles', () => {
     expect(context.shadowColor).toBe('#9198a1');
   });
 
+  it('invalidates layered gradients when the theme changes', () => {
+    const visualizer = new WaveformVisualizer(canvas, LIGHT_STYLE);
+
+    visualizer.drawFrame(new Uint8Array([128, 150, 128, 106]));
+    visualizer.setStyle(DARK_STYLE);
+    visualizer.drawFrame(new Uint8Array([128, 150, 128, 106]));
+
+    expect(context.createRadialGradient).toHaveBeenCalledTimes(6);
+  });
+
   it('renders recording data as a closed radial orb', () => {
     const visualizer = new WaveformVisualizer(canvas, LIGHT_STYLE);
 
@@ -97,29 +115,41 @@ describe('WaveformVisualizer styles', () => {
 
     expect(context.arc).toHaveBeenCalled();
     expect(context.lineTo).toHaveBeenCalled();
-    expect(context.closePath).toHaveBeenCalled();
+    expect(context.closePath).toHaveBeenCalledTimes(4);
     expect(context.fill).toHaveBeenCalled();
     expect(context.stroke).toHaveBeenCalled();
+    expect(context.createRadialGradient).toHaveBeenCalledTimes(3);
   });
 
-  it('reads analyser data continuously while recording', () => {
+  it('reads analyser data continuously and cancels the queued frame', () => {
+    const callbacks: FrameRequestCallback[] = [];
+    let nextFrameId = 0;
     const requestFrame = vi
       .spyOn(window, 'requestAnimationFrame')
-      .mockImplementationOnce((callback) => {
-        callback(0);
-        return 1;
-      })
-      .mockReturnValue(2);
+      .mockImplementation((callback) => {
+        callbacks.push(callback);
+        nextFrameId += 1;
+        return nextFrameId;
+      });
+    const cancelFrame = vi.spyOn(window, 'cancelAnimationFrame');
     const analyser = {
       frequencyBinCount: 8,
       getByteTimeDomainData: vi.fn((data: Uint8Array) => data.fill(140)),
+      getByteFrequencyData: vi.fn((data: Uint8Array) => data.fill(96)),
     } as unknown as AnalyserNode;
     const visualizer = new WaveformVisualizer(canvas, LIGHT_STYLE);
 
     visualizer.startLive(analyser);
+    callbacks.shift()?.(0);
+    callbacks.shift()?.(16);
 
-    expect(analyser.getByteTimeDomainData).toHaveBeenCalledOnce();
-    expect(requestFrame).toHaveBeenCalledTimes(2);
+    expect(analyser.getByteTimeDomainData).toHaveBeenCalledTimes(2);
+    expect(analyser.getByteFrequencyData).toHaveBeenCalledTimes(2);
+    expect(requestFrame).toHaveBeenCalledTimes(3);
+
+    visualizer.stop();
+
+    expect(cancelFrame).toHaveBeenCalledWith(3);
   });
 
   it('reuses the connected analyser across recording sessions', () => {
@@ -127,6 +157,7 @@ describe('WaveformVisualizer styles', () => {
     const analyser = {
       frequencyBinCount: 8,
       getByteTimeDomainData: vi.fn(),
+      getByteFrequencyData: vi.fn(),
     } as unknown as AnalyserNode;
     const visualizer = new WaveformVisualizer(canvas, LIGHT_STYLE);
 
@@ -147,7 +178,43 @@ describe('WaveformVisualizer styles', () => {
     visualizer.setRecording(true);
     visualizer.drawFrame(new Uint8Array([128, 160, 96, 150]));
 
-    expect(context.arc).toHaveBeenCalledTimes(3);
+    expect(context.arc).toHaveBeenCalled();
     expect(context.lineTo).not.toHaveBeenCalled();
+  });
+
+  it('checks reduced motion again for a later recording session', () => {
+    let reduceMotion = true;
+    vi.spyOn(window, 'matchMedia').mockImplementation(
+      () => ({ matches: reduceMotion }) as MediaQueryList,
+    );
+    const requestFrame = vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1);
+    const analyser = {
+      frequencyBinCount: 8,
+      getByteTimeDomainData: vi.fn((data: Uint8Array) => data.fill(140)),
+      getByteFrequencyData: vi.fn((data: Uint8Array) => data.fill(96)),
+    } as unknown as AnalyserNode;
+    const visualizer = new WaveformVisualizer(canvas, LIGHT_STYLE);
+
+    visualizer.startLive(analyser);
+    expect(requestFrame).not.toHaveBeenCalled();
+
+    reduceMotion = false;
+    visualizer.startLive(analyser);
+
+    expect(requestFrame).toHaveBeenCalledOnce();
+  });
+
+  it('redraws the idle orb after resizing while stopped', () => {
+    vi.spyOn(canvas, 'getBoundingClientRect').mockReturnValue({
+      width: 240,
+      height: 160,
+    } as DOMRect);
+    const visualizer = new WaveformVisualizer(canvas, LIGHT_STYLE);
+
+    visualizer.syncSize();
+
+    expect(context.setTransform).toHaveBeenCalled();
+    expect(context.arc).toHaveBeenCalled();
+    expect(context.fill).toHaveBeenCalled();
   });
 });
