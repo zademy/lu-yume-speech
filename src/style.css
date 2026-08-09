@@ -235,6 +235,36 @@ body {
   overflow: hidden;
 }
 
+.summary-card-heading {
+  list-style: none;
+}
+
+.summary-card-heading::-webkit-details-marker {
+  display: none;
+}
+
+.summary-card-heading::after {
+  content: '';
+  width: 0.45rem;
+  height: 0.45rem;
+  flex: none;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translateY(-0.1rem);
+  transition: transform var(--transition-fast);
+  color: var(--color-text-muted);
+}
+
+details[open] > .summary-card-heading::after {
+  transform: rotate(225deg) translate(-0.05rem, -0.05rem);
+}
+
+@media (max-width: 420px) {
+  .summary-card-heading time {
+    display: none;
+  }
+}
+
 /* Glass surface — translucent + blur */
 .glass {
   background-color: var(--color-surface-glass);

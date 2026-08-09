@@ -37,14 +37,17 @@ import { trimSilence } from './audio/silence-trimmer';
 import * as audioStore from './audio/audio-store';
 import { GroqClient } from './api/groq-client';
 import { postProcessWithLlm } from './api/llm-postprocessor';
+import { generateSummary, SUMMARY_MODEL } from './api/summary-client';
 import { renderApp } from './ui/renderer';
 import type { AppElements } from './ui/renderer';
 import { renderMetadata } from './ui/metadata-panel';
 import { showToast } from './ui/toast';
+import { renderSummaryHistory, summaryToText } from './ui/summary-panel';
 import { ThemeManager } from './utils/theme';
 import { createSidebar, populateEntries, prependEntry, removeCard, clearCards } from './ui/sidebar';
 import type { SidebarElements } from './ui/sidebar';
 import * as historyRepo from './utils/history-repo';
+import * as summaryRepo from './utils/summary-repo';
 import { buildPrompt, toPostProcessConfig } from './utils/transcription-config';
 import { postProcessText } from './utils/text-postprocess';
 
@@ -213,6 +216,8 @@ async function bootstrap(): Promise<void> {
 
   // Wire live UI interactions
   wireLiveControls(elements);
+  wireOutputToolbar(elements);
+  wireSummaryFeature(elements, apiKey ?? '');
 
   // Settings modal open/close
   const openSettings = () => elements.settingsModal.classList.remove('hidden');
@@ -281,7 +286,6 @@ async function bootstrap(): Promise<void> {
   // Wire everything through the event bus
   wireTranscriptionPipeline(bus, client, elements, sidebar, getConfig, apiKey ?? '');
   wireRecordingHandlers(bus, elements, analyzer, timer, visualizer, recorder);
-  wireOutputToolbar(elements);
   wireHistoryEvents(bus, sidebar, elements);
 
   // Keyboard shortcuts
@@ -503,7 +507,7 @@ function wireTranscriptionPipeline(
     const output = elements.outputArea;
     output.value += (output.value ? ' ' : '') + text;
     output.scrollTop = output.scrollHeight;
-    updateWordCount(elements);
+    output.dispatchEvent(new Event('input'));
 
     bus.emit('text:append', text);
 
@@ -572,7 +576,7 @@ function wireHistoryEvents(
     if (!entry) return;
 
     elements.outputArea.value = entry.text;
-    updateWordCount(elements);
+    elements.outputArea.dispatchEvent(new Event('input'));
     showToast(elements.toastContainer, 'Transcripción restaurada', 'success');
     setStatus(elements, { message: 'Transcripción restaurada.', level: 'success' });
   });
@@ -614,7 +618,7 @@ function wireOutputToolbar(elements: AppElements): void {
   elements.clearBtn.addEventListener('click', () => {
     if (!elements.outputArea.value) return;
     elements.outputArea.value = '';
-    updateWordCount(elements);
+    elements.outputArea.dispatchEvent(new Event('input'));
     showToast(elements.toastContainer, 'Texto limpiado', 'info');
   });
 
@@ -633,6 +637,92 @@ function wireOutputToolbar(elements: AppElements): void {
     URL.revokeObjectURL(url);
     showToast(elements.toastContainer, 'Archivo descargado', 'success');
   });
+}
+
+// ===========================================================================
+// Transcript summaries
+// ===========================================================================
+
+function wireSummaryFeature(elements: AppElements, apiKey: string): void {
+  let generating = false;
+
+  const renderForVisibleText = (): void => {
+    const history = summaryRepo.getSummaryHistoryBySource(elements.outputArea.value);
+    elements.summarySection.hidden = history === undefined;
+    renderSummaryHistory(elements.summaryPanel, history, {
+      onCopy: (summary) => {
+        void copyToClipboard(summaryToText(summary)).then((copied) => {
+          showToast(
+            elements.toastContainer,
+            copied ? 'Resumen copiado' : 'No se pudo copiar',
+            copied ? 'success' : 'error',
+          );
+        });
+      },
+      onDelete: (historyId, summaryId) => {
+        summaryRepo.removeSummary(historyId, summaryId);
+        renderForVisibleText();
+        showToast(elements.toastContainer, 'Resumen eliminado', 'info');
+      },
+    });
+  };
+
+  const updateButton = (): void => {
+    elements.summaryBtn.disabled = generating || !elements.outputArea.value.trim();
+    const label = elements.summaryBtn.querySelector('span');
+    if (label) label.textContent = generating ? 'Generando...' : 'Generar resumen';
+  };
+
+  elements.outputArea.addEventListener('input', () => {
+    updateButton();
+    renderForVisibleText();
+  });
+
+  elements.summaryBtn.addEventListener('click', () => {
+    if (generating) return;
+    const sourceText = elements.outputArea.value;
+    if (!sourceText.trim()) return;
+
+    generating = true;
+    updateButton();
+    setStatus(elements, { message: 'Generando resumen...', level: 'processing' });
+
+    void generateSummary(sourceText, apiKey)
+      .then((result) => {
+        summaryRepo.addSummary(sourceText, {
+          id: crypto.randomUUID(),
+          summary: result.summary,
+          keyPoints: result.keyPoints,
+          model: SUMMARY_MODEL,
+          createdAt: Date.now(),
+        });
+        const sourceIsStillVisible = elements.outputArea.value === sourceText;
+        if (sourceIsStillVisible) renderForVisibleText();
+        showToast(
+          elements.toastContainer,
+          sourceIsStillVisible ? 'Resumen generado' : 'Resumen guardado para el texto anterior',
+          'success',
+        );
+        setStatus(elements, {
+          message: sourceIsStillVisible
+            ? 'Resumen generado.'
+            : 'Resumen guardado para el texto anterior.',
+          level: 'success',
+        });
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : 'No se pudo generar el resumen.';
+        showToast(elements.toastContainer, message, 'error', 5000);
+        setStatus(elements, { message: `Error: ${message}`, level: 'error' });
+      })
+      .finally(() => {
+        generating = false;
+        updateButton();
+      });
+  });
+
+  updateButton();
+  renderForVisibleText();
 }
 
 // ===========================================================================

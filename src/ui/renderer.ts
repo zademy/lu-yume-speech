@@ -54,6 +54,9 @@ export interface AppElements {
   outputArea: HTMLTextAreaElement;
   wordCount: HTMLSpanElement;
   metadataPanel: HTMLDivElement;
+  summaryBtn: HTMLButtonElement;
+  summarySection: HTMLElement;
+  summaryPanel: HTMLDivElement;
   toastContainer: HTMLDivElement;
   themeToggle: HTMLButtonElement;
   copyAllBtn: HTMLButtonElement;
@@ -120,6 +123,9 @@ export function renderApp(): AppElements {
     outputArea: root.querySelector('#output') as HTMLTextAreaElement,
     wordCount: root.querySelector('#wordCount')!,
     metadataPanel: root.querySelector('#metadataPanel')!,
+    summaryBtn: root.querySelector('#summaryBtn')!,
+    summarySection: root.querySelector('#summarySection')!,
+    summaryPanel: root.querySelector('#summaryPanel')!,
     toastContainer: root.querySelector('#toastContainer')!,
     themeToggle: root.querySelector('#themeToggle')!,
     copyAllBtn: root.querySelector('#copyAllBtn')!,
@@ -354,6 +360,20 @@ function renderOutputSection(): string {
       </div>
       <textarea id="output" class="w-full h-52 p-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-primary)] text-[15px] leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-400)] focus:border-transparent placeholder:text-[var(--color-text-muted)] shadow-[var(--shadow-card)] transition-all duration-[var(--transition-fast)] hover:shadow-[var(--shadow-card-hover)]" placeholder="Tu texto aparecerá aquí..." spellcheck="true"></textarea>
       <div id="metadataPanel" class="hidden rounded-2xl border border-[var(--color-border)] p-3 bg-[var(--color-surface-muted)] text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]"></div>
+      <div class="pt-2 flex items-center justify-between gap-3">
+        <p class="text-[11px] leading-4 text-[var(--color-text-muted)]">Resume el texto visible. La transcripción no cambia.</p>
+        <button id="summaryBtn" type="button" disabled class="shrink-0 inline-flex items-center justify-center gap-2 min-h-10 px-4 rounded-xl bg-[var(--color-primary-600)] text-white text-sm font-semibold shadow-[var(--shadow-glow-primary)] hover:bg-[var(--color-primary-700)] active:scale-[0.98] disabled:opacity-45 disabled:shadow-none disabled:cursor-not-allowed transition-all duration-[var(--transition-fast)] cursor-pointer">${icons.sparkle}<span>Generar resumen</span></button>
+      </div>
+      <section id="summarySection" hidden aria-labelledby="summaryTitle" class="pt-4">
+        <div class="flex items-end justify-between gap-3 mb-3 px-1">
+          <div>
+            <p class="text-[10px] font-bold tracking-[0.14em] uppercase text-[var(--color-accent-600)] dark:text-[var(--color-accent-400)]">Derivado del texto visible</p>
+            <h2 id="summaryTitle" class="mt-0.5 text-base font-bold tracking-tight text-[var(--color-text-primary)]">Historial de resúmenes</h2>
+          </div>
+          <span class="hidden sm:inline text-[10px] text-[var(--color-text-muted)]">Hasta 10 generaciones</span>
+        </div>
+        <div id="summaryPanel" hidden class="space-y-2" aria-live="polite"></div>
+      </section>
     </div>
   `;
 }
