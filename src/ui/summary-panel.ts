@@ -62,7 +62,7 @@ function createSummaryCard(
 
   const marker = document.createElement('span');
   marker.className =
-    'summary-number inline-flex items-center justify-center w-7 h-7 shrink-0 rounded-lg bg-[var(--color-primary-100)] text-[var(--color-primary-800)] dark:bg-[var(--color-primary-900)] dark:text-[var(--color-primary-200)] text-xs font-bold';
+    'summary-number inline-flex items-center justify-center w-7 h-7 shrink-0 rounded-lg bg-[var(--color-surface-sunken)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)] text-xs font-bold';
   marker.textContent = String(number);
 
   const label = document.createElement('span');
@@ -90,7 +90,7 @@ function createSummaryCard(
   if (generated.keyPoints.length > 0) {
     const keyPointLabel = document.createElement('h4');
     keyPointLabel.className =
-      'mt-4 mb-2 text-[10px] font-bold tracking-[0.12em] uppercase text-[var(--color-primary-700)] dark:text-[var(--color-primary-300)]';
+      'mt-4 mb-2 text-[10px] font-bold tracking-[0.12em] uppercase text-[var(--color-text-secondary)]';
     keyPointLabel.textContent = 'Puntos clave';
 
     const keyPoints = document.createElement('ul');
@@ -100,7 +100,7 @@ function createSummaryCard(
       item.className = 'flex gap-2.5';
       const bullet = document.createElement('span');
       bullet.className =
-        'mt-[0.42rem] w-1.5 h-1.5 shrink-0 rounded-full bg-[var(--color-accent-500)]';
+        'mt-[0.42rem] w-1.5 h-1.5 shrink-0 rounded-full bg-[var(--color-text-primary)]';
       bullet.setAttribute('aria-hidden', 'true');
       const text = document.createElement('span');
       text.textContent = point;

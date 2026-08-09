@@ -158,7 +158,7 @@ function renderAppHeader(): string {
   return `
     <header class="sticky top-0 z-20 glass-strong flex items-center justify-between px-5 py-3.5 border-b border-[var(--color-border-subtle)]">
       <div class="flex items-center gap-3">
-        <div class="relative w-10 h-10 rounded-xl text-white flex items-center justify-center shadow-[var(--shadow-glow-primary)]" style="background-image: var(--gradient-brand);">
+        <div class="relative w-10 h-10 rounded-xl bg-[var(--color-control-emphasis)] text-[var(--color-text-inverse)] flex items-center justify-center shadow-[var(--shadow-glow-primary)]">
           ${icons.mic}
         </div>
         <div class="text-left leading-tight">
@@ -249,7 +249,7 @@ function renderSettingsModal(): string {
       <div role="dialog" aria-modal="true" aria-labelledby="settingsTitle" class="w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-[var(--shadow-elevated)]">
         <div class="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border-subtle)] sticky top-0 bg-[var(--color-surface)] z-10">
           <h2 id="settingsTitle" class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-primary)]">
-            <span class="text-[var(--color-primary-600)] dark:text-[var(--color-primary-400)]">${icons.settings}</span>
+            <span class="text-[var(--color-text-secondary)]">${icons.settings}</span>
             Configuración
           </h2>
           <button id="settingsCloseBtn" type="button" class="p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-muted)] transition-colors duration-[var(--transition-fast)] cursor-pointer" aria-label="Cerrar configuración">
@@ -337,8 +337,8 @@ function renderVisualizerArea(): string {
       <canvas id="waveformCanvas" class="w-full h-20"></canvas>
       <span id="timerDisplay" class="absolute top-2.5 right-3 text-[11px] font-mono font-medium text-[var(--color-text-secondary)] glass px-2.5 py-1 rounded-full border border-[var(--color-border-subtle)] shadow-sm">00:00</span>
       <span id="recIndicator" class="rec-indicator absolute top-2.5 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full glass border border-[var(--color-border-subtle)] shadow-sm opacity-0 transition-opacity duration-300">
-        <span class="rec-dot w-2 h-2 rounded-full bg-[var(--color-status-recording)]"></span>
-        <span class="text-[10px] font-bold tracking-wider text-[var(--color-status-recording)] uppercase">REC</span>
+        <span class="rec-dot w-2 h-2 rounded-full bg-[var(--color-text-primary)]"></span>
+        <span class="text-[10px] font-bold tracking-wider text-[var(--color-text-primary)] uppercase">REC</span>
       </span>
     </div>
   `;
@@ -358,16 +358,16 @@ function renderOutputSection(): string {
           ${renderToolbarButton('clearBtn', icons.trash, 'Limpiar')}
         </div>
       </div>
-      <textarea id="output" class="w-full h-52 p-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-primary)] text-[15px] leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-400)] focus:border-transparent placeholder:text-[var(--color-text-muted)] shadow-[var(--shadow-card)] transition-all duration-[var(--transition-fast)] hover:shadow-[var(--shadow-card-hover)]" placeholder="Tu texto aparecerá aquí..." spellcheck="true"></textarea>
+      <textarea id="output" class="w-full h-52 p-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-primary)] text-[15px] leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-focus)] focus:border-transparent placeholder:text-[var(--color-text-muted)] shadow-[var(--shadow-card)] transition-all duration-[var(--transition-fast)] hover:shadow-[var(--shadow-card-hover)]" placeholder="Tu texto aparecerá aquí..." spellcheck="true"></textarea>
       <div id="metadataPanel" class="hidden rounded-2xl border border-[var(--color-border)] p-3 bg-[var(--color-surface-muted)] text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]"></div>
       <div class="pt-2 flex items-center justify-between gap-3">
         <p class="text-[11px] leading-4 text-[var(--color-text-muted)]">Resume el texto visible. La transcripción no cambia.</p>
-        <button id="summaryBtn" type="button" disabled class="shrink-0 inline-flex items-center justify-center gap-2 min-h-10 px-4 rounded-xl bg-[var(--color-primary-600)] text-white text-sm font-semibold shadow-[var(--shadow-glow-primary)] hover:bg-[var(--color-primary-700)] active:scale-[0.98] disabled:opacity-45 disabled:shadow-none disabled:cursor-not-allowed transition-all duration-[var(--transition-fast)] cursor-pointer">${icons.sparkle}<span>Generar resumen</span></button>
+        <button id="summaryBtn" type="button" disabled class="shrink-0 inline-flex items-center justify-center gap-2 min-h-10 px-4 rounded-xl bg-[var(--color-control-emphasis)] text-[var(--color-text-inverse)] text-sm font-semibold shadow-[var(--shadow-glow-primary)] hover:bg-[var(--color-control-emphasis-hover)] active:scale-[0.98] disabled:opacity-45 disabled:shadow-none disabled:cursor-not-allowed transition-all duration-[var(--transition-fast)] cursor-pointer">${icons.sparkle}<span>Generar resumen</span></button>
       </div>
       <section id="summarySection" hidden aria-labelledby="summaryTitle" class="pt-4">
         <div class="flex items-end justify-between gap-3 mb-3 px-1">
           <div>
-            <p class="text-[10px] font-bold tracking-[0.14em] uppercase text-[var(--color-accent-600)] dark:text-[var(--color-accent-400)]">Derivado del texto visible</p>
+            <p class="text-[10px] font-bold tracking-[0.14em] uppercase text-[var(--color-text-secondary)]">Derivado del texto visible</p>
             <h2 id="summaryTitle" class="mt-0.5 text-base font-bold tracking-tight text-[var(--color-text-primary)]">Historial de resúmenes</h2>
           </div>
           <span class="hidden sm:inline text-[10px] text-[var(--color-text-muted)]">Hasta 10 generaciones</span>
@@ -408,7 +408,7 @@ function renderSelectField(
   return `
     <div class="space-y-1">
       <label for="${id}" class="block text-xs font-medium text-[var(--color-text-muted)] text-left">${label}</label>
-      <select id="${id}" class="w-full p-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-500)] focus:border-transparent transition-all duration-[var(--transition-fast)] cursor-pointer">${opts}</select>
+      <select id="${id}" class="w-full p-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-focus)] focus:border-transparent transition-all duration-[var(--transition-fast)] cursor-pointer">${opts}</select>
     </div>`;
 }
 
@@ -424,7 +424,7 @@ function renderTextareaField(id: string, label: string, placeholder: string, row
   return `
     <div class="space-y-1">
       <label for="${id}" class="block text-xs font-medium text-[var(--color-text-muted)] text-left">${label}</label>
-      <textarea id="${id}" rows="${rows}" class="w-full p-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-sm text-[var(--color-text-primary)] resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-500)] focus:border-transparent transition-all duration-[var(--transition-fast)] placeholder:text-[var(--color-text-muted)]" placeholder="${placeholder}"></textarea>
+      <textarea id="${id}" rows="${rows}" class="w-full p-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-sm text-[var(--color-text-primary)] resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-focus)] focus:border-transparent transition-all duration-[var(--transition-fast)] placeholder:text-[var(--color-text-muted)]" placeholder="${placeholder}"></textarea>
     </div>`;
 }
 
@@ -439,7 +439,7 @@ function renderTemperatureControl(): string {
         <label for="temperatureSlider" class="text-xs font-medium text-[var(--color-text-muted)]">Temperatura</label>
         <span id="temperatureValue" class="text-xs font-mono text-[var(--color-text-secondary)] bg-[var(--color-surface-muted)] px-1.5 py-0.5 rounded">${DEFAULT_SETTINGS.temperature}</span>
       </div>
-      <input id="temperatureSlider" type="range" min="0" max="1" step="0.1" value="${DEFAULT_SETTINGS.temperature}" class="w-full h-1.5 rounded-full appearance-none bg-[var(--color-primary-200)] accent-[var(--color-accent-500)] cursor-pointer dark:bg-[var(--color-primary-800)]" />
+      <input id="temperatureSlider" type="range" min="0" max="1" step="0.1" value="${DEFAULT_SETTINGS.temperature}" class="w-full h-1.5 rounded-full appearance-none bg-[var(--color-surface-sunken)] accent-[var(--color-control-emphasis)] cursor-pointer" />
     </div>`;
 }
 
@@ -456,10 +456,10 @@ function renderResponseFormatControl(): string {
     <div class="flex items-end gap-3">
       <div class="flex-1 space-y-1">
         <label for="responseFormatSelect" class="block text-xs font-medium text-[var(--color-text-muted)] text-left">Formato</label>
-        <select id="responseFormatSelect" class="w-full p-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-500)] focus:border-transparent transition-all duration-[var(--transition-fast)] cursor-pointer">${options}</select>
+        <select id="responseFormatSelect" class="w-full p-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-focus)] focus:border-transparent transition-all duration-[var(--transition-fast)] cursor-pointer">${options}</select>
       </div>
       <label class="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)] whitespace-nowrap cursor-pointer pb-2.5">
-        <input id="timestampToggle" type="checkbox" class="accent-[var(--color-accent-500)] cursor-pointer" /> Por palabra
+        <input id="timestampToggle" type="checkbox" class="accent-[var(--color-control-emphasis)] cursor-pointer" /> Por palabra
       </label>
     </div>`;
 }
@@ -523,7 +523,7 @@ function renderTextField(id: string, label: string, placeholder: string): string
   return `
     <div class="space-y-1">
       <label for="${id}" class="block text-xs font-medium text-[var(--color-text-muted)] text-left">${label}</label>
-      <input id="${id}" type="text" class="w-full p-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-500)] focus:border-transparent transition-all duration-[var(--transition-fast)] placeholder:text-[var(--color-text-muted)]" placeholder="${placeholder}" />
+      <input id="${id}" type="text" class="w-full p-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-focus)] focus:border-transparent transition-all duration-[var(--transition-fast)] placeholder:text-[var(--color-text-muted)]" placeholder="${placeholder}" />
     </div>`;
 }
 
@@ -545,7 +545,7 @@ function renderRangeField(
         <label for="${id}" class="text-xs font-medium text-[var(--color-text-muted)]">${label}</label>
         <span id="${valueId}" class="text-xs font-mono text-[var(--color-text-secondary)] bg-[var(--color-surface-muted)] px-1.5 py-0.5 rounded">${value}</span>
       </div>
-      <input id="${id}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" class="w-full h-1.5 rounded-full appearance-none bg-[var(--color-primary-200)] accent-[var(--color-accent-500)] cursor-pointer dark:bg-[var(--color-primary-800)]" />
+      <input id="${id}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" class="w-full h-1.5 rounded-full appearance-none bg-[var(--color-surface-sunken)] accent-[var(--color-control-emphasis)] cursor-pointer" />
     </div>`;
 }
 
@@ -555,7 +555,7 @@ function renderRangeField(
 function renderToggleField(id: string, label: string, hint: string, checked: boolean): string {
   return `
     <label for="${id}" class="flex items-start gap-2.5 cursor-pointer">
-      <input id="${id}" type="checkbox" ${checked ? 'checked' : ''} class="mt-0.5 h-4 w-4 rounded border-[var(--color-border-strong)] accent-[var(--color-accent-500)] cursor-pointer" />
+      <input id="${id}" type="checkbox" ${checked ? 'checked' : ''} class="mt-0.5 h-4 w-4 rounded border-[var(--color-border-strong)] accent-[var(--color-control-emphasis)] cursor-pointer" />
       <span class="flex flex-col">
         <span class="text-xs font-medium text-[var(--color-text-muted)]">${label}</span>
         <span class="text-[11px] text-[var(--color-text-muted)] opacity-80">${hint}</span>
@@ -571,7 +571,7 @@ function renderRateLimits(): string {
     <div class="rounded-xl bg-[var(--color-surface-muted)] border border-[var(--color-border-subtle)] p-3 text-xs text-[var(--color-text-muted)] text-left">
       <div class="flex items-center justify-between">
         <span class="font-semibold text-[var(--color-text-secondary)] flex items-center gap-1.5">${icons.sparkle}Límites (Free)</span>
-        <a href="https://console.groq.com/settings/limits" target="_blank" rel="noopener noreferrer" class="text-[var(--color-accent-600)] hover:text-[var(--color-accent-700)] dark:text-[var(--color-accent-400)] dark:hover:text-[var(--color-accent-300)] no-underline font-semibold transition-colors duration-[var(--transition-fast)]">Ver →</a>
+        <a href="https://console.groq.com/settings/limits" target="_blank" rel="noopener noreferrer" class="text-[var(--color-text-primary)] hover:text-[var(--color-text-secondary)] no-underline font-semibold transition-colors duration-[var(--transition-fast)]">Ver →</a>
       </div>
       <div class="mt-2 grid grid-cols-3 gap-2 text-[10px]">
         <span class="px-2 py-1 rounded-md bg-[var(--color-surface)] border border-[var(--color-border-subtle)] text-center">20 req/min</span>

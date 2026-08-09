@@ -34,26 +34,28 @@ export interface WaveformStyle {
   barRadius: number;
   /** Idle line color */
   idleColor: string;
+  /** Recording shadow color */
+  recordingShadowColor: string;
 }
 
-/** Default style — brand gradient (teal → orange). */
+/** Default style — neutral light-theme fallbacks. */
 const DEFAULT_STYLE: Readonly<WaveformStyle> = {
   barGradient: [
-    [0, '#14b8a6'],
-    [0.55, '#22c1c3'],
-    [1, '#f97316'],
+    [0, '#1f2328'],
+    [1, '#59636e'],
   ],
   barWidth: 3,
   barGap: 2,
   minBarHeight: 2,
   barRadius: 2,
-  idleColor: '#cbd5e1',
+  idleColor: '#8c959f',
+  recordingShadowColor: '#59636e',
 };
 
 export class WaveformVisualizer {
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
-  private readonly style: WaveformStyle;
+  private style: WaveformStyle;
   private animationFrame: number | null = null;
   private analyserSource: AnalyserNode | null = null;
   private dataArray: AnalyserByteData | null = null;
@@ -79,6 +81,12 @@ export class WaveformVisualizer {
   setRecording(active: boolean): void {
     this.isRecording = active;
     if (!active) this.prevBarHeights = [];
+  }
+
+  /** Replace visual colors after a theme change. */
+  setStyle(style: WaveformStyle): void {
+    this.style = style;
+    this.cachedGradient = null;
   }
 
   /**
@@ -192,10 +200,10 @@ export class WaveformVisualizer {
     }
     this.ctx.fillStyle = this.cachedGradient;
 
-    // Glow effect when recording — neon-like halo around bars
+    // Neutral glow effect when recording.
     if (this.isRecording) {
       this.ctx.shadowBlur = 6;
-      this.ctx.shadowColor = '#22c1c3';
+      this.ctx.shadowColor = this.style.recordingShadowColor;
     } else {
       this.ctx.shadowBlur = 0;
     }

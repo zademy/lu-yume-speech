@@ -64,7 +64,7 @@ export function createSidebar(
     root.classList.add('md:hidden');
   }
 
-  // Header — premium glass with gradient accent rule
+  // Header — glass surface with a neutral emphasis marker
   const header = document.createElement('div');
   header.className =
     'flex items-center justify-between px-4 py-3.5 border-b border-[var(--color-border-subtle)] shrink-0 glass-strong';
@@ -73,8 +73,7 @@ export function createSidebar(
   titleWrap.className = 'flex items-center gap-2';
 
   const titleDot = document.createElement('span');
-  titleDot.className = 'w-2 h-2 rounded-full';
-  titleDot.style.backgroundImage = 'var(--gradient-brand)';
+  titleDot.className = 'w-2 h-2 rounded-full bg-[var(--color-text-primary)]';
 
   const title = document.createElement('h2');
   title.className =
@@ -94,7 +93,7 @@ export function createSidebar(
 
   const clearAllBtn = document.createElement('button');
   clearAllBtn.className =
-    'p-1.5 rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-status-error)] hover:bg-red-50 dark:hover:bg-red-950 active:scale-95 transition-all duration-[var(--transition-fast)] cursor-pointer';
+    'p-1.5 rounded-md border border-transparent text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-sunken)] hover:border-[var(--color-border-strong)] active:scale-95 transition-all duration-[var(--transition-fast)] cursor-pointer';
   clearAllBtn.setAttribute('aria-label', 'Limpiar historial');
   clearAllBtn.setAttribute('title', 'Limpiar historial');
   clearAllBtn.appendChild(createTrashAllIcon());

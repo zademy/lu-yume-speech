@@ -42,11 +42,10 @@ export function createHistoryCard(
   card.setAttribute('tabindex', '0');
   card.setAttribute('aria-label', `Restaurar transcripción: ${entry.text.slice(0, 50)}`);
 
-  // Gradient indicator bar (left edge), only visible on hover/focus
+  // Emphasis indicator bar (left edge), only visible on hover/focus
   const indicator = document.createElement('span');
   indicator.className =
-    'absolute left-0 top-2 bottom-2 w-[3px] rounded-full opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-[var(--transition-fast)]';
-  indicator.style.backgroundImage = 'var(--gradient-brand)';
+    'absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-[var(--color-text-primary)] opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-[var(--transition-fast)]';
   indicator.setAttribute('aria-hidden', 'true');
   card.appendChild(indicator);
 
@@ -95,7 +94,7 @@ export function createHistoryCard(
   playBtn.className = [
     'p-1.5 rounded-md',
     'text-[var(--color-text-muted)]',
-    'hover:text-[var(--color-primary)]',
+    'hover:text-[var(--color-text-primary)]',
     'hover:bg-[var(--color-surface-muted)]',
     'active:scale-90',
     'transition-all duration-[var(--transition-fast)]',
@@ -110,7 +109,7 @@ export function createHistoryCard(
   downloadBtn.className = [
     'p-1.5 rounded-md',
     'text-[var(--color-text-muted)]',
-    'hover:text-[var(--color-primary)]',
+    'hover:text-[var(--color-text-primary)]',
     'hover:bg-[var(--color-surface-muted)]',
     'active:scale-90',
     'transition-all duration-[var(--transition-fast)]',
@@ -123,10 +122,10 @@ export function createHistoryCard(
   // Delete button
   const deleteBtn = document.createElement('button');
   deleteBtn.className = [
-    'p-1.5 rounded-md',
+    'p-1.5 rounded-md border border-transparent',
     'text-[var(--color-text-muted)]',
-    'hover:text-[var(--color-status-error)]',
-    'hover:bg-red-50 dark:hover:bg-red-950/50',
+    'hover:text-[var(--color-text-primary)]',
+    'hover:bg-[var(--color-surface-sunken)] hover:border-[var(--color-border-strong)]',
     'active:scale-90',
     'transition-all duration-[var(--transition-fast)]',
     'cursor-pointer',
@@ -248,10 +247,11 @@ function createBadge(text: string, variant: 'primary' | 'muted' | 'accent'): HTM
 
   const variants: Record<string, string> = {
     primary:
-      'bg-[var(--color-primary-100)] text-[var(--color-primary-700)] dark:bg-[var(--color-primary-900)] dark:text-[var(--color-primary-300)]',
-    muted: 'bg-[var(--color-surface-muted)] text-[var(--color-text-muted)]',
+      'bg-[var(--color-surface-sunken)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)]',
+    muted:
+      'bg-[var(--color-surface-muted)] text-[var(--color-text-muted)] border border-[var(--color-border-subtle)]',
     accent:
-      'bg-[var(--color-accent-100)] text-[var(--color-accent-700)] dark:bg-[var(--color-accent-900)] dark:text-[var(--color-accent-300)]',
+      'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border border-[var(--color-border-strong)]',
   };
 
   badge.className = `${base} ${variants[variant] ?? variants.muted}`;

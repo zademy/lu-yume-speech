@@ -46,6 +46,19 @@ describe('summary-panel', () => {
     expect(panel.textContent).toContain('Punto C');
   });
 
+  it('renders summaries with neutral semantic roles', () => {
+    const panel = document.createElement('div');
+
+    renderSummaryHistory(panel, history, { onCopy: vi.fn(), onDelete: vi.fn() });
+
+    const marker = panel.querySelector<HTMLElement>('.summary-number');
+    const bullet = panel.querySelector<HTMLElement>('li > span[aria-hidden="true"]');
+    expect(marker?.className).toContain('color-surface-sunken');
+    expect(marker?.className).toContain('color-text-primary');
+    expect(bullet?.className).toContain('color-text-primary');
+    expect(panel.innerHTML).not.toMatch(/color-(?:primary|accent)-/);
+  });
+
   it('routes copy and delete controls through supplied handlers', () => {
     const panel = document.createElement('div');
     const onCopy = vi.fn();
