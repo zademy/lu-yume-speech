@@ -41,7 +41,7 @@
     "msw": "^2.7.0",
     "prettier": "3.9.6",
     "tailwindcss": "^4.3.0",
-    "typescript": "~6.0.2",
+    "typescript": "~6.0.3",
     "typescript-eslint": "^8.59.2",
     "vite": "^8.2.1",
     "vitest": "^4.1.10",

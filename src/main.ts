@@ -267,6 +267,7 @@ async function bootstrap(): Promise<void> {
     const processed = await audioProcessor.process(rawStream, 'dsp');
     recorder.setRecordingStream(processed.stream);
     analyzer.connectAnalyser(processed.analyser);
+    visualizer.connectAnalyser(processed.analyser);
   } catch (error) {
     console.error('[App] Microphone access denied:', error);
     showToast(elements.toastContainer, 'No se pudo acceder al micrófono', 'error');
@@ -276,8 +277,11 @@ async function bootstrap(): Promise<void> {
   // Canvas sizing
   visualizer.syncSize();
   visualizer.drawIdle();
-  const onResize = () => visualizer.syncSize();
-  window.addEventListener('resize', onResize);
+  const resizeObserver =
+    typeof ResizeObserver === 'function' ? new ResizeObserver(() => visualizer.syncSize()) : null;
+  resizeObserver?.observe(elements.waveformCanvas);
+  const onResize = resizeObserver ? null : () => visualizer.syncSize();
+  if (onResize) window.addEventListener('resize', onResize);
 
   // Live configuration: loaded once, refreshed on settings:change.
   let config: AppSettings = { ...DEFAULT_SETTINGS, ...((await platform.loadSettings()) ?? {}) };
@@ -311,7 +315,8 @@ async function bootstrap(): Promise<void> {
 
   window.addEventListener('unload', () => {
     cleanup();
-    window.removeEventListener('resize', onResize);
+    resizeObserver?.disconnect();
+    if (onResize) window.removeEventListener('resize', onResize);
     visualizer.stop();
     timer.dispose();
     analyzer.dispose();
@@ -405,6 +410,7 @@ function wireRecordingHandlers(
     analyzer.start();
     timer.start();
     visualizer.setRecording(true);
+    visualizer.start();
     elements.waveformContainer.classList.add('recording-active');
     setStatus(elements, { message: 'Escuchando...', level: 'recording' });
   });
@@ -412,15 +418,10 @@ function wireRecordingHandlers(
   bus.on('recording:stop', () => {
     analyzer.stop();
     timer.stop();
+    visualizer.stop();
     visualizer.setRecording(false);
     elements.waveformContainer.classList.remove('recording-active');
     visualizer.drawIdle();
-  });
-
-  bus.on('recording:level', (_level) => {
-    const data = analyzer.getWaveformData();
-    if (data) visualizer.drawFrame(data);
-    // Canvas communicates level visually — status stays stable.
   });
 
   bus.on('recording:timer', (elapsed) => {
@@ -745,14 +746,10 @@ function resolveWaveformStyle(canvas: HTMLCanvasElement): WaveformStyle {
     styles.getPropertyValue(name).trim() || fallback;
 
   return {
-    barGradient: [
+    orbGradient: [
       [0, read('--color-waveform-active', '#1f2328')],
       [1, read('--color-waveform-active-muted', '#59636e')],
     ],
-    barWidth: 3,
-    barGap: 2,
-    minBarHeight: 2,
-    barRadius: 2,
     idleColor: read('--color-waveform-idle', '#8c959f'),
     recordingShadowColor: read('--color-waveform-active-muted', '#59636e'),
   };
