@@ -17,15 +17,15 @@
 
 type ToastLevel = 'success' | 'error' | 'warning' | 'info';
 
-/** Color mapping per toast level using design system tokens. */
+/** Neutral treatment per toast level using design system tokens. */
 const LEVEL_STYLES: Record<ToastLevel, string> = {
   success:
-    'bg-emerald-50 border-emerald-200 text-emerald-800 dark:bg-emerald-950 dark:border-emerald-800 dark:text-emerald-200',
+    'bg-[var(--color-surface)] border-[var(--color-border-strong)] text-[var(--color-text-primary)]',
   error:
-    'bg-red-50 border-red-200 text-red-800 dark:bg-red-950 dark:border-red-800 dark:text-red-200',
+    'bg-[var(--color-surface-sunken)] border-[var(--color-text-primary)] text-[var(--color-text-primary)]',
   warning:
-    'bg-amber-50 border-amber-200 text-amber-800 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-200',
-  info: 'bg-primary-50 border-primary-200 text-primary-800 dark:bg-primary-950 dark:border-primary-800 dark:text-primary-200',
+    'bg-[var(--color-surface-muted)] border-[var(--color-border-strong)] text-[var(--color-text-primary)]',
+  info: 'bg-[var(--color-surface)] border-[var(--color-border)] text-[var(--color-text-secondary)]',
 };
 
 /**
@@ -70,6 +70,7 @@ export function showToast(
   ].join(' ');
 
   toast.setAttribute('role', 'status');
+  toast.dataset.toastLevel = level;
 
   // Icon — cloned from pre-parsed SVG element (no innerHTML at runtime).
   const iconSlot = document.createElement('span');

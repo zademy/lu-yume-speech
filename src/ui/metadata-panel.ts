@@ -72,11 +72,11 @@ function createChip(
 ): HTMLElement {
   const variants: Record<string, string> = {
     primary:
-      'bg-[var(--color-primary-100)] text-[var(--color-primary-700)] dark:bg-[var(--color-primary-900)] dark:text-[var(--color-primary-300)]',
+      'bg-[var(--color-surface-sunken)] text-[var(--color-text-primary)] border border-[var(--color-border-subtle)]',
     muted:
       'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border border-[var(--color-border-subtle)]',
     accent:
-      'bg-[var(--color-accent-100)] text-[var(--color-accent-700)] dark:bg-[var(--color-accent-900)] dark:text-[var(--color-accent-300)]',
+      'bg-[var(--color-surface)] text-[var(--color-text-secondary)] border border-[var(--color-border-strong)]',
   };
 
   const chip = document.createElement('span');
@@ -123,8 +123,7 @@ function buildSegmentDetails(
     idxTd.textContent = String(i + 1);
 
     const timeTd = document.createElement('td');
-    timeTd.className =
-      'py-1 pr-3 text-[var(--color-accent-600)] dark:text-[var(--color-accent-400)] whitespace-nowrap';
+    timeTd.className = 'py-1 pr-3 text-[var(--color-text-secondary)] whitespace-nowrap';
     timeTd.textContent = `${formatTimestamp(s.start)} → ${formatTimestamp(s.end)}`;
 
     const textTd = document.createElement('td');

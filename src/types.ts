@@ -261,6 +261,12 @@ export const HISTORY_SIDEBAR_KEY = 'sidebar_open';
 /** localStorage key for the history entries array. */
 export const HISTORY_ENTRIES_KEY = 'history';
 
+/** Maximum summaries retained for one exact transcription snapshot. */
+export const SUMMARY_HISTORY_MAX_ENTRIES = 10;
+
+/** localStorage key for generated summary histories. */
+export const SUMMARY_HISTORIES_KEY = 'summary_histories';
+
 /** A single transcription saved to the history. */
 export interface HistoryEntry {
   /** Unique identifier (crypto.randomUUID) */
@@ -277,6 +283,34 @@ export interface HistoryEntry {
   createdAt: number;
   /** Whether this was a transcription or translation */
   operationMode: OperationMode;
+}
+
+/** One model response generated from a transcription snapshot. */
+export interface GeneratedSummary {
+  /** Unique identifier (crypto.randomUUID) */
+  id: string;
+  /** Short prose overview in the transcription language. */
+  summary: string;
+  /** Main ideas extracted from the transcription. */
+  keyPoints: string[];
+  /** Groq chat model used. */
+  model: string;
+  /** Unix timestamp in milliseconds. */
+  createdAt: number;
+}
+
+/** Summaries generated for one exact snapshot of visible transcription text. */
+export interface SummaryHistory {
+  /** Unique identifier (crypto.randomUUID). */
+  id: string;
+  /** Exact visible text used as source for every contained summary. */
+  sourceText: string;
+  /** Generations ordered from oldest to newest. */
+  summaries: GeneratedSummary[];
+  /** Unix timestamp in milliseconds for the first generation. */
+  createdAt: number;
+  /** Unix timestamp in milliseconds for the latest generation. */
+  updatedAt: number;
 }
 
 // ---------------------------------------------------------------------------

@@ -44,7 +44,7 @@ LU YUME is a browser speech-to-text application built as a TypeScript SPA (Vite 
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `src/core/`     | `EventBus` (typed pub/sub) + `TranscriptionSession` (pipeline lifecycle state machine). The backbone; all inter-module communication flows through the bus.                                                                                            |
 | `src/audio/`    | `Recorder`, `AudioAnalyzer`, `RecordingTimer`, `WaveformVisualizer`, `AudioProcessor` (DSP + RNNoise), `AudioStore` (IndexedDB clips), `SilenceTrimmer` (decode→trim→WAV, fail-open).                                                                  |
-| `src/api/`      | `GroqClient` (Groq Whisper: timeout, retry, Zod, typed errors) + `llm-postprocessor` (optional Groq chat polish, strict JSON schema).                                                                                                                  |
+| `src/api/`      | `GroqClient` (Groq Whisper: timeout, retry, Zod, typed errors) + `llm-postprocessor` (optional Groq chat polish) + `summary-client` (manual text summaries). Chat outputs use strict JSON schemas.                                                       |
 | `src/platform/` | `Platform` interface + `WebBridge`. **The only layer that touches credential/settings storage.**                                                                                                                                                       |
 | `src/ui/`       | `Renderer`, `Sidebar`, `HistoryCard`, `MetadataPanel`, `Toast`. DOM construction.                                                                                                                                                                      |
 | `src/utils/`    | `Storage`, `HistoryRepo`, `Settings`, `Keyboard`, `Clipboard`, `Theme`, `OSDetect`, `TimeAgo`, `StringDistance` (Levenshtein + Soundex), `TextPostprocess` (custom-word correction + filler/stutter cleanup), `TranscriptionConfig` (prompt assembly). |
@@ -83,8 +83,8 @@ This means:
 ## 4. Network egress
 
 The only network egress is `https://api.groq.com` (Groq Whisper API, and — when
-LLM post-processing is enabled — the Groq chat completions endpoint under the
-same origin). If the SPA is deployed behind a web server, a
+LLM post-processing or transcript summary generation is requested — the Groq
+chat completions endpoint under the same origin). If the SPA is deployed behind a web server, a
 `Content-Security-Policy` header such as
 `default-src 'self'; connect-src 'self' https://api.groq.com` is recommended to
 pin this down.
@@ -118,7 +118,16 @@ Per recording, the pipeline runs, in order:
 Steps 2–6 are each independently toggleable via the quality settings in
 `AppSettings`.
 
-## 6. How to add a new Platform capability
+## 6. Transcript summary flow
+
+Summary generation is independent from the transcription pipeline and never
+resends audio. The composition root snapshots the current editable textarea,
+passes only that text and the injected API key to `generateSummary`, then stores
+the schema-bound overview and key points in `SummaryRepo`. Histories are keyed
+by exact source text; editing the textarea hides the previous history without
+deleting it. Each source keeps its 10 newest generations.
+
+## 7. How to add a new Platform capability
 
 1. **TypeScript wrapper** — Add a method to `Platform` in `platform.ts`, then
    implement it in `WebBridge` (via the `stt_`-prefixed storage helpers).

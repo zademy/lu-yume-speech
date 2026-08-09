@@ -44,6 +44,7 @@
 - **Fuzzy + filler correction** — Post-processing fixes near-matches against your vocabulary (Levenshtein + Soundex) and strips language-aware filler words and stutters.
 - **Silence trimming** — Leading/trailing silence is removed before transcription (fail-open) for lower latency and fewer hallucinations.
 - **LLM polish (optional)** — An optional Groq chat pass cleans up punctuation, capitalization, and disfluencies via a strict JSON schema.
+- **Transcript summaries** — Generate same-language summaries from the current editable text with `openai/gpt-oss-20b`; each exact text snapshot keeps up to 10 local generations.
 - **Noise suppression** — DSP filter chain or AI-backed RNNoise suppression on the captured audio.
 - **Waveform visualization** — Live audio waveform rendered on a `<canvas>` element during recording.
 - **Silence detection** — Automatically stops recording after a configurable silence threshold.
@@ -140,7 +141,8 @@ speech-to-text/
 ├── src/
 │   ├── api/
 │   │   ├── groq-client.ts         # Groq Whisper API client (timeout, retry, Zod)
-│   │   └── llm-postprocessor.ts   # Optional LLM polish pass (Groq chat, JSON schema)
+│   │   ├── llm-postprocessor.ts   # Optional LLM polish pass (Groq chat, JSON schema)
+│   │   └── summary-client.ts       # Transcript summary client (Groq chat, JSON schema)
 │   ├── audio/
 │   │   ├── audio-analyzer.ts      # Web Audio API real-time analyzer
 │   │   ├── audio-processor.ts     # DSP filter chain + RNNoise suppression
@@ -161,6 +163,7 @@ speech-to-text/
 │   │   ├── metadata-panel.ts      # Verbose JSON metadata display
 │   │   ├── renderer.ts            # Full app DOM layout builder
 │   │   ├── sidebar.ts             # Floating history panel
+│   │   ├── summary-panel.ts        # Summary generation history renderer
 │   │   └── toast.ts               # Non-blocking notification toasts
 │   ├── utils/
 │   │   ├── clipboard.ts           # Clipboard API wrapper
@@ -169,6 +172,7 @@ speech-to-text/
 │   │   ├── os-detect.ts           # Platform detection (macOS vs other)
 │   │   ├── settings.ts            # Reads UI state into typed config
 │   │   ├── storage.ts             # Type-safe storage wrapper (stt_ prefix)
+│   │   ├── summary-repo.ts        # Summary histories keyed by exact source text
 │   │   ├── string-distance.ts     # Levenshtein + Soundex (fuzzy matching)
 │   │   ├── text-postprocess.ts    # Custom-word correction + filler/stutter cleanup
 │   │   ├── theme.ts               # Light/dark theme manager

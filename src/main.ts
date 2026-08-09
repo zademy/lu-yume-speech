@@ -30,21 +30,24 @@ import { DEFAULT_SETTINGS } from './types';
 import { Recorder } from './audio/recorder';
 import { AudioAnalyzer } from './audio/audio-analyzer';
 import { RecordingTimer } from './audio/recording-timer';
-import { WaveformVisualizer } from './audio/waveform-visualizer';
+import { WaveformVisualizer, type WaveformStyle } from './audio/waveform-visualizer';
 import { AudioProcessor } from './audio/audio-processor';
 import type { NoiseReductionMode } from './audio/audio-processor';
 import { trimSilence } from './audio/silence-trimmer';
 import * as audioStore from './audio/audio-store';
 import { GroqClient } from './api/groq-client';
 import { postProcessWithLlm } from './api/llm-postprocessor';
+import { generateSummary, SUMMARY_MODEL } from './api/summary-client';
 import { renderApp } from './ui/renderer';
 import type { AppElements } from './ui/renderer';
 import { renderMetadata } from './ui/metadata-panel';
 import { showToast } from './ui/toast';
+import { renderSummaryHistory, summaryToText } from './ui/summary-panel';
 import { ThemeManager } from './utils/theme';
 import { createSidebar, populateEntries, prependEntry, removeCard, clearCards } from './ui/sidebar';
 import type { SidebarElements } from './ui/sidebar';
 import * as historyRepo from './utils/history-repo';
+import * as summaryRepo from './utils/summary-repo';
 import { buildPrompt, toPostProcessConfig } from './utils/transcription-config';
 import { postProcessText } from './utils/text-postprocess';
 
@@ -71,12 +74,12 @@ async function promptApiKey(platform: Platform): Promise<string | null> {
       'position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px)';
 
     overlay.innerHTML = `
-      <div role="dialog" aria-modal="true" aria-labelledby="apikey-title" style="background:var(--color-surface,#1e1e2e);border-radius:16px;padding:2rem;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.5);border:1px solid var(--color-border,#3b3b50)">
-        <h2 id="apikey-title" style="color:var(--color-text,#cdd6f4);font-family:Inter,sans-serif;font-size:1.25rem;font-weight:700;margin:0 0 0.5rem">
-          🔑 Groq API Key
+      <div role="dialog" aria-modal="true" aria-labelledby="apikey-title" style="background:var(--color-surface,#151b23);border-radius:16px;padding:2rem;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.5);border:1px solid var(--color-border,#3d444d)">
+        <h2 id="apikey-title" style="color:var(--color-text-primary,#f0f6fc);font-family:Inter,sans-serif;font-size:1.25rem;font-weight:700;margin:0 0 0.5rem">
+          <span style="filter:grayscale(1)">🔑</span> Groq API Key
         </h2>
-        <p style="color:var(--color-text-muted,#9399b2);font-family:Inter,sans-serif;font-size:0.875rem;margin:0 0 1.5rem">
-          Obtén tu key gratis en <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:#06b6d4">console.groq.com/keys</a>
+        <p style="color:var(--color-text-muted,#9198a1);font-family:Inter,sans-serif;font-size:0.875rem;margin:0 0 1.5rem">
+          Obtén tu key gratis en <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:var(--color-text-primary,#f0f6fc)">console.groq.com/keys</a>
         </p>
         <input
           type="password"
@@ -84,14 +87,14 @@ async function promptApiKey(platform: Platform): Promise<string | null> {
           placeholder="gsk_..."
           autocomplete="off"
           spellcheck="false"
-          style="width:100%;box-sizing:border-box;padding:0.75rem 1rem;border-radius:8px;border:1px solid var(--color-border,#3b3b50);background:var(--color-bg,#181825);color:var(--color-text,#cdd6f4);font-family:'JetBrains Mono',monospace;font-size:0.875rem;outline:none;margin-bottom:0.5rem"
+          style="width:100%;box-sizing:border-box;padding:0.75rem 1rem;border-radius:8px;border:1px solid var(--color-border,#3d444d);background:var(--color-surface-sunken,#0d1117);color:var(--color-text-primary,#f0f6fc);font-family:'JetBrains Mono',monospace;font-size:0.875rem;outline:none;margin-bottom:0.5rem"
         />
-        <p id="apikey-error" style="color:#f38ba8;font-family:Inter,sans-serif;font-size:0.75rem;margin:0 0 1rem;min-height:1rem"></p>
+        <p id="apikey-error" style="color:var(--color-text-primary,#f0f6fc);font-family:Inter,sans-serif;font-size:0.75rem;font-weight:600;margin:0 0 1rem;min-height:1rem"></p>
         <div style="display:flex;gap:0.75rem;justify-content:flex-end">
-          <button id="apikey-cancel" style="padding:0.6rem 1.25rem;border-radius:8px;border:1px solid var(--color-border,#3b3b50);background:transparent;color:var(--color-text-muted,#9399b2);font-family:Inter,sans-serif;font-size:0.875rem;cursor:pointer">
+          <button id="apikey-cancel" style="padding:0.6rem 1.25rem;border-radius:8px;border:1px solid var(--color-border,#3d444d);background:transparent;color:var(--color-text-muted,#9198a1);font-family:Inter,sans-serif;font-size:0.875rem;cursor:pointer">
             Cancelar
           </button>
-          <button id="apikey-save" style="padding:0.6rem 1.25rem;border-radius:8px;border:none;background:linear-gradient(135deg,#14b8a6,#0d9488);color:#fff;font-family:Inter,sans-serif;font-size:0.875rem;font-weight:600;cursor:pointer">
+          <button id="apikey-save" style="padding:0.6rem 1.25rem;border-radius:8px;border:none;background:var(--color-control-emphasis,#f0f6fc);color:var(--color-text-inverse,#0d1117);font-family:Inter,sans-serif;font-size:0.875rem;font-weight:600;cursor:pointer">
             Guardar
           </button>
         </div>
@@ -150,7 +153,7 @@ async function main(): Promise<void> {
     console.error('[App] Fatal error during initialization:', err);
     document.body.insertAdjacentHTML(
       'beforeend',
-      '<div role="alert" style="position:fixed;bottom:1rem;right:1rem;background:#dc2626;color:#fff;padding:1rem;border-radius:8px;z-index:9999;font-family:sans-serif">No se pudo iniciar la app. Revisa la consola.</div>',
+      '<div role="alert" style="position:fixed;bottom:1rem;right:1rem;background:var(--color-surface-sunken,#0d1117);color:var(--color-text-primary,#f0f6fc);border:2px solid var(--color-border-strong,#6e7681);padding:1rem;border-radius:8px;z-index:9999;font-family:sans-serif">No se pudo iniciar la app. Revisa la consola.</div>',
     );
   }
 }
@@ -213,6 +216,8 @@ async function bootstrap(): Promise<void> {
 
   // Wire live UI interactions
   wireLiveControls(elements);
+  wireOutputToolbar(elements);
+  wireSummaryFeature(elements, apiKey ?? '');
 
   // Settings modal open/close
   const openSettings = () => elements.settingsModal.classList.remove('hidden');
@@ -243,8 +248,18 @@ async function bootstrap(): Promise<void> {
   const analyzer = new AudioAnalyzer(bus);
   const timer = new RecordingTimer(bus);
   const client = new GroqClient(bus, apiKey ?? '');
-  const visualizer = new WaveformVisualizer(elements.waveformCanvas);
+  const visualizer = new WaveformVisualizer(
+    elements.waveformCanvas,
+    resolveWaveformStyle(elements.waveformCanvas),
+  );
   const audioProcessor = new AudioProcessor();
+
+  elements.themeToggle.addEventListener('click', () => {
+    visualizer.setStyle(resolveWaveformStyle(elements.waveformCanvas));
+    if (!elements.waveformContainer.classList.contains('recording-active')) {
+      visualizer.drawIdle();
+    }
+  });
 
   // Microphone access — process through audio enhancement chain before recording
   try {
@@ -281,7 +296,6 @@ async function bootstrap(): Promise<void> {
   // Wire everything through the event bus
   wireTranscriptionPipeline(bus, client, elements, sidebar, getConfig, apiKey ?? '');
   wireRecordingHandlers(bus, elements, analyzer, timer, visualizer, recorder);
-  wireOutputToolbar(elements);
   wireHistoryEvents(bus, sidebar, elements);
 
   // Keyboard shortcuts
@@ -503,7 +517,7 @@ function wireTranscriptionPipeline(
     const output = elements.outputArea;
     output.value += (output.value ? ' ' : '') + text;
     output.scrollTop = output.scrollHeight;
-    updateWordCount(elements);
+    output.dispatchEvent(new Event('input'));
 
     bus.emit('text:append', text);
 
@@ -572,7 +586,7 @@ function wireHistoryEvents(
     if (!entry) return;
 
     elements.outputArea.value = entry.text;
-    updateWordCount(elements);
+    elements.outputArea.dispatchEvent(new Event('input'));
     showToast(elements.toastContainer, 'Transcripción restaurada', 'success');
     setStatus(elements, { message: 'Transcripción restaurada.', level: 'success' });
   });
@@ -614,7 +628,7 @@ function wireOutputToolbar(elements: AppElements): void {
   elements.clearBtn.addEventListener('click', () => {
     if (!elements.outputArea.value) return;
     elements.outputArea.value = '';
-    updateWordCount(elements);
+    elements.outputArea.dispatchEvent(new Event('input'));
     showToast(elements.toastContainer, 'Texto limpiado', 'info');
   });
 
@@ -636,25 +650,130 @@ function wireOutputToolbar(elements: AppElements): void {
 }
 
 // ===========================================================================
+// Transcript summaries
+// ===========================================================================
+
+function wireSummaryFeature(elements: AppElements, apiKey: string): void {
+  let generating = false;
+
+  const renderForVisibleText = (): void => {
+    const history = summaryRepo.getSummaryHistoryBySource(elements.outputArea.value);
+    elements.summarySection.hidden = history === undefined;
+    renderSummaryHistory(elements.summaryPanel, history, {
+      onCopy: (summary) => {
+        void copyToClipboard(summaryToText(summary)).then((copied) => {
+          showToast(
+            elements.toastContainer,
+            copied ? 'Resumen copiado' : 'No se pudo copiar',
+            copied ? 'success' : 'error',
+          );
+        });
+      },
+      onDelete: (historyId, summaryId) => {
+        summaryRepo.removeSummary(historyId, summaryId);
+        renderForVisibleText();
+        showToast(elements.toastContainer, 'Resumen eliminado', 'info');
+      },
+    });
+  };
+
+  const updateButton = (): void => {
+    elements.summaryBtn.disabled = generating || !elements.outputArea.value.trim();
+    const label = elements.summaryBtn.querySelector('span');
+    if (label) label.textContent = generating ? 'Generando...' : 'Generar resumen';
+  };
+
+  elements.outputArea.addEventListener('input', () => {
+    updateButton();
+    renderForVisibleText();
+  });
+
+  elements.summaryBtn.addEventListener('click', () => {
+    if (generating) return;
+    const sourceText = elements.outputArea.value;
+    if (!sourceText.trim()) return;
+
+    generating = true;
+    updateButton();
+    setStatus(elements, { message: 'Generando resumen...', level: 'processing' });
+
+    void generateSummary(sourceText, apiKey)
+      .then((result) => {
+        summaryRepo.addSummary(sourceText, {
+          id: crypto.randomUUID(),
+          summary: result.summary,
+          keyPoints: result.keyPoints,
+          model: SUMMARY_MODEL,
+          createdAt: Date.now(),
+        });
+        const sourceIsStillVisible = elements.outputArea.value === sourceText;
+        if (sourceIsStillVisible) renderForVisibleText();
+        showToast(
+          elements.toastContainer,
+          sourceIsStillVisible ? 'Resumen generado' : 'Resumen guardado para el texto anterior',
+          'success',
+        );
+        setStatus(elements, {
+          message: sourceIsStillVisible
+            ? 'Resumen generado.'
+            : 'Resumen guardado para el texto anterior.',
+          level: 'success',
+        });
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : 'No se pudo generar el resumen.';
+        showToast(elements.toastContainer, message, 'error', 5000);
+        setStatus(elements, { message: `Error: ${message}`, level: 'error' });
+      })
+      .finally(() => {
+        generating = false;
+        updateButton();
+      });
+  });
+
+  updateButton();
+  renderForVisibleText();
+}
+
+// ===========================================================================
 // Helpers
 // ===========================================================================
 
+function resolveWaveformStyle(canvas: HTMLCanvasElement): WaveformStyle {
+  const styles = getComputedStyle(canvas);
+  const read = (name: string, fallback: string): string =>
+    styles.getPropertyValue(name).trim() || fallback;
+
+  return {
+    barGradient: [
+      [0, read('--color-waveform-active', '#1f2328')],
+      [1, read('--color-waveform-active-muted', '#59636e')],
+    ],
+    barWidth: 3,
+    barGap: 2,
+    minBarHeight: 2,
+    barRadius: 2,
+    idleColor: read('--color-waveform-idle', '#8c959f'),
+    recordingShadowColor: read('--color-waveform-active-muted', '#59636e'),
+  };
+}
+
 const STATUS_STYLES: Record<StatusUpdate['level'], string> = {
   idle: 'text-[var(--color-text-secondary)]',
-  recording: 'text-[var(--color-status-recording)]',
-  processing: 'text-[var(--color-status-processing)]',
-  success: 'text-[var(--color-status-success)]',
-  error: 'text-[var(--color-status-error)]',
-  warning: 'text-[var(--color-status-warning)]',
+  recording: 'text-[var(--color-text-primary)]',
+  processing: 'text-[var(--color-text-secondary)]',
+  success: 'text-[var(--color-text-primary)]',
+  error: 'text-[var(--color-text-primary)]',
+  warning: 'text-[var(--color-text-secondary)]',
 };
 
 const STATUS_DOT: Record<StatusUpdate['level'], string> = {
   idle: 'bg-[var(--color-text-muted)]',
-  recording: 'bg-[var(--color-status-recording)]',
-  processing: 'bg-[var(--color-status-processing)]',
-  success: 'bg-[var(--color-status-success)]',
-  error: 'bg-[var(--color-status-error)]',
-  warning: 'bg-[var(--color-status-warning)]',
+  recording: 'bg-[var(--color-text-primary)]',
+  processing: 'bg-[var(--color-text-muted)]',
+  success: 'bg-[var(--color-text-primary)]',
+  error: 'bg-[var(--color-text-primary)]',
+  warning: 'bg-[var(--color-text-muted)]',
 };
 
 function setStatus(elements: AppElements, update: StatusUpdate): void {

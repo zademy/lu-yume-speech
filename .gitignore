@@ -43,6 +43,7 @@ Thumbs.db
 .husky/_
 
 .playwright-mcp
+.superpowers/
 # Local Pi runtime state
 .atl/
 /.opencode/error-explainer
