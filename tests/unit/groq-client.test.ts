@@ -85,6 +85,57 @@ describe('GroqClient', () => {
     expect(attempts).toBe(3);
   });
 
+  it('classifies 403 as auth', async () => {
+    server.use(
+      http.post('https://api.groq.com/openai/v1/audio/transcriptions', () =>
+        HttpResponse.json({ error: { message: 'forbidden' } }, { status: 403 }),
+      ),
+    );
+    const client = createClient('gsk_test-key');
+    await expect(client.transcribe(blob(), opts)).rejects.toMatchObject({
+      detail: { kind: 'auth' },
+    });
+  });
+
+  it('classifies 500 as server', async () => {
+    server.use(
+      http.post('https://api.groq.com/openai/v1/audio/transcriptions', () =>
+        HttpResponse.json({ error: { message: 'boom' } }, { status: 500 }),
+      ),
+    );
+    const client = createClient('gsk_test-key');
+    await expect(client.transcribe(blob(), opts)).rejects.toMatchObject({
+      detail: { kind: 'server', status: 500 },
+    });
+  });
+
+  it('classifies 400 (other 4xx) as network', async () => {
+    server.use(
+      http.post('https://api.groq.com/openai/v1/audio/transcriptions', () =>
+        HttpResponse.json({ error: { message: 'bad request' } }, { status: 400 }),
+      ),
+    );
+    const client = createClient('gsk_test-key');
+    await expect(client.transcribe(blob(), opts)).rejects.toMatchObject({
+      detail: { kind: 'network' },
+    });
+  });
+
+  it('exhausts 429 retries then throws rate-limit with retryAfterMs', async () => {
+    server.use(
+      http.post('https://api.groq.com/openai/v1/audio/transcriptions', () =>
+        HttpResponse.json(
+          { error: { message: 'slow down' } },
+          { status: 429, headers: { 'Retry-After': '2' } },
+        ),
+      ),
+    );
+    const client = createClient('gsk_test-key');
+    await expect(client.transcribe(blob(), opts)).rejects.toMatchObject({
+      detail: { kind: 'rate-limit', retryAfterMs: 2000 },
+    });
+  }, 15000);
+
   it('emits transcription:error on the bus when throwing', async () => {
     const bus = new EventBus<EventMap>();
     const client = new GroqClient(bus, 'invalid');

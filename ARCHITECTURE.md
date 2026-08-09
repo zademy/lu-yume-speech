@@ -1,154 +1,127 @@
 # Architecture
 
-LU YUME is a desktop speech-to-text application built with **Tauri 2** (Rust shell + native WebView) wrapping a TypeScript SPA (Vite + TypeScript + Tailwind 4).
+LU YUME is a browser speech-to-text application built as a TypeScript SPA (Vite + TypeScript + Tailwind 4).
 
 ## 1. High-level diagram
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                   Tauri Shell (Rust)                  │
+│                   Browser (SPA)                      │
 │                                                       │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────┐ │
-│  │ api_key_*   │  │ settings_*   │  │  shell/dialog │ │
-│  │ commands    │  │ commands     │  │  plugins      │ │
-│  └──────┬──────┘  └──────┬───────┘  └──────────────┘ │
-│         │                 │                           │
-│  ┌──────▼──────┐  ┌──────▼───────┐                    │
-│  │  keyring    │  │ settings.json│                    │
-│  │ (OS keychain│  │ ($APPDATA/   │                    │
-│  │  / cred mgr)│  │  lu-yume/)   │                    │
-│  └─────────────┘  └──────────────┘                    │
-│         │                 │                           │
-│         ▼                 ▼                           │
-│    ━━━━━━━━━━━ invoke() IPC ━━━━━━━━━━━              │
-│         │                 │                           │
-└─────────┼─────────────────┼───────────────────────────┘
-          │                 │
-┌─────────▼─────────────────▼───────────────────────────┐
-│                   WebView (SPA)                        │
+│  ┌──────────────────────────────────────────────┐    │
+│  │           src/platform/ (bridge layer)        │    │
+│  │                                               │    │
+│  │  detectPlatform() ──── WebBridge              │    │
+│  │                                               │    │
+│  │  Platform interface:                          │    │
+│  │    getApiKey / setApiKey / deleteApiKey       │    │
+│  │    hasApiKey                                  │    │
+│  │    loadSettings / saveSettings                │    │
+│  └──────────────────┬───────────────────────────┘    │
+│                     │                                 │
+│  ┌──────────────────▼───────────────────────────┐    │
+│  │          localStorage (stt_ prefixed keys)    │    │
+│  └──────────────────────────────────────────────┘    │
 │                                                       │
-│  ┌──────────────────────────────────────────────┐     │
-│  │           src/platform/ (bridge layer)        │     │
-│  │                                               │     │
-│  │  detectPlatform() ──┬── TauriBridge           │     │
-│  │                     └── WebBridge (dev only)  │     │
-│  │                                               │     │
-│  │  Platform interface:                          │     │
-│  │    getApiKey / setApiKey / deleteApiKey       │     │
-│  │    hasApiKey / isDesktop                      │     │
-│  │    loadSettings / saveSettings                │     │
-│  └──────────────────┬──────────────────────────┘     │
+│  ┌──────────────────────────────────────────────┐    │
+│  │              main.ts (composition root)        │    │
+│  │  injects platform + apiKey into GroqClient     │    │
+│  └──────────────────┬───────────────────────────┘    │
 │                     │                                 │
-│  ┌──────────────────▼──────────────────────────┐     │
-│  │              main.ts (composition root)       │     │
-│  │  injects platform + apiKey into GroqClient    │     │
-│  └──────────────────┬──────────────────────────┘     │
-│                     │                                 │
-│  ┌──────────────────▼──────────────────────────┐     │
-│  │           EventBus (typed pub/sub)            │     │
-│  └──┬──────┬──────┬──────┬──────┬──────┬───────┘     │
+│  ┌──────────────────▼───────────────────────────┐    │
+│  │           EventBus (typed pub/sub)             │    │
+│  └──┬──────┬──────┬──────┬──────┬──────┬────────┘    │
 │     │      │      │      │      │      │              │
 │  ┌──▼─┐ ┌─▼──┐ ┌─▼──┐ ┌─▼──┐ ┌─▼──┐ ┌─▼────┐        │
-│  │audio│ │API │ │ UI │ │util│ │hist│ │theme│        │
-│  └────┘ └────┘ └────┘ └────┘ └────┘ └─────┘        │
+│  │audio│ │API │ │ UI │ │util│ │hist│ │theme│         │
+│  └────┘ └────┘ └────┘ └────┘ └────┘ └──────┘        │
 └─────────────────────────────────────────────────────┘
 ```
 
 ## 2. Module map
 
-| Directory              | Responsibility                                                                                   |
-| ---------------------- | ------------------------------------------------------------------------------------------------ |
-| `src/core/`            | `EventBus` — typed pub/sub. The backbone; all inter-module communication flows through it.        |
-| `src/audio/`           | `Recorder`, `AudioAnalyzer`, `RecordingTimer`, `WaveformVisualizer`. Microphone capture + visualization. |
-| `src/api/`             | `GroqClient` — HTTP client for Groq Whisper with timeout, retry, Zod validation, typed errors.   |
-| `src/platform/`        | `Platform` interface + `TauriBridge` / `WebBridge`. **The only layer that touches Tauri APIs.**  |
-| `src/ui/`              | `Renderer`, `Sidebar`, `HistoryCard`, `MetadataPanel`, `Toast`. DOM construction.                |
-| `src/utils/`           | `Storage`, `HistoryRepo`, `Settings`, `Keyboard`, `Clipboard`, `Theme`, `OSDetect`, `TimeAgo`.   |
-| `src/main.ts`          | Composition root. Wires all modules, owns lifecycle, global error handlers.                      |
-| `src/types.ts`         | Shared types + constants (`EventMap`, `TranscriptionResult`, `GroqError`, `GroqApiError`).       |
-| `src-tauri/src/`       | Rust backend: Tauri commands, keyring integration, settings file I/O.                            |
-| `src-tauri/src/commands/` | `api_key.rs` (4 commands), `settings.rs` (2 commands).                                       |
-| `tests/`               | Vitest unit tests. Pure-logic modules tested in isolation; MSW for network mocking.              |
+| Directory       | Responsibility                                                                                                                                                                                                                                         |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/core/`     | `EventBus` (typed pub/sub) + `TranscriptionSession` (pipeline lifecycle state machine). The backbone; all inter-module communication flows through the bus.                                                                                            |
+| `src/audio/`    | `Recorder`, `AudioAnalyzer`, `RecordingTimer`, `WaveformVisualizer`, `AudioProcessor` (DSP + RNNoise), `AudioStore` (IndexedDB clips), `SilenceTrimmer` (decode→trim→WAV, fail-open).                                                                  |
+| `src/api/`      | `GroqClient` (Groq Whisper: timeout, retry, Zod, typed errors) + `llm-postprocessor` (optional Groq chat polish, strict JSON schema).                                                                                                                  |
+| `src/platform/` | `Platform` interface + `WebBridge`. **The only layer that touches credential/settings storage.**                                                                                                                                                       |
+| `src/ui/`       | `Renderer`, `Sidebar`, `HistoryCard`, `MetadataPanel`, `Toast`. DOM construction.                                                                                                                                                                      |
+| `src/utils/`    | `Storage`, `HistoryRepo`, `Settings`, `Keyboard`, `Clipboard`, `Theme`, `OSDetect`, `TimeAgo`, `StringDistance` (Levenshtein + Soundex), `TextPostprocess` (custom-word correction + filler/stutter cleanup), `TranscriptionConfig` (prompt assembly). |
+| `src/main.ts`   | Composition root. Wires all modules, owns lifecycle, global error handlers.                                                                                                                                                                            |
+| `src/types.ts`  | Shared types + constants (`EventMap`, `TranscriptionResult`, `GroqError`, `GroqApiError`).                                                                                                                                                             |
+| `tests/`        | Vitest unit tests. Pure-logic modules tested in isolation; MSW for network mocking.                                                                                                                                                                    |
 
 ## 3. The Dependency Inversion rule
 
-**No module under `src/` may import `@tauri-apps/api` except `src/platform/tauri-bridge.ts`.**
+**No module under `src/` may touch credential or settings storage directly except through `src/platform/`.**
 
 The rest of the application talks to `Platform` — a plain TypeScript interface defined in `src/platform/platform.ts`:
 
 ```typescript
 export interface Platform {
-  isDesktop(): boolean;
   hasApiKey(): Promise<boolean>;
   getApiKey(): Promise<string | null>;
   setApiKey(key: string): Promise<void>;
   deleteApiKey(): Promise<void>;
-  loadSettings(): Promise<unknown>;
-  saveSettings(settings: unknown): Promise<void>;
+  loadSettings(): Promise<AppSettings | null>;
+  saveSettings(settings: AppSettings): Promise<void>;
 }
 ```
 
-`main.ts` calls `detectPlatform()` once at startup. The factory checks for
-`'__TAURI_INTERNALS__' in window` and returns a `TauriBridge` (desktop) or
-`WebBridge` (browser dev fallback). All consumers receive the `Platform`
+`main.ts` calls `detectPlatform()` once at startup. The factory returns the
+cached `WebBridge` (localStorage-backed). All consumers receive the `Platform`
 interface — they never know which concrete bridge is active.
 
 This means:
 
-- Tests can inject a mock `Platform` without Tauri.
-- The SPA can run in a plain browser during development.
-- Swapping the credential store (e.g., to a remote vault) requires only a new
-  `Platform` implementation — zero changes to business logic.
+- Tests can inject a mock `Platform`.
+- Swapping the credential store (e.g., to a remote vault or IndexedDB)
+  requires only a new `Platform` implementation — zero changes to business
+  logic.
 
-## 4. Content Security Policy
+## 4. Network egress
 
-CSP is enforced by Tauri in `src-tauri/tauri.conf.json`:
+The only network egress is `https://api.groq.com` (Groq Whisper API, and — when
+LLM post-processing is enabled — the Groq chat completions endpoint under the
+same origin). If the SPA is deployed behind a web server, a
+`Content-Security-Policy` header such as
+`default-src 'self'; connect-src 'self' https://api.groq.com` is recommended to
+pin this down.
 
-```
-default-src 'self';
-connect-src 'self' https://api.groq.com ipc: http://ipc.localhost
-```
+## 5. Transcription pipeline
 
-- `'self'` covers all bundled JS, CSS, fonts, and images.
-- `https://api.groq.com` is the only network egress.
-- `ipc:` and `http://ipc.localhost` enable Tauri's IPC channel.
-- No `unsafe-inline`, no `unsafe-eval`, no third-party CDN origins.
+The composition root drives a single named lifecycle object —
+`TranscriptionSession` (`src/core/transcription-session.ts`) — that owns the
+`idle → recording → processing → idle` state machine and the one audio buffer
+awaiting its result. Replacing the former implicit `lastBlob` closure, it makes
+a rapid re-record surface the overwritten buffer (instead of silently dropping
+it) and prevents a failed take's audio from leaking into a later success.
 
-**Tailwind 4 note:** Tailwind 4 with the `@tailwindcss/vite` plugin injects
-styles at build time (no runtime `<style>` injection in production). The CSP
-above works without a nonce. If a future change introduces runtime style
-injection, add a `style-src 'self' 'nonce-<generated>'` directive and pass the
-nonce from Rust via `tauri::WebviewWindowBuilder`.
+Per recording, the pipeline runs, in order:
 
-## 5. How to add a new Tauri command
+1. **Capture + suppress** — `Recorder` → `AudioProcessor` (DSP filters / RNNoise).
+2. **Trim silence** — `SilenceTrimmer` strips leading/trailing silence before
+   transcription (fail-open: returns the original blob if decoding is unavailable
+   or the clip is fully silent).
+3. **Assemble prompt** — `buildPrompt` merges the user's custom vocabulary into
+   the Whisper initial prompt.
+4. **Transcribe** — `GroqClient.transcribe` against `api.groq.com`.
+5. **Correct text** — `postProcessText` runs fuzzy custom-word correction
+   (Levenshtein + Soundex) and language-aware filler/stutter cleanup.
+6. **Polish (optional)** — when enabled, `postProcessWithLlm` sends the text to
+   the Groq chat model under a strict `{ "transcription": string }` JSON schema;
+   any failure falls back to the corrected text.
+7. **Persist** — output to the textarea, history entry (`HistoryRepo`) + audio
+   clip (`AudioStore`), and clipboard.
 
-1. **Rust** — Write the command in `src-tauri/src/commands/<area>.rs`:
+Steps 2–6 are each independently toggleable via the quality settings in
+`AppSettings`.
 
-   ```rust
-   #[tauri::command]
-   pub fn my_command(arg: String) -> Result<String, AppError> {
-       // ...
-       Ok(result)
-   }
-   ```
+## 6. How to add a new Platform capability
 
-2. **Register** — Add it to the `generate_handler!` list in `src-tauri/src/lib.rs`:
-
-   ```rust
-   .invoke_handler(tauri::generate_handler![
-       commands::api_key::api_key_get,
-       commands::api_key::api_key_set,
-       // ...
-       commands::my_area::my_command,
-   ])
-   ```
-
-3. **Capability** — If the command needs filesystem or other restricted access,
-   declare it in `src-tauri/capabilities/default.json`.
-
-4. **TypeScript wrapper** — Add a method to `Platform` in `platform.ts`, then
-   implement it in both `TauriBridge` (via `invoke()`) and `WebBridge` (via
-   localStorage or a no-op).
+1. **TypeScript wrapper** — Add a method to `Platform` in `platform.ts`, then
+   implement it in `WebBridge` (via the `stt_`-prefixed storage helpers).
 
    ```typescript
    // platform.ts
@@ -157,16 +130,11 @@ nonce from Rust via `tauri::WebviewWindowBuilder`.
      myAction(arg: string): Promise<string>;
    }
 
-   // tauri-bridge.ts
-   async myAction(arg: string): Promise<string> {
-     return invoke<string>('my_command', { arg });
-   }
-
    // web-bridge.ts
-   async myAction(_arg: string): Promise<string> {
-     throw new Error('my_command is only available in the desktop app');
+   async myAction(arg: string): Promise<string> {
+     // storage-backed implementation
    }
    ```
 
-5. **Test** — Add a unit test for the web-bridge fallback path. The Tauri path
-   is validated by the integration build in CI.
+2. **Test** — Add a unit test for the new `WebBridge` path under
+   `tests/unit/web-bridge.test.ts`.

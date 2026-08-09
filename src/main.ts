@@ -17,7 +17,15 @@
 import './style.css';
 
 import { EventBus } from './core/event-bus';
-import type { EventMap, TranscriptionOptions, StatusUpdate, HistoryEntry } from './types';
+import { TranscriptionSession } from './core/transcription-session';
+import type {
+  EventMap,
+  TranscriptionOptions,
+  StatusUpdate,
+  HistoryEntry,
+  AppSettings,
+} from './types';
+import { DEFAULT_SETTINGS } from './types';
 
 import { Recorder } from './audio/recorder';
 import { AudioAnalyzer } from './audio/audio-analyzer';
@@ -25,8 +33,10 @@ import { RecordingTimer } from './audio/recording-timer';
 import { WaveformVisualizer } from './audio/waveform-visualizer';
 import { AudioProcessor } from './audio/audio-processor';
 import type { NoiseReductionMode } from './audio/audio-processor';
+import { trimSilence } from './audio/silence-trimmer';
 import * as audioStore from './audio/audio-store';
 import { GroqClient } from './api/groq-client';
+import { postProcessWithLlm } from './api/llm-postprocessor';
 import { renderApp } from './ui/renderer';
 import type { AppElements } from './ui/renderer';
 import { renderMetadata } from './ui/metadata-panel';
@@ -35,9 +45,16 @@ import { ThemeManager } from './utils/theme';
 import { createSidebar, populateEntries, prependEntry, removeCard, clearCards } from './ui/sidebar';
 import type { SidebarElements } from './ui/sidebar';
 import * as historyRepo from './utils/history-repo';
+import { buildPrompt, toPostProcessConfig } from './utils/transcription-config';
+import { postProcessText } from './utils/text-postprocess';
 
 import { registerKeyboardShortcuts } from './utils/keyboard';
-import { readTranscriptionOptions, readOperationMode } from './utils/settings';
+import {
+  readTranscriptionOptions,
+  readOperationMode,
+  readQualitySettings,
+  populateQualitySettings,
+} from './utils/settings';
 import { copyToClipboard } from './utils/clipboard';
 import { detectPlatform } from './platform/platform';
 import type { Platform } from './platform/platform';
@@ -141,8 +158,8 @@ async function main(): Promise<void> {
 async function bootstrap(): Promise<void> {
   const bus = new EventBus<EventMap>();
 
-  // Platform bridge — desktop (Tauri keychain) or web (localStorage fallback)
-  const platform = await detectPlatform();
+  // Platform bridge — browser storage (localStorage)
+  const platform = detectPlatform();
   let apiKey = await platform.getApiKey();
   if (!apiKey) {
     apiKey = await promptApiKey(platform);
@@ -247,8 +264,22 @@ async function bootstrap(): Promise<void> {
   const onResize = () => visualizer.syncSize();
   window.addEventListener('resize', onResize);
 
+  // Live configuration: loaded once, refreshed on settings:change.
+  let config: AppSettings = { ...DEFAULT_SETTINGS, ...((await platform.loadSettings()) ?? {}) };
+  const getConfig = (): AppSettings => config;
+  const setConfig = (next: AppSettings): void => {
+    config = next;
+  };
+  bus.on('settings:change', (patch) => {
+    config = { ...config, ...patch };
+  });
+
+  // Reflect persisted quality settings in the modal and persist any change.
+  populateQualitySettings(elements, config);
+  wireQualitySettings(elements, bus, platform, getConfig, setConfig);
+
   // Wire everything through the event bus
-  wireTranscriptionPipeline(bus, client, elements, sidebar);
+  wireTranscriptionPipeline(bus, client, elements, sidebar, getConfig, apiKey ?? '');
   wireRecordingHandlers(bus, elements, analyzer, timer, visualizer, recorder);
   wireOutputToolbar(elements);
   wireHistoryEvents(bus, sidebar, elements);
@@ -296,6 +327,52 @@ function wireLiveControls(elements: AppElements): void {
   elements.outputArea.addEventListener('input', () => {
     updateWordCount(elements);
   });
+}
+
+// ===========================================================================
+// Quality settings persistence
+// ===========================================================================
+
+/**
+ * Persist the transcription-quality controls whenever they change.
+ *
+ * Reads the quality controls into a partial patch, merges it over the current
+ * config, persists the full snapshot via the platform seam, and emits
+ * `settings:change` so the live pipeline picks up the new values.
+ */
+function wireQualitySettings(
+  elements: AppElements,
+  bus: EventBus<EventMap>,
+  platform: Platform,
+  getConfig: () => AppSettings,
+  setConfig: (next: AppSettings) => void,
+): void {
+  const persist = (): void => {
+    const patch = readQualitySettings(elements);
+    const next: AppSettings = { ...getConfig(), ...patch };
+    setConfig(next);
+    void platform.saveSettings(next);
+    bus.emit('settings:change', patch);
+  };
+
+  // Live readout for the correction-threshold slider.
+  elements.wordCorrectionThresholdSlider.addEventListener('input', () => {
+    elements.wordCorrectionThresholdValue.textContent =
+      elements.wordCorrectionThresholdSlider.value;
+  });
+
+  const fields: Array<HTMLElement> = [
+    elements.customWordsInput,
+    elements.wordCorrectionThresholdSlider,
+    elements.customFillerWordsInput,
+    elements.silenceTrimToggle,
+    elements.llmToggle,
+    elements.llmModelInput,
+    elements.llmInstructionsInput,
+  ];
+  for (const field of fields) {
+    field.addEventListener('change', persist);
+  }
 }
 
 // ===========================================================================
@@ -353,17 +430,39 @@ function wireTranscriptionPipeline(
   client: GroqClient,
   elements: AppElements,
   sidebar: SidebarElements,
+  getConfig: () => AppSettings,
+  apiKey: string,
 ): void {
-  let lastBlob: Blob | null = null;
-  let lastMimeType = '';
+  // Named pipeline state — replaces the former `lastBlob` closure so a failed
+  // take can never leak into a later success, and a rapid re-record surfaces
+  // the overwritten buffer instead of silently dropping it.
+  const session = new TranscriptionSession();
 
-  bus.on('audio:blob-ready', (blob) => {
-    lastBlob = blob;
-    lastMimeType = blob.type;
-    const options: TranscriptionOptions = readTranscriptionOptions(elements);
+  bus.on('recording:start', () => session.startRecording());
+
+  bus.on('audio:blob-ready', async (blob) => {
+    const config = getConfig();
+    session.submit(blob, blob.type);
+
+    // Optionally strip leading/trailing silence before transcription. Fail-open:
+    // if decoding is unavailable or the clip is silent, trimSilence returns the
+    // original blob so transcription still proceeds.
+    const audio = config.enableSilenceTrim
+      ? await trimSilence(blob, {
+          thresholdDb: config.silenceThresholdDb,
+          paddingMs: config.silencePaddingMs,
+        })
+      : blob;
+
+    const base = readTranscriptionOptions(elements);
+    const options: TranscriptionOptions =
+      base.prompt === undefined && config.customWords.length === 0
+        ? base
+        : { ...base, prompt: buildPrompt(config.customWords, base.prompt) };
+
     const mode = readOperationMode(elements);
     const endpoint = mode === 'translate' ? 'translations' : 'transcriptions';
-    void client.transcribe(blob, options, endpoint).catch(() => {
+    void client.transcribe(audio, options, endpoint).catch(() => {
       // Error already emitted on the bus via transcription:error
     });
     setStatus(elements, { message: `Procesando con ${options.model}...`, level: 'processing' });
@@ -373,24 +472,47 @@ function wireTranscriptionPipeline(
     renderMetadata(elements.metadataPanel, result);
 
     if (!result.text) {
+      session.complete();
+      showToast(elements.toastContainer, 'No se detectó texto', 'warning');
+      setStatus(elements, { message: 'No se detectó texto.', level: 'idle' });
+      return;
+    }
+
+    // Text post-processing: custom-word fuzzy correction + filler/stutter cleanup,
+    // then an optional LLM polish pass. Both fail safe — the raw text is kept on
+    // any issue. Filler language follows the detected/source language.
+    const config = getConfig();
+    const lang = result.language ?? (config.language === 'auto' ? 'en' : config.language);
+    let text = postProcessText(result.text, toPostProcessConfig(config), lang);
+
+    if (config.enableLlmPostProcess && text.trim()) {
+      setStatus(elements, { message: 'Refinando con LLM…', level: 'processing' });
+      text = await postProcessWithLlm(text, apiKey, {
+        model: config.llmModel,
+        instructions: config.llmInstructions,
+      });
+    }
+
+    if (!text.trim()) {
+      session.complete();
       showToast(elements.toastContainer, 'No se detectó texto', 'warning');
       setStatus(elements, { message: 'No se detectó texto.', level: 'idle' });
       return;
     }
 
     const output = elements.outputArea;
-    output.value += (output.value ? ' ' : '') + result.text;
+    output.value += (output.value ? ' ' : '') + text;
     output.scrollTop = output.scrollHeight;
     updateWordCount(elements);
 
-    bus.emit('text:append', result.text);
+    bus.emit('text:append', text);
 
     // Save to history
     const options = readTranscriptionOptions(elements);
     const mode = readOperationMode(elements);
     const entry: HistoryEntry = {
       id: crypto.randomUUID(),
-      text: result.text,
+      text,
       language: result.language,
       model: options.model,
       duration: result.duration,
@@ -400,14 +522,12 @@ function wireTranscriptionPipeline(
     const evictedIds = historyRepo.addEntry(entry);
     prependEntry(sidebar, entry);
 
-    // Save audio clip to IndexedDB (non-blocking — transcription already succeeded)
-    if (lastBlob) {
-      void audioStore
-        .save(entry.id, lastBlob, lastMimeType || 'audio/webm')
-        .catch((err: unknown) => {
-          console.warn('[App] Failed to save audio clip:', err);
-        });
-      lastBlob = null;
+    // Save the recorded audio clip that matches this transcription.
+    const pending = session.complete();
+    if (pending) {
+      void audioStore.save(entry.id, pending.blob, pending.mimeType).catch((err: unknown) => {
+        console.warn('[App] Failed to save audio clip:', err);
+      });
     }
 
     // Clean up audio for evicted history entries
@@ -417,7 +537,7 @@ function wireTranscriptionPipeline(
       });
     }
 
-    const copied = await copyToClipboard(result.text);
+    const copied = await copyToClipboard(text);
     if (copied) {
       showToast(elements.toastContainer, 'Texto copiado al portapapeles', 'success');
       setStatus(elements, { message: 'Texto copiado al portapapeles.', level: 'success' });
@@ -427,6 +547,7 @@ function wireTranscriptionPipeline(
   });
 
   bus.on('transcription:error', (error) => {
+    session.fail();
     console.error('[App] Transcription error:', error);
     showToast(elements.toastContainer, error.message, 'error');
     setStatus(elements, { message: `Error: ${error.message}`, level: 'error' });

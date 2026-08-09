@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { WebBridge } from '../../src/platform/web-bridge';
+import { detectPlatform } from '../../src/platform/platform';
 import { save, load, remove } from '../../src/utils/storage';
 
 describe('WebBridge', () => {
@@ -10,8 +11,10 @@ describe('WebBridge', () => {
     bridge = new WebBridge();
   });
 
-  it('isDesktop returns false', () => {
-    expect(bridge.isDesktop()).toBe(false);
+  it('detectPlatform returns a cached WebBridge instance', () => {
+    const platform = detectPlatform();
+    expect(platform).toBeInstanceOf(WebBridge);
+    expect(detectPlatform()).toBe(platform);
   });
 
   it('hasApiKey returns false when no key stored', async () => {

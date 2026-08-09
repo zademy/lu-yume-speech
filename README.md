@@ -4,17 +4,15 @@
   <h1>LU YUME — Speech-to-Text</h1>
 
   <p>
-    Desktop speech-to-text transcription powered by
+    Browser speech-to-text transcription powered by
     <strong>Groq Whisper</strong>. Record your voice, get instant text —
-    native keychain security, zero backend, cross-platform.
+    zero backend, cross-platform.
   </p>
 
   <p>
     <img src="https://img.shields.io/badge/TypeScript-6.x-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
     <img src="https://img.shields.io/badge/Vite-8.x-646CFF?logo=vite&logoColor=white" alt="Vite" />
-    <img src="https://img.shields.io/badge/Tauri-2.x-FFC131?logo=tauri&logoColor=white" alt="Tauri" />
     <img src="https://img.shields.io/badge/Tailwind_CSS-4.x-06B6D4?logo=tailwindcss&logoColor=white" alt="Tailwind CSS" />
-    <img src="https://img.shields.io/badge/Rust-stable-DEA584?logo=rust&logoColor=white" alt="Rust" />
     <img src="https://img.shields.io/badge/License-MIT-green" alt="License" />
   </p>
 
@@ -42,6 +40,11 @@
 
 - **Real-time transcription** — Record audio from the microphone and send it to Groq Whisper for instant speech-to-text conversion.
 - **Translation mode** — Switch between transcription (same language) and translation (to English) with a single dropdown.
+- **Custom vocabulary** — Define domain terms, names, and acronyms; they're fed to Whisper as the initial prompt and fuzzy-corrected afterward.
+- **Fuzzy + filler correction** — Post-processing fixes near-matches against your vocabulary (Levenshtein + Soundex) and strips language-aware filler words and stutters.
+- **Silence trimming** — Leading/trailing silence is removed before transcription (fail-open) for lower latency and fewer hallucinations.
+- **LLM polish (optional)** — An optional Groq chat pass cleans up punctuation, capitalization, and disfluencies via a strict JSON schema.
+- **Noise suppression** — DSP filter chain or AI-backed RNNoise suppression on the captured audio.
 - **Waveform visualization** — Live audio waveform rendered on a `<canvas>` element during recording.
 - **Silence detection** — Automatically stops recording after a configurable silence threshold.
 - **Transcription history** — Persistent sidebar with full CRUD: restore past transcriptions, delete individual entries, or clear all history.
@@ -49,39 +52,42 @@
 - **Output toolbar** — Copy to clipboard, clear text, or download as `.txt`.
 - **Dark / Light theme** — Toggle between themes with system preference detection. Choice persists across sessions.
 - **Keyboard shortcuts** — OS-aware shortcuts (Cmd on macOS, Ctrl elsewhere) for record start/stop.
-- **Keychain security** — API key stored in the OS-native credential store (macOS Keychain / Windows Credential Manager). Never in the JS bundle.
+- **Local key storage** — API key stored in the browser's `localStorage`, never in the JS bundle.
 - **Network resilience** — 30s timeout, automatic retry with exponential backoff on 429/503/504, typed error classification.
-- **Cross-platform** — Desktop installers for Windows (MSI/NSIS) and macOS (DMG).
+- **Cross-platform** — Runs in any modern browser.
 
 ---
 
 ## Architecture
 
-LU YUME is a **Tauri 2** desktop app: a Rust shell providing native keychain and file-system access, wrapping a TypeScript SPA that handles all UI and audio logic.
+LU YUME is a **TypeScript SPA** (Vite + Tailwind 4) that handles all UI and audio logic in the browser.
 
 The SPA follows a **modular event-driven architecture** built around a typed `EventBus`. No module imports another module directly — they communicate exclusively through events, adhering to the **Dependency Inversion Principle**.
 
-A dedicated **platform bridge** (`src/platform/`) is the only layer that talks to Tauri. The rest of the app depends on a `Platform` interface, making it testable in isolation and swappable between desktop and browser.
+A dedicated **platform bridge** (`src/platform/`) abstracts credential and settings storage behind a `Platform` interface, making it testable in isolation.
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full diagram, module map, dependency inversion rule, CSP details, and how to add new Tauri commands.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the full diagram, module map, and dependency inversion rule.
 
 ---
 
 ## Tech Stack
 
-| Layer             | Technology                          | Purpose                                            |
-| ----------------- | ----------------------------------- | -------------------------------------------------- |
-| Desktop shell     | Tauri 2.x (Rust)                    | Native webview, keychain, file-system, installers   |
-| Language          | TypeScript 6.x                      | Type-safe development (strict mode)                 |
-| Build tool        | Vite 8.x                            | Fast dev server and optimized production build      |
-| Styling           | Tailwind CSS 4.x                    | Utility-first CSS with design system tokens         |
-| Testing           | Vitest 2.x + MSW 2.x                | Unit tests + HTTP mocking                           |
-| Linting           | ESLint 10 + typescript-eslint 8     | Static analysis with type-aware rules               |
-| Formatting        | Prettier                            | Consistent code style                               |
-| Pre-commit hooks  | Husky + lint-staged                 | Run lint/format on staged files before commit       |
-| API               | Groq Whisper API                    | Speech-to-text / translation                        |
-| Credential store  | OS keychain (keyring crate)         | Secure API key storage                              |
-| Audio             | MediaRecorder + Web Audio           | Microphone capture and real-time analysis           |
+| Layer            | Technology                        | Purpose                                        |
+| ---------------- | --------------------------------- | ---------------------------------------------- |
+| Language         | TypeScript 6.x                    | Type-safe development (strict mode)            |
+| Build tool       | Vite 8.x                          | Fast dev server and optimized production build |
+| Styling          | Tailwind CSS 4.x                  | Utility-first CSS with design system tokens    |
+| Testing          | Vitest 4.x + MSW 2.x              | Unit tests + HTTP mocking                      |
+| Linting          | ESLint 10 + typescript-eslint 8   | Static analysis with type-aware rules          |
+| Formatting       | Prettier                          | Consistent code style                          |
+| Pre-commit hooks | Husky + lint-staged (configured¹) | Lint/format on staged files — see note below   |
+| API              | Groq Whisper API                  | Speech-to-text / translation                   |
+| Credential store | localStorage                      | Browser-side API key storage                   |
+| Audio            | MediaRecorder + Web Audio         | Microphone capture and real-time analysis      |
+
+> ¹ `lint-staged` is configured in `package.json`, but **no `.husky/pre-commit`
+> hook is committed**, so it never runs automatically. Run the gate manually
+> before considering work done: `pnpm lint && pnpm format:check && pnpm typecheck && pnpm test`.
 
 ---
 
@@ -91,10 +97,6 @@ See [ARCHITECTURE.md](ARCHITECTURE.md) for the full diagram, module map, depende
 
 - **Node.js** ≥ 20
 - **pnpm** ≥ 9 (`npm install -g pnpm` or via [corepack][corepack])
-- **Rust** stable — install via [rustup][rustup]
-- **Tauri system dependencies** — see the [Tauri prerequisites guide][tauri-prereq]
-  - macOS: Xcode Command Line Tools
-  - Windows: Microsoft Visual C++ Build Tools + WebView2
 - A **Groq API key** — get one at [console.groq.com](https://console.groq.com)
 
 ### Installation
@@ -108,44 +110,23 @@ cd speech-to-text
 pnpm install
 ```
 
-### Desktop Development (recommended)
-
-```bash
-pnpm tauri dev
-```
-
-This launches the Tauri development shell with hot module replacement. The
-app opens in a native window. Microphone permission is requested on first launch.
-
-### Web-Only Development (fallback)
+### Development
 
 ```bash
 pnpm dev
 ```
 
-Opens the SPA at `http://localhost:5173`. Useful for quick UI iteration without
-Rust compilation. In this mode, the `WebBridge` stores the API key in
-`localStorage` — this is a **development convenience only**, not a production path.
+Opens the SPA at `http://localhost:1420`. Microphone permission is requested on
+first launch. The `WebBridge` stores the API key in `localStorage`.
 
-### Production Build (desktop installers)
-
-```bash
-pnpm tauri build
-```
-
-Produces native installers:
-
-- Windows: `src-tauri/target/release/bundle/msi/*.msi` and `nsis/*.exe`
-- macOS: `src-tauri/target/release/bundle/dmg/*.dmg`
-
-### Web Build (not for distribution with a real key)
+### Production Build
 
 ```bash
 pnpm build
 ```
 
-Output goes to `dist/`. **Do not** deploy this publicly with a Groq key loaded —
-use the Tauri desktop build instead.
+Runs lint + typecheck and outputs the optimized SPA to `dist/`. **Do not**
+deploy this publicly with a Groq key loaded — the key is stored client-side.
 
 ---
 
@@ -158,19 +139,23 @@ speech-to-text/
 │   └── icons.svg                  # Shared SVG sprite
 ├── src/
 │   ├── api/
-│   │   └── groq-client.ts         # Groq Whisper API client (timeout, retry, Zod)
+│   │   ├── groq-client.ts         # Groq Whisper API client (timeout, retry, Zod)
+│   │   └── llm-postprocessor.ts   # Optional LLM polish pass (Groq chat, JSON schema)
 │   ├── audio/
 │   │   ├── audio-analyzer.ts      # Web Audio API real-time analyzer
+│   │   ├── audio-processor.ts     # DSP filter chain + RNNoise suppression
+│   │   ├── audio-store.ts         # IndexedDB audio-clip store
 │   │   ├── recorder.ts            # MediaRecorder wrapper + guard
 │   │   ├── recording-timer.ts     # Elapsed time tracker (with dispose)
+│   │   ├── silence-trimmer.ts     # Strips leading/trailing silence (decode→trim→WAV)
 │   │   └── waveform-visualizer.ts # Canvas waveform renderer
 │   ├── core/
-│   │   └── event-bus.ts           # Typed pub/sub event system
-│   ├── platform/                  # ← The ONLY layer that imports @tauri-apps/api
+│   │   ├── event-bus.ts           # Typed pub/sub event system
+│   │   └── transcription-session.ts # Pipeline lifecycle state machine
+│   ├── platform/                  # Credential + settings storage abstraction
 │   │   ├── api-key-schema.ts      # Zod validation for gsk_ keys
 │   │   ├── platform.ts            # Platform interface + detectPlatform() factory
-│   │   ├── tauri-bridge.ts        # Desktop impl (keychain via Tauri commands)
-│   │   └── web-bridge.ts          # Dev fallback impl (localStorage)
+│   │   └── web-bridge.ts          # Browser impl (localStorage)
 │   ├── ui/
 │   │   ├── history-card.ts        # Single history entry renderer
 │   │   ├── metadata-panel.ts      # Verbose JSON metadata display
@@ -184,25 +169,14 @@ speech-to-text/
 │   │   ├── os-detect.ts           # Platform detection (macOS vs other)
 │   │   ├── settings.ts            # Reads UI state into typed config
 │   │   ├── storage.ts             # Type-safe storage wrapper (stt_ prefix)
+│   │   ├── string-distance.ts     # Levenshtein + Soundex (fuzzy matching)
+│   │   ├── text-postprocess.ts    # Custom-word correction + filler/stutter cleanup
 │   │   ├── theme.ts               # Light/dark theme manager
-│   │   └── time-ago.ts            # Relative time formatter (Spanish)
+│   │   ├── time-ago.ts            # Relative time formatter (Spanish)
+│   │   └── transcription-config.ts # Prompt assembly + post-process config slicing
 │   ├── main.ts                    # Composition root / entry point
 │   ├── style.css                  # Design system tokens + Tailwind
 │   └── types.ts                   # Shared type definitions
-├── src-tauri/                     # Rust backend
-│   ├── src/
-│   │   ├── commands/
-│   │   │   ├── api_key.rs         # keychain get/set/has/delete
-│   │   │   ├── settings.rs        # JSON settings load/save
-│   │   │   └── mod.rs
-│   │   ├── config.rs              # paths + keyring constants
-│   │   ├── error.rs               # AppError enum
-│   │   ├── lib.rs                 # Tauri builder + command registration
-│   │   └── main.rs                # Entry point
-│   ├── capabilities/default.json  # Permission allowlist
-│   ├── icons/                     # App icons (all platforms)
-│   ├── tauri.conf.json            # App config + CSP
-│   └── Cargo.toml
 ├── tests/
 │   ├── helpers/
 │   │   ├── setup.ts               # jsdom polyfills (localStorage)
@@ -210,7 +184,7 @@ speech-to-text/
 │   └── unit/
 │       ├── *.test.ts              # 100+ unit tests
 ├── index.html                     # SPA shell
-├── vite.config.ts                 # Vite config (Tauri-aware)
+├── vite.config.ts                 # Vite config
 ├── vitest.config.ts               # Vitest config + coverage thresholds
 ├── eslint.config.js               # ESLint flat config (type-aware)
 ├── package.json
@@ -221,10 +195,10 @@ speech-to-text/
 
 ## Keyboard Shortcuts
 
-| Action          | macOS           | Linux / Windows  |
-| --------------- | --------------- | ---------------- |
-| Start recording | `Cmd` + `R`     | `Ctrl` + `R`     |
-| Stop recording  | `Cmd` + `R`     | `Ctrl` + `R`     |
+| Action          | macOS       | Linux / Windows |
+| --------------- | ----------- | --------------- |
+| Start recording | `Cmd` + `R` | `Ctrl` + `R`    |
+| Stop recording  | `Cmd` + `R` | `Ctrl` + `R`    |
 
 Shortcuts adapt to the selected recording mode:
 
@@ -235,17 +209,15 @@ Shortcuts adapt to the selected recording mode:
 
 ## API Key Setup
 
-**Desktop app (recommended):** The key is stored in the OS keychain. In Phase 1
-(current), set it via the browser devtools console in `pnpm tauri dev`:
+On first launch the app shows a modal prompting you to paste your Groq API
+key. The key is validated (`gsk_` prefix, ≥ 44 characters) and stored in the
+browser's `localStorage`. You can also set it from the devtools console:
 
 ```javascript
-// In the app's devtools console
-await window.__TAURI_INTERNALS__.invoke('api_key_set', { key: 'gsk_your_key_here' });
+await import('./src/platform/web-bridge').then((b) =>
+  new b.WebBridge().setApiKey('gsk_your_key_here'),
+);
 ```
-
-In Phase 2, an in-app settings dialog will handle this with a proper UI.
-
-**Web dev mode:** Run `await import('./src/platform/web-bridge').then(b => new b.WebBridge().setApiKey('gsk_your_key'))` from the console, or the app will show an error toast prompting you to set a key.
 
 Get a key at [console.groq.com](https://console.groq.com/keys).
 
@@ -253,20 +225,18 @@ Get a key at [console.groq.com](https://console.groq.com/keys).
 
 ## Scripts
 
-| Command                | Description                                                        |
-| ---------------------- | ------------------------------------------------------------------ |
-| `pnpm dev`             | Start the Vite dev server (web-only fallback).                     |
-| `pnpm tauri dev`       | Start the Tauri desktop dev shell with HMR (recommended).          |
-| `pnpm build`           | Lint + typecheck + build the web SPA into `dist/`.                 |
-| `pnpm tauri build`     | Build native desktop installers (MSI/DMG).                         |
-| `pnpm lint`            | Run ESLint (type-aware rules).                                     |
-| `pnpm lint:fix`        | Run ESLint with auto-fix.                                          |
-| `pnpm typecheck`       | Run `tsc --noEmit` (strict mode).                                  |
-| `pnpm test`            | Run Vitest unit tests once.                                        |
-| `pnpm test:watch`      | Run Vitest in watch mode.                                          |
-| `pnpm test:coverage`   | Run tests with V8 coverage report.                                 |
-| `pnpm format`          | Format all files with Prettier.                                    |
-| `pnpm audit`           | Check for known dependency vulnerabilities.                        |
+| Command              | Description                                        |
+| -------------------- | -------------------------------------------------- |
+| `pnpm dev`           | Start the Vite dev server.                         |
+| `pnpm build`         | Lint + typecheck + build the web SPA into `dist/`. |
+| `pnpm lint`          | Run ESLint (type-aware rules).                     |
+| `pnpm lint:fix`      | Run ESLint with auto-fix.                          |
+| `pnpm typecheck`     | Run `tsc --noEmit` (strict mode).                  |
+| `pnpm test`          | Run Vitest unit tests once.                        |
+| `pnpm test:watch`    | Run Vitest in watch mode.                          |
+| `pnpm test:coverage` | Run tests with V8 coverage report.                 |
+| `pnpm format`        | Format all files with Prettier.                    |
+| `pnpm audit`         | Check for known dependency vulnerabilities.        |
 
 ---
 
@@ -289,5 +259,3 @@ See [CONTRIBUTING.adoc](CONTRIBUTING.adoc) for how to add new tests.
 This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
 
 [corepack]: https://nodejs.org/api/corepack.html
-[rustup]: https://rustup.rs/
-[tauri-prereq]: https://tauri.app/start/prerequisites/

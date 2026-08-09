@@ -13,7 +13,8 @@
  */
 
 import type { AppElements } from '../ui/renderer';
-import type { TranscriptionOptions, OperationMode } from '../types';
+import type { TranscriptionOptions, OperationMode, AppSettings } from '../types';
+import { DEFAULT_SETTINGS } from '../types';
 
 /**
  * Read the current transcription settings from the UI.
@@ -40,6 +41,52 @@ export function readTranscriptionOptions(elements: AppElements): TranscriptionOp
  */
 export function readOperationMode(elements: AppElements): OperationMode {
   return elements.operationModeSelect.value as OperationMode;
+}
+
+/**
+ * Read the transcription-quality controls into a partial `AppSettings` patch.
+ * The patch is merged over the loaded config so unrelated fields are preserved.
+ */
+export function readQualitySettings(elements: AppElements): Partial<AppSettings> {
+  const customWords = elements.customWordsInput.value
+    .split(/[\n,]/)
+    .map((w) => w.trim())
+    .filter((w) => w.length > 0);
+
+  const fillerRaw = elements.customFillerWordsInput.value.trim();
+  const customFillerWords: string[] | null =
+    fillerRaw === ''
+      ? null // empty → use language defaults
+      : fillerRaw
+          .split(',')
+          .map((w) => w.trim())
+          .filter((w) => w.length > 0);
+
+  return {
+    customWords,
+    wordCorrectionThreshold: parseTemperature(elements.wordCorrectionThresholdSlider.value),
+    customFillerWords,
+    enableSilenceTrim: elements.silenceTrimToggle.checked,
+    enableLlmPostProcess: elements.llmToggle.checked,
+    llmModel: elements.llmModelInput.value.trim() || DEFAULT_SETTINGS.llmModel,
+    llmInstructions: elements.llmInstructionsInput.value,
+  };
+}
+
+/**
+ * Populate the transcription-quality controls from the current settings so the
+ * modal reflects persisted state when it is first opened.
+ */
+export function populateQualitySettings(elements: AppElements, settings: AppSettings): void {
+  elements.customWordsInput.value = settings.customWords.join(', ');
+  elements.wordCorrectionThresholdSlider.value = String(settings.wordCorrectionThreshold);
+  elements.wordCorrectionThresholdValue.textContent = String(settings.wordCorrectionThreshold);
+  elements.customFillerWordsInput.value =
+    settings.customFillerWords === null ? '' : settings.customFillerWords.join(', ');
+  elements.silenceTrimToggle.checked = settings.enableSilenceTrim;
+  elements.llmToggle.checked = settings.enableLlmPostProcess;
+  elements.llmModelInput.value = settings.llmModel;
+  elements.llmInstructionsInput.value = settings.llmInstructions;
 }
 
 // -----------------------------------------------------------------------
