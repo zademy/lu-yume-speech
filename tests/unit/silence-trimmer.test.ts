@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { dbToLinear, encodeWav, findSpeechBounds, rms } from '../../src/audio/silence-trimmer';
+import {
+  dbToLinear,
+  encodeWav,
+  findSpeechBounds,
+  rms,
+  trimSilence,
+} from '../../src/audio/silence-trimmer';
 
 describe('dbToLinear', () => {
   it('maps 0 dB to unity amplitude', () => {
@@ -107,3 +113,35 @@ function readString(view: DataView, offset: number, length: number): string {
   for (let i = 0; i < length; i++) s += String.fromCharCode(view.getUint8(offset + i));
   return s;
 }
+
+describe('trimSilence (async wrapper, fail-open)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('returns the original blob when AudioContext is unavailable', async () => {
+    const ctx = globalThis.AudioContext;
+    // @ts-expect-error — simulate an environment without AudioContext
+    delete globalThis.AudioContext;
+    const blob = new Blob([new Uint8Array([1, 2, 3])], { type: 'audio/webm' });
+    try {
+      const out = await trimSilence(blob, { thresholdDb: -40, paddingMs: 0 });
+      expect(out).toBe(blob); // identical reference — passed through untouched
+    } finally {
+      globalThis.AudioContext = ctx;
+    }
+  });
+
+  it('returns the original blob when decoding throws', async () => {
+    const fakeCtx = function () {
+      return {
+        decodeAudioData: () => Promise.reject(new Error('unsupported codec')),
+        close: () => Promise.resolve(),
+      };
+    };
+    vi.stubGlobal('AudioContext', fakeCtx);
+    const blob = new Blob([new Uint8Array([0])], { type: 'audio/webm' });
+    const out = await trimSilence(blob, { thresholdDb: -40, paddingMs: 0 });
+    expect(out).toBe(blob);
+  });
+});

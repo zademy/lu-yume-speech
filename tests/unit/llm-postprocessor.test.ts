@@ -119,4 +119,30 @@ describe('postProcessWithLlm', () => {
     expect(await postProcessWithLlm('text', '', { model: 'llama' })).toBe('text');
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('fails open when an external signal aborts mid-request', async () => {
+    const fetchMock = vi.fn().mockImplementation(
+      (_url: string, init: RequestInit) =>
+        new Promise((_resolve, reject) => {
+          init.signal?.addEventListener('abort', () =>
+            reject(Object.assign(new Error('aborted'), { name: 'AbortError' })),
+          );
+        }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    const external = new AbortController();
+    const promise = postProcessWithLlm('raw text', 'gsk_key', {
+      model: 'llama',
+      signal: external.signal,
+    });
+    setTimeout(() => external.abort(), 20);
+    expect(await promise).toBe('raw text');
+  });
+
+  it('fails open when the model option is missing', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await postProcessWithLlm('text', 'key', { model: '' })).toBe('text');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
 });
