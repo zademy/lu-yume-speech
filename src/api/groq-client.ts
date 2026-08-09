@@ -47,7 +47,7 @@ const TRANSCRIPTION_SCHEMA = z
     segments: z.array(z.any()).optional(),
     words: z.array(z.any()).optional(),
   })
-  .passthrough();
+  .loose();
 
 export class GroqClient {
   private readonly bus: EventBus<EventMap>;
@@ -136,7 +136,8 @@ export class GroqClient {
         const msg = apiMsg ?? `HTTP ${status}`;
 
         if (RETRYABLE.has(status) && attempt < MAX_RETRIES) {
-          const retryAfter = Number(res.headers.get('Retry-After') ?? 0);
+          const retryAfterHeader = res.headers.get('Retry-After');
+          const retryAfter = retryAfterHeader ? Number(retryAfterHeader) : 0;
           const backoff = (retryAfter || 2 ** attempt) * 1000;
           const jitter = Math.random() * 250;
           await new Promise((r) => setTimeout(r, backoff + jitter));

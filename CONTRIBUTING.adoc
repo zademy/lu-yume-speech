@@ -11,8 +11,6 @@ Thank you for your interest in contributing! This guide covers everything you ne
 
 * **Node.js** >= 20
 * **pnpm** >= 9 (install via `npm install -g pnpm` or https://nodejs.org/api/corepack.html[corepack])
-* **Rust** stable (install via https://rustup.rs[rustup]) — required for desktop builds
-* https://tauri.app/start/prerequisites/[Tauri system dependencies] for your OS
 * A **Groq API key** from https://console.groq.com[console.groq.com]
 
 === Setup
@@ -26,14 +24,11 @@ cd speech-to-text
 # Install dependencies
 pnpm install
 
-# Start desktop development shell (recommended)
-pnpm tauri dev
-
-# OR start web-only dev server (fallback)
+# Start the dev server
 pnpm dev
 ----
 
-The desktop shell opens in a native window. The web-only server is at http://localhost:5173.
+The dev server is at http://localhost:1420.
 
 == Development Workflow
 
@@ -211,16 +206,14 @@ For modules that make HTTP requests, use MSW handlers. See
 `tests/helpers/msw-handlers.ts` for the Groq API mock setup and
 `tests/unit/groq-client.test.ts` for usage examples.
 
-== Adding a Tauri Command
+== Adding a Platform Capability
 
-See link:ARCHITECTURE.md#5-how-to-add-a-new-tauri-command[ARCHITECTURE.md §5]
+See link:ARCHITECTURE.md#5-how-to-add-a-new-platform-capability[ARCHITECTURE.md §5]
 for the full guide. Summary:
 
-. Write the `#[tauri::command]` function in `src-tauri/src/commands/<area>.rs`.
-. Register it in `src-tauri/src/lib.rs` via `generate_handler!`.
-. Declare any needed permissions in `src-tauri/capabilities/default.json`.
-. Add a method to the `Platform` interface and implement in both bridges.
-. Write a unit test for the web-bridge fallback path.
+. Add a method to the `Platform` interface in `src/platform/platform.ts`.
+. Implement it in `WebBridge` using the `stt_`-prefixed storage helpers.
+. Write a unit test in `tests/unit/web-bridge.test.ts`.
 
 == License
 

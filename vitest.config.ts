@@ -27,8 +27,6 @@ export default defineConfig({
         // Phase 2: Audio/Canvas (Web Audio API, MediaRecorder, canvas)
         'src/audio/audio-analyzer.ts',
         'src/audio/waveform-visualizer.ts',
-        // Tauri bridge requires @tauri-apps/api invoke (needs Tauri runtime)
-        'src/platform/tauri-bridge.ts',
       ],
       thresholds: { lines: 90, functions: 90, statements: 90, branches: 80 },
     },

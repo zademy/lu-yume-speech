@@ -35,6 +35,26 @@ beforeAll(() => {
     writable: true,
     configurable: true,
   });
+
+  // jsdom 30 no longer ships `window.matchMedia`. ThemeManager queries it for
+  // the prefers-color-scheme, so install a minimal stub that tests can override
+  // via `vi.spyOn(window, 'matchMedia')`.
+  if (typeof window !== 'undefined' && !window.matchMedia) {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      configurable: true,
+      value: (query: string): MediaQueryList => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => false,
+      }),
+    });
+  }
 });
 
 afterEach(() => {

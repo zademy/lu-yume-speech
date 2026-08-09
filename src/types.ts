@@ -144,6 +144,24 @@ export interface AppSettings {
   autoCopy: boolean;
   recordMode: 'push-to-talk' | 'toggle';
   theme: 'light' | 'dark' | 'system';
+  /** User vocabulary fed to Whisper as the initial prompt and fuzzy-corrected afterward. */
+  customWords: string[];
+  /** Max normalized Levenshtein score (0–1) below which a custom-word correction is accepted. */
+  wordCorrectionThreshold: number;
+  /** Override filler words: `null` = language defaults, `[]` = disable, non-empty = override. */
+  customFillerWords: string[] | null;
+  /** Trim leading/trailing silence from the recording before sending it to Groq. */
+  enableSilenceTrim: boolean;
+  /** Silence threshold in dBFS (more negative = more aggressive trimming). */
+  silenceThresholdDb: number;
+  /** Padding kept around speech so trimming never clips word starts/ends. */
+  silencePaddingMs: number;
+  /** Run an optional LLM pass (Groq chat completions) to polish raw transcription text. */
+  enableLlmPostProcess: boolean;
+  /** Groq chat model used for LLM post-processing. */
+  llmModel: string;
+  /** Extra user instructions appended to the built-in LLM post-processing system prompt. */
+  llmInstructions: string;
 }
 
 /** Sensible defaults so the app works without any stored preferences. */
@@ -157,6 +175,15 @@ export const DEFAULT_SETTINGS: Readonly<AppSettings> = {
   autoCopy: true,
   recordMode: 'push-to-talk',
   theme: 'system',
+  customWords: [],
+  wordCorrectionThreshold: 0.5,
+  customFillerWords: null,
+  enableSilenceTrim: true,
+  silenceThresholdDb: -40,
+  silencePaddingMs: 250,
+  enableLlmPostProcess: false,
+  llmModel: 'llama-3.3-70b-versatile',
+  llmInstructions: '',
 };
 
 // ---------------------------------------------------------------------------

@@ -63,6 +63,14 @@ export interface AppElements {
   settingsModal: HTMLDivElement;
   settingsCloseBtn: HTMLButtonElement;
   headerActions: HTMLDivElement;
+  customWordsInput: HTMLTextAreaElement;
+  wordCorrectionThresholdSlider: HTMLInputElement;
+  wordCorrectionThresholdValue: HTMLSpanElement;
+  customFillerWordsInput: HTMLInputElement;
+  silenceTrimToggle: HTMLInputElement;
+  llmToggle: HTMLInputElement;
+  llmModelInput: HTMLInputElement;
+  llmInstructionsInput: HTMLTextAreaElement;
 }
 
 export function renderApp(): AppElements {
@@ -121,6 +129,14 @@ export function renderApp(): AppElements {
     settingsModal: settingsModal.querySelector('#settingsModal')!,
     settingsCloseBtn: settingsModal.querySelector('#settingsCloseBtn')!,
     headerActions: root.querySelector('#headerActions')!,
+    customWordsInput: settingsModal.querySelector('#customWordsInput')!,
+    wordCorrectionThresholdSlider: settingsModal.querySelector('#wordCorrectionThresholdSlider')!,
+    wordCorrectionThresholdValue: settingsModal.querySelector('#wordCorrectionThresholdValue')!,
+    customFillerWordsInput: settingsModal.querySelector('#customFillerWordsInput')!,
+    silenceTrimToggle: settingsModal.querySelector('#silenceTrimToggle')!,
+    llmToggle: settingsModal.querySelector('#llmToggle')!,
+    llmModelInput: settingsModal.querySelector('#llmModelInput')!,
+    llmInstructionsInput: settingsModal.querySelector('#llmInstructionsInput')!,
   };
 }
 
@@ -279,6 +295,7 @@ function renderSettingsModal(): string {
           ${renderTextareaField('promptInput', 'Contexto', 'Terminología técnica, nombres propios...', 2)}
           ${renderTemperatureControl()}
           ${renderResponseFormatControl()}
+          ${renderQualitySection()}
           ${renderRateLimits()}
         </div>
       </div>
@@ -425,6 +442,105 @@ function renderResponseFormatControl(): string {
         <input id="timestampToggle" type="checkbox" class="accent-[var(--color-accent-500)] cursor-pointer" /> Por palabra
       </label>
     </div>`;
+}
+
+/**
+ * Render the "transcription quality" section: custom vocabulary, fuzzy-correction
+ * threshold, filler-word overrides, silence trimming, and the optional LLM
+ * polish pass. Controls are populated from DEFAULT_SETTINGS at first paint and
+ * kept in sync with AppSettings by the composition root.
+ */
+function renderQualitySection(): string {
+  return `
+    <div class="pt-2 mt-1 border-t border-[var(--color-border-subtle)] space-y-3">
+      <h3 class="text-[11px] font-semibold tracking-wide uppercase text-[var(--color-text-muted)] flex items-center gap-1.5">${icons.sparkle}Calidad de transcripción</h3>
+      ${renderTextareaField(
+        'customWordsInput',
+        'Vocabulario personalizado',
+        'Nombres propios, jerga, siglas (uno por línea o coma)...',
+        2,
+      )}
+      ${renderRangeField(
+        'wordCorrectionThresholdSlider',
+        'wordCorrectionThresholdValue',
+        'Tolerancia de corrección',
+        String(DEFAULT_SETTINGS.wordCorrectionThreshold),
+        '0.1',
+        '1',
+        '0.05',
+      )}
+      ${renderTextField(
+        'customFillerWordsInput',
+        'Muletillas personalizadas',
+        'Vacío = predeterminadas por idioma · lista separada por comas',
+      )}
+      ${renderToggleField(
+        'silenceTrimToggle',
+        'Recortar silencios',
+        'Elimina silencios inicial/final antes de transcribir (fail-open).',
+        DEFAULT_SETTINGS.enableSilenceTrim,
+      )}
+      ${renderToggleField(
+        'llmToggle',
+        'Refinado con LLM',
+        'Pule puntuación, mayúsculas y errores tras transcribir (Groq chat).',
+        DEFAULT_SETTINGS.enableLlmPostProcess,
+      )}
+      ${renderTextField('llmModelInput', 'Modelo LLM', DEFAULT_SETTINGS.llmModel)}
+      ${renderTextareaField(
+        'llmInstructionsInput',
+        'Instrucciones LLM (extra)',
+        'Ej: tono formal, dominio médico, etc.',
+        2,
+      )}
+    </div>`;
+}
+
+/**
+ * Render a labeled single-line text input.
+ */
+function renderTextField(id: string, label: string, placeholder: string): string {
+  return `
+    <div class="space-y-1">
+      <label for="${id}" class="block text-xs font-medium text-[var(--color-text-muted)] text-left">${label}</label>
+      <input id="${id}" type="text" class="w-full p-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary-500)] focus:border-transparent transition-all duration-[var(--transition-fast)] placeholder:text-[var(--color-text-muted)]" placeholder="${placeholder}" />
+    </div>`;
+}
+
+/**
+ * Render a labeled range slider with a live value readout.
+ */
+function renderRangeField(
+  id: string,
+  valueId: string,
+  label: string,
+  value: string,
+  min: string,
+  max: string,
+  step: string,
+): string {
+  return `
+    <div class="space-y-1">
+      <div class="flex items-center justify-between">
+        <label for="${id}" class="text-xs font-medium text-[var(--color-text-muted)]">${label}</label>
+        <span id="${valueId}" class="text-xs font-mono text-[var(--color-text-secondary)] bg-[var(--color-surface-muted)] px-1.5 py-0.5 rounded">${value}</span>
+      </div>
+      <input id="${id}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" class="w-full h-1.5 rounded-full appearance-none bg-[var(--color-primary-200)] accent-[var(--color-accent-500)] cursor-pointer dark:bg-[var(--color-primary-800)]" />
+    </div>`;
+}
+
+/**
+ * Render a labeled toggle (checkbox) with a descriptive hint.
+ */
+function renderToggleField(id: string, label: string, hint: string, checked: boolean): string {
+  return `
+    <label for="${id}" class="flex items-start gap-2.5 cursor-pointer">
+      <input id="${id}" type="checkbox" ${checked ? 'checked' : ''} class="mt-0.5 h-4 w-4 rounded border-[var(--color-border-strong)] accent-[var(--color-accent-500)] cursor-pointer" />
+      <span class="flex flex-col">
+        <span class="text-xs font-medium text-[var(--color-text-muted)]">${label}</span>
+        <span class="text-[11px] text-[var(--color-text-muted)] opacity-80">${hint}</span>
+      </span>
+    </label>`;
 }
 
 /**

@@ -16,10 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "audit": "pnpm audit --prod",
-    "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "audit": "pnpm audit --prod"
   },
   "lint-staged": {
     "*.{ts,css,html,json}": "prettier --write",
@@ -28,35 +25,33 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@tailwindcss/vite": "^4.3.0",
-    "@tauri-apps/cli": "^2",
     "@testing-library/dom": "^10.4.0",
-    "@testing-library/jest-dom": "^6.6.3",
-    "@types/node": "^22.10.0",
+    "@testing-library/jest-dom": "^7.0.0",
+    "@types/node": "^26.2.0",
     "@typescript-eslint/eslint-plugin": "^8.59.2",
     "@typescript-eslint/parser": "^8.59.2",
-    "@vitest/coverage-v8": "^2.1.8",
+    "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^10.3.0",
     "fake-indexeddb": "^6.2.5",
     "globals": "^17.6.0",
     "husky": "^9.1.7",
-    "jsdom": "^25.0.1",
+    "jsdom": "^30.0.1",
     "lint-staged": "^17.0.4",
     "msw": "^2.7.0",
-    "prettier": "3.8.3",
+    "prettier": "3.9.6",
     "tailwindcss": "^4.3.0",
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.59.2",
-    "vite": "^8.0.10",
-    "vitest": "^2.1.8",
-    "zod": "^3.24.1"
+    "vite": "^8.2.1",
+    "vitest": "^4.1.10",
+    "zod": "^4.4.3"
   },
   "engines": {
     "node": ">=20",
     "pnpm": ">=9"
   },
-  "packageManager": "pnpm@9.15.0",
+  "packageManager": "pnpm@11.20.0",
   "dependencies": {
-    "@sapphi-red/web-noise-suppressor": "^0.3.5",
-    "@tauri-apps/api": "^2"
+    "@sapphi-red/web-noise-suppressor": "^0.3.5"
   }
 }
