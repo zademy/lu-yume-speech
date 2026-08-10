@@ -212,6 +212,7 @@ function renderNavigation(): string {
           <strong class="block text-sm tracking-tight text-[var(--color-text-primary)]">LU YUME</strong>
           <span class="block text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-muted)]" data-i18n="brand.subtitle">Espacio de voz</span>
         </span>
+        <button id="themeToggle" type="button" class="icon-button ml-auto shrink-0" data-i18n-aria-label="nav.theme.aria"></button>
       </div>
       <nav class="flex flex-col gap-1" aria-label="Secciones">
         ${renderNavButton('homeNavButton', 'home', 'nav.home', icons.home, true)}
@@ -220,7 +221,6 @@ function renderNavigation(): string {
       </nav>
       <div class="mt-auto border-t border-[var(--color-border-subtle)] pt-3">
         ${renderNavButton('settingsNavButton', 'settings', 'nav.settings', icons.settings, false)}
-        <button id="themeToggle" type="button" class="nav-item mt-1" data-i18n-aria-label="nav.theme.aria"></button>
       </div>
     </aside>`;
 }
