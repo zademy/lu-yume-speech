@@ -33,7 +33,9 @@ describe('metrics — computeMetrics', () => {
     expect(result.grabaciones).toEqual({ total: 0, minutosAudio: 0 });
     expect(result.tamaño).toEqual({ usageBytes: 0, quotaBytes: 0, pct: 0, audioBytes: 0 });
     expect(result.resumenes).toBe(0);
-    expect(result.idioma).toEqual({ origenTop: undefined, destinoTop: undefined });
+    expect(result.idioma.origenTop).toBeUndefined();
+    expect(result.idioma.destinoTop).toBeUndefined();
+    expect(result.idioma.origenes).toEqual([]);
     expect(result.diasDeUso).toBe(0);
     expect(result.porDia).toEqual({});
     expect(result.wpm.promedio).toBe(0);
@@ -86,13 +88,21 @@ describe('metrics — computeMetrics', () => {
     });
     expect(result.resumenes).toBe(4);
     // origen: es=2, en=1 -> es. destino: g1/g2 transcribe->es(2), g3 translate->en(1) -> es.
-    expect(result.idioma).toEqual({ origenTop: 'es', destinoTop: 'es' });
+    expect(result.idioma.origenTop).toBe('es');
+    expect(result.idioma.destinoTop).toBe('es');
+    expect(result.idioma.origenes).toEqual([
+      { lang: 'es', count: 2 },
+      { lang: 'en', count: 1 },
+    ]);
     expect(result.diasDeUso).toBe(2);
     expect(result.porDia).toEqual({ '2026-01-10': 2, '2026-01-11': 1 });
     // WPM: g1 = 5/2 = 2.5 ; g2 = 2/1 = 2 ; g3 excluded. avg = (2.5+2)/2 = 2.25
     expect(result.wpm.promedio).toBeCloseTo(2.25, 5);
     expect(result.wpm.refHumanaMin).toBe(150);
     expect(result.wpm.refHumanaMax).toBe(200);
+    expect(result.palabras).toEqual({ total: 9 }); // 5 + 2 + 2
+    expect(result.modo).toEqual({ transcribe: 2, translate: 1 });
+    expect(result.racha).toEqual({ actual: 0, masLarga: 2 }); // DAY1+DAY2 consecutive, not today
   });
 
   it('uses "en" as the target language for translations', () => {

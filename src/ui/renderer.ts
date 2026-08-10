@@ -45,12 +45,16 @@ export interface AppElements {
   homeNavButton: HTMLButtonElement;
   dictationNavButton: HTMLButtonElement;
   metricsNavButton: HTMLButtonElement;
+  plumaNavButton: HTMLButtonElement;
   settingsNavButton: HTMLButtonElement;
+  aboutNavButton: HTMLButtonElement;
   pageTitle: HTMLHeadingElement;
   homeView: HTMLElement;
   dictationView: HTMLElement;
   metricsView: HTMLElement;
+  plumaView: HTMLElement;
   settingsView: HTMLElement;
+  aboutView: HTMLElement;
   historyList: HTMLDivElement;
   historyEmptyState: HTMLElement;
   historyClearButton: HTMLButtonElement;
@@ -120,7 +124,9 @@ export function renderApp(): AppElements {
           ${renderHomeView()}
           ${renderDictationView(detectOS().modifierLabel)}
           ${renderMetricsView()}
+          ${renderPlumaView()}
           ${renderSettingsView()}
+          ${renderAboutView(icons.github, icons.arrowUpRight)}
         </main>
       </div>
       ${renderToastContainer()}
@@ -135,12 +141,16 @@ export function renderApp(): AppElements {
     homeNavButton: getRequiredElement(root, '#homeNavButton', HTMLButtonElement),
     dictationNavButton: getRequiredElement(root, '#dictationNavButton', HTMLButtonElement),
     metricsNavButton: getRequiredElement(root, '#metricsNavButton', HTMLButtonElement),
+    plumaNavButton: getRequiredElement(root, '#plumaNavButton', HTMLButtonElement),
     settingsNavButton: getRequiredElement(root, '#settingsNavButton', HTMLButtonElement),
+    aboutNavButton: getRequiredElement(root, '#aboutNavButton', HTMLButtonElement),
     pageTitle: getRequiredElement(root, '#mobilePageTitle', HTMLHeadingElement),
     homeView: getRequiredElement(root, '#homeView', HTMLElement),
     dictationView: getRequiredElement(root, '#dictationView', HTMLElement),
     metricsView: getRequiredElement(root, '#metricsView', HTMLElement),
+    plumaView: getRequiredElement(root, '#plumaView', HTMLElement),
     settingsView: getRequiredElement(root, '#settingsView', HTMLElement),
+    aboutView: getRequiredElement(root, '#aboutView', HTMLElement),
     historyList: getRequiredElement(root, '#historyList', HTMLDivElement),
     historyEmptyState: getRequiredElement(root, '#historyEmptyState', HTMLElement),
     historyClearButton: getRequiredElement(root, '#historyClearButton', HTMLButtonElement),
@@ -218,9 +228,11 @@ function renderNavigation(): string {
         ${renderNavButton('homeNavButton', 'home', 'nav.home', icons.home, true)}
         ${renderNavButton('dictationNavButton', 'dictation', 'nav.dictation', icons.mic, false)}
         ${renderNavButton('metricsNavButton', 'metrics', 'nav.metrics', icons.chart, false)}
+        ${renderNavButton('plumaNavButton', 'pluma', 'nav.pluma', icons.feather, false)}
       </nav>
-      <div class="mt-auto border-t border-[var(--color-border-subtle)] pt-3">
+      <div class="mt-auto border-t border-[var(--color-border-subtle)] pt-3 flex flex-col gap-1">
         ${renderNavButton('settingsNavButton', 'settings', 'nav.settings', icons.settings, false)}
+        ${renderNavButton('aboutNavButton', 'about', 'nav.about', icons.info, false)}
       </div>
     </aside>`;
 }
@@ -341,6 +353,21 @@ function renderMetricsView(): string {
     </section>`;
 }
 
+function renderPlumaView(): string {
+  return `
+    <section id="plumaView" class="view-panel" aria-labelledby="plumaTitle" hidden>
+      <div class="view-heading">
+        <div>
+          <p class="eyebrow" data-i18n="pluma.eyebrow">Writer</p>
+          <h2 id="plumaTitle" data-i18n="pluma.title">Pluma</h2>
+          <p data-i18n="pluma.description"></p>
+        </div>
+        <button id="plumaNewButton" type="button" class="primary-action"><span data-i18n="pluma.new"></span></button>
+      </div>
+      <div id="plumaWorkspace" class="pluma-workspace"></div>
+    </section>`;
+}
+
 function renderSettingsView(): string {
   return `
     <section id="settingsView" class="view-panel" aria-labelledby="settingsTitle" hidden>
@@ -456,6 +483,48 @@ function renderApiKeySection(): string {
           <button id="apiKeySaveButton" type="submit" class="primary-action"><span data-i18n="settings.api.save"></span></button>
         </div>
       </form>
+    </section>`;
+}
+
+function renderAboutView(githubIcon: string, arrowIcon: string): string {
+  return `
+    <section id="aboutView" class="view-panel about-view" aria-labelledby="aboutTitle" hidden>
+      <div class="view-heading">
+        <div>
+          <p class="eyebrow" data-i18n="about.eyebrow"></p>
+          <h2 id="aboutTitle" data-i18n="about.title"></h2>
+          <p data-i18n="about.description"></p>
+        </div>
+      </div>
+      <div class="about-content">
+        <div class="about-card about-app">
+          <div class="about-app-header">
+            <span class="about-app-icon">🎤</span>
+            <div>
+              <h3 data-i18n="about.appName"></h3>
+              <span class="about-version" data-i18n="about.version"></span>
+            </div>
+          </div>
+          <p class="about-app-desc" data-i18n="about.appDesc"></p>
+          <div class="about-tech-stack" data-i18n="about.techStack"></div>
+        </div>
+
+        <div class="about-card about-author">
+          <div class="about-author-header">
+            <h3 data-i18n="about.author"></h3>
+            <a href="https://zademy.com" target="_blank" rel="noopener noreferrer" class="about-website-link">
+              <span data-i18n="about.website"></span> ${arrowIcon}
+            </a>
+          </div>
+          <p class="about-author-bio" data-i18n="about.authorBio"></p>
+        </div>
+
+        <a href="https://github.com/zademy/lu-yume-speech" target="_blank" rel="noopener noreferrer" class="about-github-link">
+          ${githubIcon}
+          <span data-i18n="about.github"></span>
+          ${arrowIcon}
+        </a>
+      </div>
     </section>`;
 }
 
@@ -608,6 +677,8 @@ const icons = {
   mic: '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="6" height="11" x="9" y="2" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>',
   chart:
     '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16V9"/><path d="M12 16v-5"/><path d="M17 16V6"/></svg>',
+  feather:
+    '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"/><line x1="16" x2="2" y1="8" y2="22"/><line x1="17.5" x2="9" y1="15" y2="15"/></svg>',
   globe:
     '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
   menu: '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>',
@@ -628,4 +699,7 @@ const icons = {
     '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 15.5A2 2 0 0 0 8.5 14l-6.1-1.5a.5.5 0 0 1 0-1L8.5 10A2 2 0 0 0 10 8.5l1.5-6.1a.5.5 0 0 1 1 0L14 8.5a2 2 0 0 0 1.5 1.5l6.1 1.5a.5.5 0 0 1 0 1L15.5 14a2 2 0 0 0-1.5 1.5l-1.5 6.1a.5.5 0 0 1-1 0z"/></svg>',
   arrowUpRight:
     '<svg aria-hidden="true" class="inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 17 17 7M7 7h10v10"/></svg>',
+  info: '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>',
+  github:
+    '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.11.79-.25.79-.56v-2c-3.2.7-3.88-1.54-3.88-1.54-.52-1.34-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.23-1.28-5.23-5.69 0-1.26.45-2.29 1.18-3.1-.12-.29-.51-1.46.11-3.05 0 0 .96-.31 3.15 1.18a10.95 10.95 0 0 1 5.74 0c2.19-1.49 3.15-1.18 3.15-1.18.62 1.59.23 2.76.11 3.05.74.81 1.18 1.84 1.18 3.1 0 4.42-2.69 5.39-5.25 5.68.41.36.78 1.06.78 2.14v3.17c0 .31.21.68.8.56A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5z"/></svg>',
 };

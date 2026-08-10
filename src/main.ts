@@ -43,6 +43,11 @@ import type { AppElements } from './ui/renderer';
 import { renderMetadata } from './ui/metadata-panel';
 import { showToast } from './ui/toast';
 import { createMetricsPanel } from './ui/metrics-panel';
+import { createPlumaPanel } from './escritos/escritos-ui';
+import * as escritos from './escritos/escritos-db';
+import type { EditorHandle } from './escritos/editor';
+import { createDictationController } from './escritos/dictation';
+import { createImproveController } from './escritos/improve-ui';
 import { translate, translateTree } from './i18n/translations';
 import type { AppLanguage } from './types';
 import { computeMetrics } from './metrics/metrics';
@@ -161,6 +166,134 @@ async function bootstrap(): Promise<void> {
     config.appLanguage,
   );
   elements.metricsView.appendChild(metricsPanel.root);
+
+  // Pluma panel — document list + read-only preview (T1). T2 swaps preview for Milkdown.
+  const plumaWorkspace = elements.plumaView.querySelector<HTMLElement>('#plumaWorkspace');
+  const plumaHolder: { panel: ReturnType<typeof createPlumaPanel> | null } = { panel: null };
+  let editorHandle: EditorHandle | null = null;
+  const refreshEscritos = async (): Promise<void> => {
+    const panel = plumaHolder.panel;
+    if (panel) panel.setEscritos(await escritos.getAllEscritos());
+  };
+  // Image persistence adapter — pasted/dropped images become Dexie blobs
+  // referenced as `app-image:<id>` (see src/escritos/images.ts).
+  const imagesAdapter = {
+    loadBlob: (id: string) => escritos.getImagen(id).then((img) => (img ? img.blob : null)),
+    saveImage: async (file: File, escritoId: string) => {
+      const id = crypto.randomUUID();
+      try {
+        await escritos.saveImagen({
+          id,
+          escritoId,
+          blob: file,
+          mimeType: file.type || 'image/png',
+          createdAt: Date.now(),
+        });
+        return id;
+      } catch (err) {
+        console.warn('[Pluma] image save failed:', err);
+        showToast(elements.toastContainer, t('pluma.image.error'), 'error');
+        throw err;
+      }
+    },
+  };
+  plumaHolder.panel = createPlumaPanel(
+    {
+      onSelect: async (id) => {
+        const escrito = await escritos.getEscrito(id);
+        const panel = plumaHolder.panel;
+        if (!escrito || !panel) return;
+        // Lazy-load the editor (Crepe/ProseMirror) so it stays out of the
+        // initial bundle — only Pluma users pay for it, and only on first open.
+        const { mountEditor } = await import('./escritos/editor');
+        // Doc switch: tear down the previous editor, then mount a fresh one.
+        if (editorHandle) {
+          await editorHandle.destroy();
+          editorHandle = null;
+        }
+        panel.editorMount.replaceChildren();
+        let saveTimer: ReturnType<typeof setTimeout> | null = null;
+        editorHandle = await mountEditor(panel.editorMount, {
+          initialMD: escrito.contenidoMD,
+          escritoId: escrito.id,
+          images: imagesAdapter,
+          onChange: (md) => {
+            const docId = escrito.id;
+            if (saveTimer) clearTimeout(saveTimer);
+            saveTimer = setTimeout(() => {
+              void escritos.updateContent(docId, md).then(() => void refreshEscritos());
+            }, 800);
+          },
+        });
+        // The improve controller re-binds its selection subscription to the
+        // freshly mounted editor on every swap.
+        improveController.attach(editorHandle);
+        dictationController.setEnabled(true);
+      },
+      onRename: async (id, titulo) => {
+        await escritos.renameEscrito(id, titulo);
+        await refreshEscritos();
+      },
+      onRemove: async (id) => {
+        if (editorHandle) {
+          await editorHandle.destroy();
+          editorHandle = null;
+        }
+        dictationController.setEnabled(false);
+        await escritos.removeEscrito(id);
+        await refreshEscritos();
+      },
+      onClose: () => {
+        if (editorHandle) {
+          void editorHandle.destroy();
+          editorHandle = null;
+        }
+        plumaHolder.panel?.editorMount.replaceChildren();
+        dictationController.setEnabled(false);
+      },
+    },
+    config.appLanguage,
+  );
+  const plumaPanel = plumaHolder.panel;
+  plumaWorkspace?.appendChild(plumaPanel.root);
+
+  // T4 — dictation toggle in the Pluma status bar. Reuses the shared recorder
+  // + Groq pipeline; flips `dictation:target` so transcription lands here.
+  const dictationController = createDictationController({
+    bus,
+    startRecorder: async () => {
+      await ensureAudioReady();
+      recorder.start();
+    },
+    stopRecorder: () => recorder.stop(),
+    isRecording: () => recorder.state === 'recording',
+    getEditor: () => editorHandle,
+    toastContainer: elements.toastContainer,
+    getLang: () => config.appLanguage,
+  });
+  plumaPanel.statusBar.prepend(dictationController.root);
+  // No document is open initially — disable the toggle until a note is selected.
+  dictationController.setEnabled(false);
+
+  // T5 — improve star + popover anchored to the editor pane. Subscribes to
+  // selection changes via the editor handle; re-subscribes on doc swap.
+  const improveController = createImproveController({
+    getEditor: () => editorHandle,
+    anchor: plumaPanel.previewPane,
+    toastContainer: elements.toastContainer,
+    getApiKey,
+    getLang: () => config.appLanguage,
+  });
+
+  void refreshEscritos();
+  elements.plumaView
+    .querySelector<HTMLButtonElement>('#plumaNewButton')
+    ?.addEventListener('click', async () => {
+      const escrito = await escritos.createEscrito(t('pluma.untitled'));
+      await refreshEscritos();
+      plumaPanel.preview(escrito);
+    });
+  elements.plumaNavButton.addEventListener('click', () => void refreshEscritos());
 
   const refreshMetrics = async (): Promise<void> => {
     const [metas, resumenesCount, estimate] = await Promise.all([
@@ -311,6 +444,13 @@ async function bootstrap(): Promise<void> {
 
   // Wire everything through the event bus
   const activeView: { view: AppView } = { view: 'home' };
+  // Dictation routing — 'output' (Dictar view, default) vs 'pluma' (editor).
+  // The Pluma dictation controller flips this when its toggle is on so the
+  // shared capture/transcription pipeline knows where to deliver the result.
+  const dictationTarget: { current: 'output' | 'pluma' } = { current: 'output' };
+  bus.on('dictation:target', (next) => {
+    dictationTarget.current = next;
+  });
   const navigate = wireNavigation(
     elements,
     () => getApiKey(),
@@ -324,8 +464,24 @@ async function bootstrap(): Promise<void> {
   });
   updateApiKeyState(elements, apiKey);
 
-  wireTranscriptionPipeline(bus, client, elements, getConfig, getApiKey, renderHistory);
-  wireRecordingHandlers(bus, elements, analyzer, timer, visualizer, recorder);
+  wireTranscriptionPipeline(
+    bus,
+    client,
+    elements,
+    getConfig,
+    getApiKey,
+    renderHistory,
+    () => dictationTarget.current,
+  );
+  wireRecordingHandlers(
+    bus,
+    elements,
+    analyzer,
+    timer,
+    visualizer,
+    recorder,
+    () => dictationTarget.current,
+  );
   wireHistoryEvents(bus, elements, navigate, renderHistory);
 
   // Interface language — switching it re-translates the shell in place.
@@ -339,9 +495,11 @@ async function bootstrap(): Promise<void> {
     bus.emit('settings:change', { appLanguage: lang });
     translateTree(elements.root, lang);
     metricsPanel.setLanguage(lang);
+    plumaPanel.setLanguage(lang);
     sidebar._lang = lang;
     await renderHistory();
     await refreshMetrics();
+    await refreshEscritos();
     navigate(activeView.view);
   });
 
@@ -381,7 +539,7 @@ async function bootstrap(): Promise<void> {
 // Application shell
 // ===========================================================================
 
-type AppView = 'home' | 'dictation' | 'settings' | 'metrics';
+type AppView = 'home' | 'dictation' | 'settings' | 'metrics' | 'pluma' | 'about';
 
 function wireNavigation(
   elements: AppElements,
@@ -395,18 +553,24 @@ function wireNavigation(
     dictation: elements.dictationView,
     settings: elements.settingsView,
     metrics: elements.metricsView,
+    pluma: elements.plumaView,
+    about: elements.aboutView,
   };
   const buttons: Record<AppView, HTMLButtonElement> = {
     home: elements.homeNavButton,
     dictation: elements.dictationNavButton,
     settings: elements.settingsNavButton,
     metrics: elements.metricsNavButton,
+    pluma: elements.plumaNavButton,
+    about: elements.aboutNavButton,
   };
   const titles: Record<AppView, string> = {
     home: 'home.title',
     dictation: 'dictation.title',
     settings: 'settings.title',
     metrics: 'metrics.title',
+    pluma: 'pluma.title',
+    about: 'about.title',
   };
 
   const closeNavigation = (): void => {
@@ -435,7 +599,13 @@ function wireNavigation(
   elements.root.querySelectorAll<HTMLButtonElement>('[data-open-view]').forEach((button) => {
     button.addEventListener('click', () => {
       const view = button.dataset.openView;
-      if (view === 'home' || view === 'dictation' || view === 'settings' || view === 'metrics')
+      if (
+        view === 'home' ||
+        view === 'dictation' ||
+        view === 'settings' ||
+        view === 'metrics' ||
+        view === 'pluma'
+      )
         navigate(view);
     });
   });
@@ -608,8 +778,10 @@ function wireRecordingHandlers(
   timer: RecordingTimer,
   visualizer: WaveformVisualizer,
   recorder: Recorder,
+  getDictationTarget: () => 'output' | 'pluma',
 ): void {
   bus.on('recording:start', () => {
+    if (getDictationTarget() === 'pluma') return;
     analyzer.start();
     timer.start();
     visualizer.setRecording(true);
@@ -619,6 +791,7 @@ function wireRecordingHandlers(
   });
 
   bus.on('recording:stop', () => {
+    if (getDictationTarget() === 'pluma') return;
     analyzer.stop();
     timer.stop();
     visualizer.stop();
@@ -632,6 +805,7 @@ function wireRecordingHandlers(
   });
 
   bus.on('recording:silence', () => {
+    if (getDictationTarget() === 'pluma') return;
     if (timer.getElapsed() > 1) {
       recorder.stop();
       showToast(elements.toastContainer, t('toast.silence'), 'info');
@@ -650,6 +824,7 @@ function wireTranscriptionPipeline(
   getConfig: () => AppSettings,
   getApiKey: () => string,
   refreshHistory: () => Promise<void>,
+  getDictationTarget: () => 'output' | 'pluma',
 ): void {
   // Named pipeline state — replaces the former `lastBlob` closure so a failed
   // take can never leak into a later success, and a rapid re-record surfaces
@@ -715,6 +890,16 @@ function wireTranscriptionPipeline(
       session.complete();
       showToast(elements.toastContainer, t('toast.noText'), 'warning');
       setStatus(elements, { message: 'No se detectó texto.', level: 'idle' });
+      return;
+    }
+
+    // Pluma dictation: post-processed text goes to the editor via the bus;
+    // skip the Dictar-view append, history record, and clipboard copy so the
+    // grabación history stays about real Dictar sessions (T4 out-of-scope note).
+    if (getDictationTarget() === 'pluma') {
+      bus.emit('text:append', text);
+      session.complete();
+      setStatus(elements, { message: t('pluma.dictation.appended'), level: 'success' });
       return;
     }
 
