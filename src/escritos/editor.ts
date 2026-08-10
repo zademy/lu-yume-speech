@@ -33,6 +33,7 @@ import '@milkdown/crepe/theme/common/style.css';
 import '@milkdown/crepe/theme/nord.css';
 import { Crepe } from '@milkdown/crepe';
 import { editorViewCtx } from '@milkdown/kit/core';
+import { TextSelection } from '@milkdown/kit/prose/state';
 import type { Transaction } from '@milkdown/kit/prose/state';
 
 import { type ImageAdapter, hydrateImages, serializeImages } from './images';
@@ -139,6 +140,16 @@ export async function mountEditor(
     });
   });
   await crepe.create();
+
+  // Position the caret at the end of the document so the writer can continue
+  // typing immediately after opening a note.
+  {
+    const v = crepe.editor.ctx.get(editorViewCtx);
+    const end = v.state.doc.content.size;
+    const sel = TextSelection.near(v.state.doc.resolve(end), -1);
+    v.dispatch(v.state.tr.setSelection(sel));
+    v.focus();
+  }
 
   // Selection listeners for T5 (improve star). Wired once on mount; each
   // callback is notified on every ProseMirror transaction that may have moved
