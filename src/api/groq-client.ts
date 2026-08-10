@@ -51,11 +51,11 @@ const TRANSCRIPTION_SCHEMA = z
 
 export class GroqClient {
   private readonly bus: EventBus<EventMap>;
-  private readonly apiKey: string;
+  private readonly getApiKey: () => string;
 
-  constructor(bus: EventBus<EventMap>, apiKey: string) {
+  constructor(bus: EventBus<EventMap>, getApiKey: () => string) {
     this.bus = bus;
-    this.apiKey = apiKey;
+    this.getApiKey = getApiKey;
   }
 
   /**
@@ -73,7 +73,8 @@ export class GroqClient {
     endpoint: AudioEndpoint = 'transcriptions',
     externalSignal?: AbortSignal,
   ): Promise<TranscriptionResult> {
-    if (!this.apiKey) {
+    const apiKey = this.getApiKey();
+    if (!apiKey) {
       throw this.fail({
         kind: 'auth',
         message: 'Falta la API key de Groq. Configúrala desde Ajustes.',
@@ -98,7 +99,7 @@ export class GroqClient {
       try {
         const res = await fetch(url, {
           method: 'POST',
-          headers: { Authorization: `Bearer ${this.apiKey}` },
+          headers: { Authorization: `Bearer ${apiKey}` },
           body: this.buildFormData(blob, options, endpoint),
           signal: ctrl.signal,
         });

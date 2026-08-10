@@ -1,42 +1,67 @@
 /**
  * Application UI renderer.
  *
- * Builds the complete DOM layout using the design system tokens defined
- * in style.css. Uses Lucide SVG icons (no emojis) and semantic color
- * classes that support light/dark mode automatically.
- *
- * SRP: This module's only job is DOM construction.
- * OCP: New UI sections can be added as new render functions.
- *
- * App name: LU YUME
+ * Builds the responsive product shell and its Inicio, Dictar, and Ajustes
+ * views using the semantic design tokens from style.css.
  */
 
 import { detectOS } from '../utils/os-detect';
 import {
-  WHISPER_MODELS,
+  DEFAULT_SETTINGS,
   LANGUAGES,
   OPERATION_MODES,
-  RESPONSE_FORMATS,
   RECORD_MODES,
-  DEFAULT_SETTINGS,
+  RESPONSE_FORMATS,
+  WHISPER_MODELS,
 } from '../types';
 
-/**
- * Safely set inner HTML using a Range-created document fragment.
- * Avoids direct innerHTML assignment for better security.
- *
- * @param el   - Target element whose content will be replaced
- * @param html - HTML string to parse and insert
- */
 function setTrustedHTML(el: HTMLElement, html: string): void {
   const range = document.createRange();
   const fragment = range.createContextualFragment(html);
-  el.textContent = '';
-  el.appendChild(fragment);
+  el.replaceChildren(fragment);
+}
+
+function getRequiredElement<T extends Element>(
+  root: ParentNode,
+  selector: string,
+  elementType: new () => T,
+): T {
+  const element = root.querySelector(selector);
+  if (!(element instanceof elementType)) {
+    throw new Error(`Required element has an invalid type: ${selector}`);
+  }
+  return element;
 }
 
 export interface AppElements {
   root: HTMLDivElement;
+  navigation: HTMLElement;
+  navBackdrop: HTMLButtonElement;
+  mobileMenuButton: HTMLButtonElement;
+  homeNavButton: HTMLButtonElement;
+  dictationNavButton: HTMLButtonElement;
+  settingsNavButton: HTMLButtonElement;
+  pageTitle: HTMLHeadingElement;
+  homeView: HTMLElement;
+  dictationView: HTMLElement;
+  settingsView: HTMLElement;
+  historyList: HTMLDivElement;
+  historyEmptyState: HTMLElement;
+  historyClearButton: HTMLButtonElement;
+  historyCount: HTMLSpanElement;
+  wordsMetric: HTMLSpanElement;
+  transcriptionsMetric: HTMLSpanElement;
+  audioMinutesMetric: HTMLSpanElement;
+  dictationKeyGate: HTMLElement;
+  dictationKeyGateButton: HTMLButtonElement;
+  dictationWorkspace: HTMLDivElement;
+  apiKeyForm: HTMLFormElement;
+  apiKeyInput: HTMLInputElement;
+  apiKeyToggle: HTMLButtonElement;
+  apiKeySaveButton: HTMLButtonElement;
+  apiKeyDeleteButton: HTMLButtonElement;
+  apiKeyError: HTMLParagraphElement;
+  apiKeyStatus: HTMLSpanElement;
   modelSelect: HTMLSelectElement;
   operationModeSelect: HTMLSelectElement;
   recordModeSelect: HTMLSelectElement;
@@ -62,10 +87,6 @@ export interface AppElements {
   copyAllBtn: HTMLButtonElement;
   clearBtn: HTMLButtonElement;
   downloadBtn: HTMLButtonElement;
-  settingsBtn: HTMLButtonElement;
-  settingsModal: HTMLDivElement;
-  settingsCloseBtn: HTMLButtonElement;
-  headerActions: HTMLDivElement;
   customWordsInput: HTMLTextAreaElement;
   wordCorrectionThresholdSlider: HTMLInputElement;
   wordCorrectionThresholdValue: HTMLSpanElement;
@@ -77,459 +98,415 @@ export interface AppElements {
 }
 
 export function renderApp(): AppElements {
-  const os = detectOS();
-
   const root = document.createElement('div');
   root.id = 'app-shell';
-  root.className = 'flex flex-col h-full';
+  root.className = 'app-shell';
 
   setTrustedHTML(
     root,
     `
-    ${renderAppHeader()}
-    <div class="flex-1 overflow-y-auto">
-      <div class="max-w-xl mx-auto px-4 py-6">
-        ${renderStatusBar(os.modifierLabel)}
-        ${renderVisualizerArea()}
-        ${renderOutputSection()}
+      ${renderNavigation()}
+      <button id="navBackdrop" type="button" class="nav-backdrop" aria-label="Cerrar navegación" tabindex="-1"></button>
+      <div class="app-workspace">
+        ${renderMobileHeader()}
+        <main id="mainContent" class="app-content" tabindex="-1">
+          ${renderHomeView()}
+          ${renderDictationView(detectOS().modifierLabel)}
+          ${renderSettingsView()}
+        </main>
       </div>
-    </div>
-    ${renderAppFooter()}
-    ${renderToastContainer()}
-  `,
+      ${renderToastContainer()}
+    `,
   );
-
-  // Modal rendered OUTSIDE root to escape any overflow/transform containment
-  const settingsModal = document.createElement('div');
-  setTrustedHTML(settingsModal, renderSettingsModal());
-  document.body.appendChild(settingsModal);
 
   return {
     root,
-    modelSelect: settingsModal.querySelector('#modelSelect')!,
-    operationModeSelect: settingsModal.querySelector('#operationModeSelect')!,
-    recordModeSelect: settingsModal.querySelector('#recordModeSelect')!,
-    noiseReductionSelect: settingsModal.querySelector('#noiseReductionSelect')!,
-    languageSelect: settingsModal.querySelector('#languageSelect')!,
-    promptInput: settingsModal.querySelector('#promptInput')!,
-    temperatureSlider: settingsModal.querySelector('#temperatureSlider')!,
-    temperatureValue: settingsModal.querySelector('#temperatureValue')!,
-    responseFormatSelect: settingsModal.querySelector('#responseFormatSelect')!,
-    timestampToggle: settingsModal.querySelector('#timestampToggle')!,
-    statusDiv: root.querySelector('#status')!,
-    waveformCanvas: root.querySelector('#waveformCanvas')!,
-    waveformContainer: root.querySelector('#waveformContainer')!,
-    timerDisplay: root.querySelector('#timerDisplay')!,
-    outputArea: root.querySelector('#output') as HTMLTextAreaElement,
-    wordCount: root.querySelector('#wordCount')!,
-    metadataPanel: root.querySelector('#metadataPanel')!,
-    summaryBtn: root.querySelector('#summaryBtn')!,
-    summarySection: root.querySelector('#summarySection')!,
-    summaryPanel: root.querySelector('#summaryPanel')!,
-    toastContainer: root.querySelector('#toastContainer')!,
-    themeToggle: root.querySelector('#themeToggle')!,
-    copyAllBtn: root.querySelector('#copyAllBtn')!,
-    clearBtn: root.querySelector('#clearBtn')!,
-    downloadBtn: root.querySelector('#downloadBtn')!,
-    settingsBtn: root.querySelector('#settingsBtn')!,
-    settingsModal: settingsModal.querySelector('#settingsModal')!,
-    settingsCloseBtn: settingsModal.querySelector('#settingsCloseBtn')!,
-    headerActions: root.querySelector('#headerActions')!,
-    customWordsInput: settingsModal.querySelector('#customWordsInput')!,
-    wordCorrectionThresholdSlider: settingsModal.querySelector('#wordCorrectionThresholdSlider')!,
-    wordCorrectionThresholdValue: settingsModal.querySelector('#wordCorrectionThresholdValue')!,
-    customFillerWordsInput: settingsModal.querySelector('#customFillerWordsInput')!,
-    silenceTrimToggle: settingsModal.querySelector('#silenceTrimToggle')!,
-    llmToggle: settingsModal.querySelector('#llmToggle')!,
-    llmModelInput: settingsModal.querySelector('#llmModelInput')!,
-    llmInstructionsInput: settingsModal.querySelector('#llmInstructionsInput')!,
+    navigation: getRequiredElement(root, '#primaryNavigation', HTMLElement),
+    navBackdrop: getRequiredElement(root, '#navBackdrop', HTMLButtonElement),
+    mobileMenuButton: getRequiredElement(root, '#mobileMenuButton', HTMLButtonElement),
+    homeNavButton: getRequiredElement(root, '#homeNavButton', HTMLButtonElement),
+    dictationNavButton: getRequiredElement(root, '#dictationNavButton', HTMLButtonElement),
+    settingsNavButton: getRequiredElement(root, '#settingsNavButton', HTMLButtonElement),
+    pageTitle: getRequiredElement(root, '#mobilePageTitle', HTMLHeadingElement),
+    homeView: getRequiredElement(root, '#homeView', HTMLElement),
+    dictationView: getRequiredElement(root, '#dictationView', HTMLElement),
+    settingsView: getRequiredElement(root, '#settingsView', HTMLElement),
+    historyList: getRequiredElement(root, '#historyList', HTMLDivElement),
+    historyEmptyState: getRequiredElement(root, '#historyEmptyState', HTMLElement),
+    historyClearButton: getRequiredElement(root, '#historyClearButton', HTMLButtonElement),
+    historyCount: getRequiredElement(root, '#historyCount', HTMLSpanElement),
+    wordsMetric: getRequiredElement(root, '#wordsMetric', HTMLSpanElement),
+    transcriptionsMetric: getRequiredElement(root, '#transcriptionsMetric', HTMLSpanElement),
+    audioMinutesMetric: getRequiredElement(root, '#audioMinutesMetric', HTMLSpanElement),
+    dictationKeyGate: getRequiredElement(root, '#dictationKeyGate', HTMLElement),
+    dictationKeyGateButton: getRequiredElement(root, '#dictationKeyGateButton', HTMLButtonElement),
+    dictationWorkspace: getRequiredElement(root, '#dictationWorkspace', HTMLDivElement),
+    apiKeyForm: getRequiredElement(root, '#apiKeyForm', HTMLFormElement),
+    apiKeyInput: getRequiredElement(root, '#apiKeyInput', HTMLInputElement),
+    apiKeyToggle: getRequiredElement(root, '#apiKeyToggle', HTMLButtonElement),
+    apiKeySaveButton: getRequiredElement(root, '#apiKeySaveButton', HTMLButtonElement),
+    apiKeyDeleteButton: getRequiredElement(root, '#apiKeyDeleteButton', HTMLButtonElement),
+    apiKeyError: getRequiredElement(root, '#apiKeyError', HTMLParagraphElement),
+    apiKeyStatus: getRequiredElement(root, '#apiKeyStatus', HTMLSpanElement),
+    modelSelect: getRequiredElement(root, '#modelSelect', HTMLSelectElement),
+    operationModeSelect: getRequiredElement(root, '#operationModeSelect', HTMLSelectElement),
+    recordModeSelect: getRequiredElement(root, '#recordModeSelect', HTMLSelectElement),
+    noiseReductionSelect: getRequiredElement(root, '#noiseReductionSelect', HTMLSelectElement),
+    languageSelect: getRequiredElement(root, '#languageSelect', HTMLSelectElement),
+    promptInput: getRequiredElement(root, '#promptInput', HTMLTextAreaElement),
+    temperatureSlider: getRequiredElement(root, '#temperatureSlider', HTMLInputElement),
+    temperatureValue: getRequiredElement(root, '#temperatureValue', HTMLSpanElement),
+    responseFormatSelect: getRequiredElement(root, '#responseFormatSelect', HTMLSelectElement),
+    timestampToggle: getRequiredElement(root, '#timestampToggle', HTMLInputElement),
+    statusDiv: getRequiredElement(root, '#status', HTMLDivElement),
+    waveformCanvas: getRequiredElement(root, '#waveformCanvas', HTMLCanvasElement),
+    waveformContainer: getRequiredElement(root, '#waveformContainer', HTMLDivElement),
+    timerDisplay: getRequiredElement(root, '#timerDisplay', HTMLSpanElement),
+    outputArea: getRequiredElement(root, '#output', HTMLTextAreaElement),
+    wordCount: getRequiredElement(root, '#wordCount', HTMLSpanElement),
+    metadataPanel: getRequiredElement(root, '#metadataPanel', HTMLDivElement),
+    summaryBtn: getRequiredElement(root, '#summaryBtn', HTMLButtonElement),
+    summarySection: getRequiredElement(root, '#summarySection', HTMLElement),
+    summaryPanel: getRequiredElement(root, '#summaryPanel', HTMLDivElement),
+    toastContainer: getRequiredElement(root, '#toastContainer', HTMLDivElement),
+    themeToggle: getRequiredElement(root, '#themeToggle', HTMLButtonElement),
+    copyAllBtn: getRequiredElement(root, '#copyAllBtn', HTMLButtonElement),
+    clearBtn: getRequiredElement(root, '#clearBtn', HTMLButtonElement),
+    downloadBtn: getRequiredElement(root, '#downloadBtn', HTMLButtonElement),
+    customWordsInput: getRequiredElement(root, '#customWordsInput', HTMLTextAreaElement),
+    wordCorrectionThresholdSlider: getRequiredElement(
+      root,
+      '#wordCorrectionThresholdSlider',
+      HTMLInputElement,
+    ),
+    wordCorrectionThresholdValue: getRequiredElement(
+      root,
+      '#wordCorrectionThresholdValue',
+      HTMLSpanElement,
+    ),
+    customFillerWordsInput: getRequiredElement(root, '#customFillerWordsInput', HTMLInputElement),
+    silenceTrimToggle: getRequiredElement(root, '#silenceTrimToggle', HTMLInputElement),
+    llmToggle: getRequiredElement(root, '#llmToggle', HTMLInputElement),
+    llmModelInput: getRequiredElement(root, '#llmModelInput', HTMLInputElement),
+    llmInstructionsInput: getRequiredElement(root, '#llmInstructionsInput', HTMLTextAreaElement),
   };
 }
 
-// -----------------------------------------------------------------------
-// App Header — LU YUME branding
-// -----------------------------------------------------------------------
-
-/**
- * Render the application header with logo, title, and action buttons.
- * Includes the theme toggle button inside the #headerActions container.
- */
-function renderAppHeader(): string {
+function renderNavigation(): string {
   return `
-    <header class="sticky top-0 z-20 glass-strong flex items-center justify-between px-5 py-3.5 border-b border-[var(--color-border-subtle)]">
-      <div class="flex items-center gap-3">
-        <div class="relative w-10 h-10 rounded-xl bg-[var(--color-control-emphasis)] text-[var(--color-text-inverse)] flex items-center justify-center shadow-[var(--shadow-glow-primary)]">
-          ${icons.mic}
-        </div>
-        <div class="text-left leading-tight">
-          <h1 class="text-[15px] font-bold tracking-tight text-brand-gradient">
-            LU YUME
-          </h1>
-          <p class="text-[10.5px] text-[var(--color-text-muted)] font-medium tracking-wide uppercase">Dictado por voz</p>
-        </div>
+    <aside id="primaryNavigation" class="app-sidebar" aria-label="Navegación principal" data-open="false">
+      <div class="flex items-center gap-3 px-3 py-2 mb-7">
+        <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--color-control-emphasis)] text-[var(--color-text-inverse)]">${icons.mic}</span>
+        <span class="min-w-0">
+          <strong class="block text-sm tracking-tight text-[var(--color-text-primary)]">LU YUME</strong>
+          <span class="block text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--color-text-muted)]">Espacio de voz</span>
+        </span>
       </div>
-      <div id="headerActions" class="flex items-center gap-1">
-        <button
-          id="settingsBtn"
-          type="button"
-          class="p-2 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-muted)] transition-colors duration-[var(--transition-fast)] cursor-pointer"
-          aria-label="Abrir configuración"
-          title="Configuración"
-        >${icons.settings}</button>
-        <button
-          id="themeToggle"
-          type="button"
-          class="p-2 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-muted)] transition-colors duration-[var(--transition-fast)] cursor-pointer"
-          aria-label="Toggle dark mode"
-        ></button>
+      <nav class="flex flex-col gap-1" aria-label="Secciones">
+        ${renderNavButton('homeNavButton', 'home', 'Inicio', icons.home, true)}
+        ${renderNavButton('dictationNavButton', 'dictation', 'Dictar', icons.mic, false)}
+      </nav>
+      <div class="mt-auto border-t border-[var(--color-border-subtle)] pt-3">
+        ${renderNavButton('settingsNavButton', 'settings', 'Ajustes', icons.settings, false)}
+        <button id="themeToggle" type="button" class="nav-item mt-1" aria-label="Cambiar tema"></button>
       </div>
-    </header>
-  `;
+    </aside>`;
 }
 
-// -----------------------------------------------------------------------
-// App Footer
-// -----------------------------------------------------------------------
-
-/**
- * Render the application footer with keyboard shortcut hint and credits.
- */
-function renderAppFooter(): string {
-  return `
-    <footer class="px-5 py-3 border-t border-[var(--color-border-subtle)] glass">
-      <div class="max-w-xl mx-auto flex items-center justify-between">
-        <p class="text-[10.5px] text-[var(--color-text-muted)] flex items-center gap-1.5">
-          <kbd class="inline-flex items-center px-1.5 py-0.5 rounded border border-[var(--color-border)] bg-[var(--color-surface-muted)] font-mono text-[10px] text-[var(--color-text-secondary)]">⌥ / Ctrl</kbd>
-          <span>+</span>
-          <kbd class="inline-flex items-center px-1.5 py-0.5 rounded border border-[var(--color-border)] bg-[var(--color-surface-muted)] font-mono text-[10px] text-[var(--color-text-secondary)]">Space</kbd>
-        </p>
-        <p class="text-[10.5px] text-[var(--color-text-muted)]">
-          Powered by <span class="font-semibold text-brand-gradient">Groq Whisper</span>
-        </p>
-      </div>
-    </footer>
-  `;
+function renderNavButton(
+  id: string,
+  view: string,
+  label: string,
+  icon: string,
+  active: boolean,
+): string {
+  return `<button id="${id}" type="button" class="nav-item${active ? ' is-active' : ''}" data-view="${view}" aria-current="${active ? 'page' : 'false'}">${icon}<span>${label}</span></button>`;
 }
 
-// -----------------------------------------------------------------------
-// SVG Icons
-// -----------------------------------------------------------------------
-
-/**
- * Lucide SVG icon strings used throughout the UI.
- * Each value is a complete inline SVG markup string.
- */
-const icons = {
-  mic: '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="6" height="11" x="9" y="2" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>',
-  copy: '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>',
-  trash:
-    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>',
-  download:
-    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>',
-  settings:
-    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>',
-  chevronDown:
-    '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
-  sparkle:
-    '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>',
-};
-
-// -----------------------------------------------------------------------
-// Section renderers
-// -----------------------------------------------------------------------
-
-/**
- * Render the collapsible settings panel with all configuration fields:
- * model, operation mode, recording mode, language, prompt, temperature,
- * response format, and rate limit info.
- */
-function renderSettingsModal(): string {
+function renderMobileHeader(): string {
   return `
-    <div id="settingsModal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4" style="background:rgba(0,0,0,0.6);backdrop-filter:blur(4px)">
-      <div role="dialog" aria-modal="true" aria-labelledby="settingsTitle" class="w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-2xl bg-[var(--color-surface)] border border-[var(--color-border)] shadow-[var(--shadow-elevated)]">
-        <div class="flex items-center justify-between px-5 py-4 border-b border-[var(--color-border-subtle)] sticky top-0 bg-[var(--color-surface)] z-10">
-          <h2 id="settingsTitle" class="flex items-center gap-2 text-sm font-semibold text-[var(--color-text-primary)]">
-            <span class="text-[var(--color-text-secondary)]">${icons.settings}</span>
-            Configuración
-          </h2>
-          <button id="settingsCloseBtn" type="button" class="p-1.5 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-muted)] transition-colors duration-[var(--transition-fast)] cursor-pointer" aria-label="Cerrar configuración">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          </button>
+    <header class="mobile-header">
+      <button id="mobileMenuButton" type="button" class="icon-button" aria-label="Abrir navegación" aria-controls="primaryNavigation" aria-expanded="false">${icons.menu}</button>
+      <h1 id="mobilePageTitle" class="text-sm font-semibold tracking-tight">Inicio</h1>
+      <span class="h-10 w-10" aria-hidden="true"></span>
+    </header>`;
+}
+
+function renderHomeView(): string {
+  return `
+    <section id="homeView" class="view-panel" aria-labelledby="homeTitle">
+      <div class="view-heading">
+        <div>
+          <p class="eyebrow">Espacio de trabajo</p>
+          <h2 id="homeTitle">Inicio</h2>
+          <p>Revisa tus transcripciones recientes y el uso acumulado en este dispositivo.</p>
         </div>
-        <div class="px-5 py-4 space-y-3">
-          ${renderSelectField(
-            'modelSelect',
-            'Modelo',
-            WHISPER_MODELS.map((m) => ({
-              value: m,
-              label: m,
-              selected: m === DEFAULT_SETTINGS.model,
-            })),
-          )}
-          ${renderSelectField(
-            'operationModeSelect',
-            'Modo',
-            OPERATION_MODES.map((m) => ({
-              value: m.value,
-              label: `${m.label} — ${m.description}`,
-              selected: m.value === DEFAULT_SETTINGS.operationMode,
-            })),
-          )}
-          ${renderSelectField(
-            'recordModeSelect',
-            'Grabación',
-            RECORD_MODES.map((m) => ({
-              value: m.value,
-              label: `${m.label} — ${m.description}`,
-              selected: m.value === DEFAULT_SETTINGS.recordMode,
-            })),
-          )}
-          ${renderSelectField('noiseReductionSelect', 'Reducción de ruido', [
-            { value: 'off', label: 'Desactivada', selected: false },
-            { value: 'dsp', label: 'Básica (filtros)', selected: true },
-            { value: 'rnnoise', label: 'AI (RNNoise)', selected: false },
-          ])}
-          ${renderSelectField(
-            'languageSelect',
-            'Idioma',
-            LANGUAGES.map((l) => ({
-              value: l.code,
-              label: l.label,
-              selected: l.code === DEFAULT_SETTINGS.language,
-            })),
-          )}
-          ${renderTextareaField('promptInput', 'Contexto', 'Terminología técnica, nombres propios...', 2)}
-          ${renderTemperatureControl()}
-          ${renderResponseFormatControl()}
+        <button type="button" class="primary-action" data-open-view="dictation">${icons.mic}<span>Nueva transcripción</span></button>
+      </div>
+      <div class="home-grid">
+        <section class="history-panel" aria-labelledby="historyTitle">
+          <header class="panel-heading">
+            <div>
+              <p class="eyebrow">Actividad reciente</p>
+              <h3 id="historyTitle">Historial</h3>
+            </div>
+            <div class="flex items-center gap-2">
+              <span id="historyCount" class="count-badge">0</span>
+              <button id="historyClearButton" type="button" class="icon-button compact" aria-label="Limpiar historial" title="Limpiar historial">${icons.trash}</button>
+            </div>
+          </header>
+          <div id="historyList" class="history-list" role="list">
+            <div id="historyEmptyState" class="empty-state">
+              <span class="empty-state-icon">${icons.document}</span>
+              <h4>Todavía no hay transcripciones</h4>
+              <p>Tu actividad aparecerá aquí después del primer dictado.</p>
+              <button type="button" class="secondary-action" data-open-view="dictation">Empezar a dictar</button>
+            </div>
+          </div>
+        </section>
+        <aside class="stats-panel" aria-labelledby="statsTitle">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Últimas 100 entradas</p>
+              <h3 id="statsTitle">Actividad reciente</h3>
+            </div>
+          </div>
+          ${renderMetric('wordsMetric', 'Palabras', '0', 'Texto transcrito')}
+          ${renderMetric('transcriptionsMetric', 'Transcripciones', '0', 'Registros conservados')}
+          ${renderMetric('audioMinutesMetric', 'Minutos de audio', '0', 'Duración procesada')}
+          <p class="stats-note">Las cifras se calculan localmente con el historial guardado en este navegador.</p>
+        </aside>
+      </div>
+    </section>`;
+}
+
+function renderMetric(id: string, label: string, value: string, hint: string): string {
+  return `
+    <div class="metric-row">
+      <div><span class="metric-label">${label}</span><span class="metric-hint">${hint}</span></div>
+      <span id="${id}" class="metric-value">${value}</span>
+    </div>`;
+}
+
+function renderDictationView(modifierLabel: string): string {
+  return `
+    <section id="dictationView" class="view-panel" aria-labelledby="dictationTitle" hidden>
+      <div class="view-heading">
+        <div>
+          <p class="eyebrow">Captura de voz</p>
+          <h2 id="dictationTitle">Dictar</h2>
+          <p>Graba, transcribe y trabaja con el texto sin salir de tu espacio.</p>
+        </div>
+      </div>
+      <section id="dictationKeyGate" class="credential-gate" aria-labelledby="credentialGateTitle">
+        <span class="credential-gate-icon">${icons.key}</span>
+        <div>
+          <p class="eyebrow">Configuración requerida</p>
+          <h3 id="credentialGateTitle">Conecta tu cuenta de Groq</h3>
+          <p>Agrega una API key para habilitar la grabación y la transcripción.</p>
+        </div>
+        <button id="dictationKeyGateButton" type="button" class="primary-action">Configurar API key</button>
+      </section>
+      <div id="dictationWorkspace" class="dictation-workspace" hidden>
+        ${renderStatusBar(modifierLabel)}
+        ${renderVisualizerArea()}
+        ${renderOutputSection()}
+        ${renderDictationFooter()}
+      </div>
+    </section>`;
+}
+
+function renderSettingsView(): string {
+  return `
+    <section id="settingsView" class="view-panel" aria-labelledby="settingsTitle" hidden>
+      <div class="view-heading">
+        <div>
+          <p class="eyebrow">Preferencias</p>
+          <h2 id="settingsTitle">Ajustes</h2>
+          <p>Administra tu acceso a Groq y la calidad de cada transcripción.</p>
+        </div>
+      </div>
+      <div class="settings-stack">
+        ${renderApiKeySection()}
+        <section class="settings-card" aria-labelledby="transcriptionSettingsTitle">
+          <div class="settings-card-heading">
+            <span class="settings-icon">${icons.sliders}</span>
+            <div><h3 id="transcriptionSettingsTitle">Transcripción</h3><p>Modelo, idioma, captura y formato de respuesta.</p></div>
+          </div>
+          <div class="settings-grid">
+            ${renderSelectField(
+              'modelSelect',
+              'Modelo',
+              WHISPER_MODELS.map((model) => ({
+                value: model,
+                label: model,
+                selected: model === DEFAULT_SETTINGS.model,
+              })),
+            )}
+            ${renderSelectField(
+              'operationModeSelect',
+              'Modo',
+              OPERATION_MODES.map((mode) => ({
+                value: mode.value,
+                label: `${mode.label} - ${mode.description}`,
+                selected: mode.value === DEFAULT_SETTINGS.operationMode,
+              })),
+            )}
+            ${renderSelectField(
+              'recordModeSelect',
+              'Grabación',
+              RECORD_MODES.map((mode) => ({
+                value: mode.value,
+                label: `${mode.label} - ${mode.description}`,
+                selected: mode.value === DEFAULT_SETTINGS.recordMode,
+              })),
+            )}
+            ${renderSelectField('noiseReductionSelect', 'Reducción de ruido', [
+              { value: 'off', label: 'Desactivada', selected: false },
+              { value: 'dsp', label: 'Básica (filtros)', selected: true },
+              { value: 'rnnoise', label: 'AI (RNNoise)', selected: false },
+            ])}
+            ${renderSelectField(
+              'languageSelect',
+              'Idioma',
+              LANGUAGES.map((language) => ({
+                value: language.code,
+                label: language.label,
+                selected: language.code === DEFAULT_SETTINGS.language,
+              })),
+            )}
+            ${renderResponseFormatControl()}
+            <div class="settings-grid-span">${renderTextareaField('promptInput', 'Contexto', 'Terminología técnica, nombres propios...', 2)}</div>
+            <div class="settings-grid-span">${renderTemperatureControl()}</div>
+          </div>
+        </section>
+        <section class="settings-card" aria-labelledby="qualitySettingsTitle">
+          <div class="settings-card-heading">
+            <span class="settings-icon">${icons.sparkle}</span>
+            <div><h3 id="qualitySettingsTitle">Calidad</h3><p>Vocabulario, limpieza y refinado opcional.</p></div>
+          </div>
           ${renderQualitySection()}
-          ${renderRateLimits()}
-        </div>
+        </section>
+        ${renderRateLimits()}
       </div>
-    </div>
-  `;
+    </section>`;
 }
 
-/**
- * Render the status bar area that shows recording instructions
- * and real-time status messages.
- *
- * @param modifierLabel - OS-specific modifier key label ("⌥" or "Ctrl")
- */
+function renderApiKeySection(): string {
+  return `
+    <section class="settings-card" aria-labelledby="apiKeyTitle">
+      <div class="settings-card-heading">
+        <span class="settings-icon">${icons.key}</span>
+        <div class="flex-1"><h3 id="apiKeyTitle">Conexión con Groq</h3><p>La credencial se guarda únicamente en este navegador.</p></div>
+        <span id="apiKeyStatus" class="status-badge">Sin configurar</span>
+      </div>
+      <form id="apiKeyForm" novalidate>
+        <label for="apiKeyInput" class="field-label">Groq API key</label>
+        <div class="password-field">
+          <input id="apiKeyInput" type="password" class="form-control font-mono" placeholder="gsk_..." autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="apiKeyHelp apiKeyError" />
+          <button id="apiKeyToggle" type="button" class="password-toggle" aria-label="Mostrar API key" aria-pressed="false">${icons.eye}</button>
+        </div>
+        <p id="apiKeyHelp" class="field-help">Puedes crear una key gratuita en <a href="https://console.groq.com/keys" target="_blank" rel="noopener noreferrer">console.groq.com/keys</a>.</p>
+        <p id="apiKeyError" class="field-error" aria-live="polite"></p>
+        <div class="flex flex-wrap justify-end gap-2 pt-2">
+          <button id="apiKeyDeleteButton" type="button" class="secondary-action">Eliminar key</button>
+          <button id="apiKeySaveButton" type="submit" class="primary-action">Guardar key</button>
+        </div>
+      </form>
+    </section>`;
+}
+
 function renderStatusBar(modifierLabel: string): string {
   return `
-    <div id="status" class="flex items-center justify-center gap-2 text-center text-[15px] font-medium text-[var(--color-text-secondary)] mb-4 min-h-[2em] transition-colors duration-[var(--transition-fast)]">
-      <span>Presiona</span>
-      <kbd class="inline-flex items-center px-2 py-0.5 rounded-md border border-[var(--color-border-strong)] bg-[var(--color-surface-muted)] text-[var(--color-text-secondary)] font-mono text-xs shadow-sm">${modifierLabel}</kbd>
-      <span class="text-[var(--color-text-muted)]">+</span>
-      <kbd class="inline-flex items-center px-2 py-0.5 rounded-md border border-[var(--color-border-strong)] bg-[var(--color-surface-muted)] text-[var(--color-text-secondary)] font-mono text-xs shadow-sm">Space</kbd>
-      <span>para hablar</span>
-    </div>
-  `;
+    <div id="status" class="mb-4 flex min-h-[2em] items-center justify-center gap-2 text-center text-[15px] font-medium text-[var(--color-text-secondary)]">
+      <span>Presiona</span><kbd class="shortcut-key">${modifierLabel}</kbd><span class="text-[var(--color-text-muted)]">+</span><kbd class="shortcut-key">Space</kbd><span>para hablar</span>
+    </div>`;
 }
 
-/**
- * Render the audio-orb canvas and recording overlays.
- * The canvas is decorative; text status and timer expose the same state.
- */
 function renderVisualizerArea(): string {
   return `
-    <div id="waveformContainer" class="waveform-container relative mb-4 min-h-36 sm:min-h-40 rounded-2xl overflow-hidden border border-[var(--color-border)] shadow-[var(--shadow-card)] transition-all duration-300">
-      <canvas id="waveformCanvas" aria-hidden="true" class="block w-full h-36 sm:h-40"></canvas>
-      <span id="timerDisplay" class="absolute top-2.5 right-3 text-[11px] font-mono font-medium text-[var(--color-text-secondary)] glass px-2.5 py-1 rounded-full border border-[var(--color-border-subtle)] shadow-sm">00:00</span>
-      <span id="recIndicator" class="rec-indicator absolute top-2.5 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full glass border border-[var(--color-border-subtle)] shadow-sm opacity-0 transition-opacity duration-300">
-        <span class="rec-dot w-2 h-2 rounded-full bg-[var(--color-text-primary)]"></span>
-        <span class="text-[10px] font-bold tracking-wider text-[var(--color-text-primary)] uppercase">REC</span>
-      </span>
-    </div>
-  `;
+    <div id="waveformContainer" class="waveform-container relative mb-4 min-h-40 overflow-hidden rounded-2xl border border-[var(--color-border)] shadow-[var(--shadow-card)]">
+      <canvas id="waveformCanvas" aria-hidden="true" class="block h-40 w-full"></canvas>
+      <span id="timerDisplay" class="glass absolute right-3 top-2.5 rounded-full border border-[var(--color-border-subtle)] px-2.5 py-1 font-mono text-[11px] font-medium text-[var(--color-text-secondary)]">00:00</span>
+      <span id="recIndicator" class="rec-indicator glass absolute left-3 top-2.5 flex items-center gap-1.5 rounded-full border border-[var(--color-border-subtle)] px-2.5 py-1 opacity-0"><span class="rec-dot h-2 w-2 rounded-full bg-[var(--color-text-primary)]"></span><span class="text-[10px] font-bold tracking-wider">REC</span></span>
+    </div>`;
 }
 
-/**
- * Render the output section with text area, word count, and toolbar buttons.
- */
 function renderOutputSection(): string {
   return `
     <div class="space-y-2">
       <div class="flex items-center justify-between px-1">
-        <span class="text-[11px] font-medium tracking-wide uppercase text-[var(--color-text-muted)]"><span id="wordCount" class="text-[var(--color-text-secondary)] font-semibold">0</span> palabras</span>
+        <span class="eyebrow"><span id="wordCount" class="font-semibold text-[var(--color-text-secondary)]">0</span> palabras</span>
         <div class="flex items-center gap-0.5">
           ${renderToolbarButton('copyAllBtn', icons.copy, 'Copiar todo')}
           ${renderToolbarButton('downloadBtn', icons.download, 'Descargar .txt')}
           ${renderToolbarButton('clearBtn', icons.trash, 'Limpiar')}
         </div>
       </div>
-      <textarea id="output" class="w-full h-52 p-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-primary)] text-[15px] leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-focus)] focus:border-transparent placeholder:text-[var(--color-text-muted)] shadow-[var(--shadow-card)] transition-all duration-[var(--transition-fast)] hover:shadow-[var(--shadow-card-hover)]" placeholder="Tu texto aparecerá aquí..." spellcheck="true"></textarea>
-      <div id="metadataPanel" class="hidden rounded-2xl border border-[var(--color-border)] p-3 bg-[var(--color-surface-muted)] text-xs text-[var(--color-text-secondary)] shadow-[var(--shadow-card)]"></div>
-      <div class="pt-2 flex items-center justify-between gap-3">
-        <p class="text-[11px] leading-4 text-[var(--color-text-muted)]">Resume el texto visible. La transcripción no cambia.</p>
-        <button id="summaryBtn" type="button" disabled class="shrink-0 inline-flex items-center justify-center gap-2 min-h-10 px-4 rounded-xl bg-[var(--color-control-emphasis)] text-[var(--color-text-inverse)] text-sm font-semibold shadow-[var(--shadow-glow-primary)] hover:bg-[var(--color-control-emphasis-hover)] active:scale-[0.98] disabled:opacity-45 disabled:shadow-none disabled:cursor-not-allowed transition-all duration-[var(--transition-fast)] cursor-pointer">${icons.sparkle}<span>Generar resumen</span></button>
+      <textarea id="output" class="output-area" placeholder="Tu texto aparecerá aquí..." spellcheck="true"></textarea>
+      <div id="metadataPanel" class="hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3 text-xs text-[var(--color-text-secondary)]"></div>
+      <div class="flex items-center justify-between gap-3 pt-2">
+        <p class="text-[11px] leading-4 text-[var(--color-text-muted)]">Resume el texto visible sin cambiar la transcripción.</p>
+        <button id="summaryBtn" type="button" disabled class="primary-action shrink-0">${icons.sparkle}<span>Generar resumen</span></button>
       </div>
       <section id="summarySection" hidden aria-labelledby="summaryTitle" class="pt-4">
-        <div class="flex items-end justify-between gap-3 mb-3 px-1">
-          <div>
-            <p class="text-[10px] font-bold tracking-[0.14em] uppercase text-[var(--color-text-secondary)]">Derivado del texto visible</p>
-            <h2 id="summaryTitle" class="mt-0.5 text-base font-bold tracking-tight text-[var(--color-text-primary)]">Historial de resúmenes</h2>
-          </div>
-          <span class="hidden sm:inline text-[10px] text-[var(--color-text-muted)]">Hasta 10 generaciones</span>
-        </div>
+        <div class="mb-3 px-1"><p class="eyebrow">Derivado del texto visible</p><h3 id="summaryTitle" class="text-base font-bold tracking-tight">Historial de resúmenes</h3></div>
         <div id="summaryPanel" hidden class="space-y-2" aria-live="polite"></div>
       </section>
-    </div>
-  `;
+    </div>`;
 }
 
-/**
- * Render the fixed-position toast notification container.
- * Positioned in the bottom-right corner of the viewport.
- */
-function renderToastContainer(): string {
-  return `<div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>`;
+function renderDictationFooter(): string {
+  return `<div class="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border-subtle)] pt-4 text-[10.5px] text-[var(--color-text-muted)]"><span>Atajo: Alt / Ctrl + Space</span><span>Procesado por Groq Whisper</span></div>`;
 }
 
-// -----------------------------------------------------------------------
-// Field helpers
-// -----------------------------------------------------------------------
-
-/**
- * Render a labeled select dropdown with options.
- *
- * @param id      - DOM element ID
- * @param label   - Visible field label
- * @param options - Array of value/label/selected option objects
- */
 function renderSelectField(
   id: string,
   label: string,
   options: Array<{ value: string; label: string; selected: boolean }>,
 ): string {
-  const opts = options
-    .map((o) => `<option value="${o.value}" ${o.selected ? 'selected' : ''}>${o.label}</option>`)
+  const renderedOptions = options
+    .map(
+      (option) =>
+        `<option value="${option.value}" ${option.selected ? 'selected' : ''}>${option.label}</option>`,
+    )
     .join('');
-  return `
-    <div class="space-y-1">
-      <label for="${id}" class="block text-xs font-medium text-[var(--color-text-muted)] text-left">${label}</label>
-      <select id="${id}" class="w-full p-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-focus)] focus:border-transparent transition-all duration-[var(--transition-fast)] cursor-pointer">${opts}</select>
-    </div>`;
+  return `<div><label for="${id}" class="field-label">${label}</label><select id="${id}" class="form-control">${renderedOptions}</select></div>`;
 }
 
-/**
- * Render a labeled textarea input.
- *
- * @param id          - DOM element ID
- * @param label       - Visible field label
- * @param placeholder - Placeholder text
- * @param rows        - Number of visible text rows
- */
 function renderTextareaField(id: string, label: string, placeholder: string, rows: number): string {
-  return `
-    <div class="space-y-1">
-      <label for="${id}" class="block text-xs font-medium text-[var(--color-text-muted)] text-left">${label}</label>
-      <textarea id="${id}" rows="${rows}" class="w-full p-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-sm text-[var(--color-text-primary)] resize-none focus:outline-none focus:ring-2 focus:ring-[var(--color-focus)] focus:border-transparent transition-all duration-[var(--transition-fast)] placeholder:text-[var(--color-text-muted)]" placeholder="${placeholder}"></textarea>
-    </div>`;
+  return `<div><label for="${id}" class="field-label">${label}</label><textarea id="${id}" rows="${rows}" class="form-control resize-none" placeholder="${placeholder}"></textarea></div>`;
 }
 
-/**
- * Render the temperature slider with live value display.
- * Controls the sampling temperature for the Whisper model (0–1).
- */
+function renderTextField(id: string, label: string, placeholder: string): string {
+  return `<div><label for="${id}" class="field-label">${label}</label><input id="${id}" type="text" class="form-control" placeholder="${placeholder}" /></div>`;
+}
+
 function renderTemperatureControl(): string {
-  return `
-    <div class="space-y-1">
-      <div class="flex items-center justify-between">
-        <label for="temperatureSlider" class="text-xs font-medium text-[var(--color-text-muted)]">Temperatura</label>
-        <span id="temperatureValue" class="text-xs font-mono text-[var(--color-text-secondary)] bg-[var(--color-surface-muted)] px-1.5 py-0.5 rounded">${DEFAULT_SETTINGS.temperature}</span>
-      </div>
-      <input id="temperatureSlider" type="range" min="0" max="1" step="0.1" value="${DEFAULT_SETTINGS.temperature}" class="w-full h-1.5 rounded-full appearance-none bg-[var(--color-surface-sunken)] accent-[var(--color-control-emphasis)] cursor-pointer" />
-    </div>`;
+  return `<div><div class="flex items-center justify-between"><label for="temperatureSlider" class="field-label">Temperatura</label><span id="temperatureValue" class="range-value">${DEFAULT_SETTINGS.temperature}</span></div><input id="temperatureSlider" type="range" min="0" max="1" step="0.1" value="${DEFAULT_SETTINGS.temperature}" class="range-control" /></div>`;
 }
 
-/**
- * Render the response format selector with a word-level timestamp toggle.
- * The toggle is only active when verbose_json format is selected.
- */
 function renderResponseFormatControl(): string {
   const options = RESPONSE_FORMATS.map(
-    (f) =>
-      `<option value="${f.value}" ${f.value === DEFAULT_SETTINGS.responseFormat ? 'selected' : ''}>${f.label}</option>`,
+    (format) =>
+      `<option value="${format.value}" ${format.value === DEFAULT_SETTINGS.responseFormat ? 'selected' : ''}>${format.label}</option>`,
   ).join('');
-  return `
-    <div class="flex items-end gap-3">
-      <div class="flex-1 space-y-1">
-        <label for="responseFormatSelect" class="block text-xs font-medium text-[var(--color-text-muted)] text-left">Formato</label>
-        <select id="responseFormatSelect" class="w-full p-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-focus)] focus:border-transparent transition-all duration-[var(--transition-fast)] cursor-pointer">${options}</select>
-      </div>
-      <label class="flex items-center gap-1.5 text-xs text-[var(--color-text-muted)] whitespace-nowrap cursor-pointer pb-2.5">
-        <input id="timestampToggle" type="checkbox" class="accent-[var(--color-control-emphasis)] cursor-pointer" /> Por palabra
-      </label>
-    </div>`;
+  return `<div><label for="responseFormatSelect" class="field-label">Formato</label><select id="responseFormatSelect" class="form-control">${options}</select><label class="mt-2 flex min-h-10 items-center gap-2 text-xs text-[var(--color-text-muted)]"><input id="timestampToggle" type="checkbox" class="accent-[var(--color-control-emphasis)]" /> Timestamps por palabra</label></div>`;
 }
 
-/**
- * Render the "transcription quality" section: custom vocabulary, fuzzy-correction
- * threshold, filler-word overrides, silence trimming, and the optional LLM
- * polish pass. Controls are populated from DEFAULT_SETTINGS at first paint and
- * kept in sync with AppSettings by the composition root.
- */
 function renderQualitySection(): string {
   return `
-    <div class="pt-2 mt-1 border-t border-[var(--color-border-subtle)] space-y-3">
-      <h3 class="text-[11px] font-semibold tracking-wide uppercase text-[var(--color-text-muted)] flex items-center gap-1.5">${icons.sparkle}Calidad de transcripción</h3>
-      ${renderTextareaField(
-        'customWordsInput',
-        'Vocabulario personalizado',
-        'Nombres propios, jerga, siglas (uno por línea o coma)...',
-        2,
-      )}
-      ${renderRangeField(
-        'wordCorrectionThresholdSlider',
-        'wordCorrectionThresholdValue',
-        'Tolerancia de corrección',
-        String(DEFAULT_SETTINGS.wordCorrectionThreshold),
-        '0.1',
-        '1',
-        '0.05',
-      )}
-      ${renderTextField(
-        'customFillerWordsInput',
-        'Muletillas personalizadas',
-        'Vacío = predeterminadas por idioma · lista separada por comas',
-      )}
-      ${renderToggleField(
-        'silenceTrimToggle',
-        'Recortar silencios',
-        'Elimina silencios inicial/final antes de transcribir (fail-open).',
-        DEFAULT_SETTINGS.enableSilenceTrim,
-      )}
-      ${renderToggleField(
-        'llmToggle',
-        'Refinado con LLM',
-        'Pule puntuación, mayúsculas y errores tras transcribir (Groq chat).',
-        DEFAULT_SETTINGS.enableLlmPostProcess,
-      )}
+    <div class="settings-grid">
+      <div class="settings-grid-span">${renderTextareaField('customWordsInput', 'Vocabulario personalizado', 'Nombres propios, jerga y siglas...', 2)}</div>
+      <div class="settings-grid-span">${renderRangeField('wordCorrectionThresholdSlider', 'wordCorrectionThresholdValue', 'Tolerancia de corrección', String(DEFAULT_SETTINGS.wordCorrectionThreshold), '0.1', '1', '0.05')}</div>
+      <div class="settings-grid-span">${renderTextField('customFillerWordsInput', 'Muletillas personalizadas', 'Vacío = predeterminadas por idioma')}</div>
+      ${renderToggleField('silenceTrimToggle', 'Recortar silencios', 'Elimina silencios iniciales y finales.', DEFAULT_SETTINGS.enableSilenceTrim)}
+      ${renderToggleField('llmToggle', 'Refinado con LLM', 'Pule puntuación, mayúsculas y errores.', DEFAULT_SETTINGS.enableLlmPostProcess)}
       ${renderTextField('llmModelInput', 'Modelo LLM', DEFAULT_SETTINGS.llmModel)}
-      ${renderTextareaField(
-        'llmInstructionsInput',
-        'Instrucciones LLM (extra)',
-        'Ej: tono formal, dominio médico, etc.',
-        2,
-      )}
+      ${renderTextareaField('llmInstructionsInput', 'Instrucciones LLM', 'Ej: tono formal, dominio médico...', 2)}
     </div>`;
 }
 
-/**
- * Render a labeled single-line text input.
- */
-function renderTextField(id: string, label: string, placeholder: string): string {
-  return `
-    <div class="space-y-1">
-      <label for="${id}" class="block text-xs font-medium text-[var(--color-text-muted)] text-left">${label}</label>
-      <input id="${id}" type="text" class="w-full p-2.5 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface)] text-sm text-[var(--color-text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-focus)] focus:border-transparent transition-all duration-[var(--transition-fast)] placeholder:text-[var(--color-text-muted)]" placeholder="${placeholder}" />
-    </div>`;
-}
-
-/**
- * Render a labeled range slider with a live value readout.
- */
 function renderRangeField(
   id: string,
   valueId: string,
@@ -539,55 +516,44 @@ function renderRangeField(
   max: string,
   step: string,
 ): string {
-  return `
-    <div class="space-y-1">
-      <div class="flex items-center justify-between">
-        <label for="${id}" class="text-xs font-medium text-[var(--color-text-muted)]">${label}</label>
-        <span id="${valueId}" class="text-xs font-mono text-[var(--color-text-secondary)] bg-[var(--color-surface-muted)] px-1.5 py-0.5 rounded">${value}</span>
-      </div>
-      <input id="${id}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" class="w-full h-1.5 rounded-full appearance-none bg-[var(--color-surface-sunken)] accent-[var(--color-control-emphasis)] cursor-pointer" />
-    </div>`;
+  return `<div><div class="flex items-center justify-between"><label for="${id}" class="field-label">${label}</label><span id="${valueId}" class="range-value">${value}</span></div><input id="${id}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" class="range-control" /></div>`;
 }
 
-/**
- * Render a labeled toggle (checkbox) with a descriptive hint.
- */
 function renderToggleField(id: string, label: string, hint: string, checked: boolean): string {
-  return `
-    <label for="${id}" class="flex items-start gap-2.5 cursor-pointer">
-      <input id="${id}" type="checkbox" ${checked ? 'checked' : ''} class="mt-0.5 h-4 w-4 rounded border-[var(--color-border-strong)] accent-[var(--color-control-emphasis)] cursor-pointer" />
-      <span class="flex flex-col">
-        <span class="text-xs font-medium text-[var(--color-text-muted)]">${label}</span>
-        <span class="text-[11px] text-[var(--color-text-muted)] opacity-80">${hint}</span>
-      </span>
-    </label>`;
+  return `<label for="${id}" class="toggle-field"><input id="${id}" type="checkbox" ${checked ? 'checked' : ''} class="mt-1 accent-[var(--color-control-emphasis)]" /><span><strong>${label}</strong><small>${hint}</small></span></label>`;
 }
 
-/**
- * Render the Groq free-tier rate limit information panel.
- */
 function renderRateLimits(): string {
-  return `
-    <div class="rounded-xl bg-[var(--color-surface-muted)] border border-[var(--color-border-subtle)] p-3 text-xs text-[var(--color-text-muted)] text-left">
-      <div class="flex items-center justify-between">
-        <span class="font-semibold text-[var(--color-text-secondary)] flex items-center gap-1.5">${icons.sparkle}Límites (Free)</span>
-        <a href="https://console.groq.com/settings/limits" target="_blank" rel="noopener noreferrer" class="text-[var(--color-text-primary)] hover:text-[var(--color-text-secondary)] no-underline font-semibold transition-colors duration-[var(--transition-fast)]">Ver →</a>
-      </div>
-      <div class="mt-2 grid grid-cols-3 gap-2 text-[10px]">
-        <span class="px-2 py-1 rounded-md bg-[var(--color-surface)] border border-[var(--color-border-subtle)] text-center">20 req/min</span>
-        <span class="px-2 py-1 rounded-md bg-[var(--color-surface)] border border-[var(--color-border-subtle)] text-center">2,000 req/día</span>
-        <span class="px-2 py-1 rounded-md bg-[var(--color-surface)] border border-[var(--color-border-subtle)] text-center">~8 hrs/día</span>
-      </div>
-    </div>`;
+  return `<section class="settings-card compact-card" aria-labelledby="limitsTitle"><div><p class="eyebrow">Referencia</p><h3 id="limitsTitle">Límites del plan gratuito</h3></div><div class="limits-grid"><span>20 req/min</span><span>2,000 req/día</span><span>~8 hrs/día</span></div><a href="https://console.groq.com/settings/limits" target="_blank" rel="noopener noreferrer" class="text-sm font-semibold">Consultar límites ${icons.arrowUpRight}</a></section>`;
 }
 
-/**
- * Render a small icon-only toolbar button.
- *
- * @param id        - DOM element ID
- * @param iconSvg   - Inline SVG icon markup
- * @param ariaLabel - Accessible label for screen readers
- */
-function renderToolbarButton(id: string, iconSvg: string, ariaLabel: string): string {
-  return `<button id="${id}" type="button" class="group/btn relative p-2 rounded-lg text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-muted)] active:scale-[0.97] transition-all duration-[var(--transition-fast)] cursor-pointer" aria-label="${ariaLabel}" title="${ariaLabel}">${iconSvg}</button>`;
+function renderToolbarButton(id: string, icon: string, label: string): string {
+  return `<button id="${id}" type="button" class="icon-button compact" aria-label="${label}" title="${label}">${icon}</button>`;
 }
+
+function renderToastContainer(): string {
+  return `<div id="toastContainer" class="pointer-events-none fixed bottom-4 right-4 z-50 flex flex-col gap-2"></div>`;
+}
+
+const icons = {
+  home: '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>',
+  mic: '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="6" height="11" x="9" y="2" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>',
+  menu: '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>',
+  settings:
+    '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>',
+  key: '<svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15 8l3 3M18 5l3 3"/></svg>',
+  eye: '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.1 12a10.5 10.5 0 0 1 19.8 0 10.5 10.5 0 0 1-19.8 0"/><circle cx="12" cy="12" r="3"/></svg>',
+  sliders:
+    '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/></svg>',
+  document:
+    '<svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5z"/><polyline points="14 2 14 8 20 8"/><path d="M8 13h8M8 17h5"/></svg>',
+  copy: '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>',
+  trash:
+    '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>',
+  download:
+    '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>',
+  sparkle:
+    '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 15.5A2 2 0 0 0 8.5 14l-6.1-1.5a.5.5 0 0 1 0-1L8.5 10A2 2 0 0 0 10 8.5l1.5-6.1a.5.5 0 0 1 1 0L14 8.5a2 2 0 0 0 1.5 1.5l6.1 1.5a.5.5 0 0 1 0 1L15.5 14a2 2 0 0 0-1.5 1.5l-1.5 6.1a.5.5 0 0 1-1 0z"/></svg>',
+  arrowUpRight:
+    '<svg aria-hidden="true" class="inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 17 17 7M7 7h10v10"/></svg>',
+};

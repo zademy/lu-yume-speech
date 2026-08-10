@@ -15,7 +15,7 @@ afterAll(() => server.close());
 
 function createClient(apiKey: string): GroqClient {
   const bus = new EventBus<EventMap>();
-  return new GroqClient(bus, apiKey);
+  return new GroqClient(bus, () => apiKey);
 }
 
 const opts: TranscriptionOptions = {
@@ -138,7 +138,7 @@ describe('GroqClient', () => {
 
   it('emits transcription:error on the bus when throwing', async () => {
     const bus = new EventBus<EventMap>();
-    const client = new GroqClient(bus, 'invalid');
+    const client = new GroqClient(bus, () => 'invalid');
     const errors: Error[] = [];
     bus.on('transcription:error', (e: Error) => errors.push(e));
     await expect(client.transcribe(blob(), opts)).rejects.toThrow();
@@ -148,7 +148,7 @@ describe('GroqClient', () => {
 
   it('emits transcription:start and transcription:success on happy path', async () => {
     const bus = new EventBus<EventMap>();
-    const client = new GroqClient(bus, 'gsk_test-key');
+    const client = new GroqClient(bus, () => 'gsk_test-key');
     const events: string[] = [];
     bus.on('transcription:start', () => events.push('start'));
     bus.on('transcription:success', () => events.push('success'));
@@ -180,5 +180,26 @@ describe('GroqClient', () => {
     expect(capturedFormData).not.toBeNull();
     expect(capturedFormData!.get('response_format')).toBe('verbose_json');
     expect(capturedFormData!.getAll('timestamp_granularities[]')).toEqual(['word', 'segment']);
+  });
+
+  it('uses the latest API key supplied for each request', async () => {
+    let apiKey = '';
+    let authorization = '';
+    server.use(
+      http.post('https://api.groq.com/openai/v1/audio/transcriptions', ({ request }) => {
+        authorization = request.headers.get('Authorization') ?? '';
+        return HttpResponse.json({ text: 'updated key' });
+      }),
+    );
+    const bus = new EventBus<EventMap>();
+    const client = new GroqClient(bus, () => apiKey);
+
+    await expect(client.transcribe(blob(), opts)).rejects.toMatchObject({
+      detail: { kind: 'auth' },
+    });
+
+    apiKey = 'gsk_live-key';
+    await expect(client.transcribe(blob(), opts)).resolves.toMatchObject({ text: 'updated key' });
+    expect(authorization).toBe('Bearer gsk_live-key');
   });
 });

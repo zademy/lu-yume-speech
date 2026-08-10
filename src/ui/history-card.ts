@@ -1,16 +1,29 @@
 /**
- * History card — renders a single transcription entry in the sidebar.
+ * History card — renders one transcription in the Inicio history list.
  *
  * SRP: This module's only job is rendering one history card.
  * Each card is a self-contained DOM element with its own event handlers.
  *
- * Design: Compact card with text preview, language/model badges,
- * relative timestamp, and hover-revealed action buttons.
+ * Design: A readable list row with full metadata and direct actions.
  */
 
 import type { HistoryEntry } from '../types';
 import { timeAgo } from '../utils/time-ago';
-import * as audioStore from '../audio/audio-store';
+import { getAudio } from '../db/recordings-db';
+
+/**
+ * Active disposers keyed by the card element they belong to.
+ *
+ * Cards own transient object URLs for inline audio playback; those URLs must be
+ * revoked when the card leaves the DOM. The sidebar calls `disposeHistoryCard`
+ * before removing or rebuilding nodes so no blob URL leaks across re-renders.
+ */
+const disposers = new WeakMap<HTMLElement, () => void>();
+
+/** Run a card's audio teardown (revoke object URL, remove player). No-op if none. */
+export function disposeHistoryCard(card: HTMLElement): void {
+  disposers.get(card)?.();
+}
 
 /**
  * Create a history card DOM element for a given entry.
@@ -18,41 +31,32 @@ import * as audioStore from '../audio/audio-store';
  * @param entry - The history entry to render
  * @param onRestore - Callback when user clicks the card to restore text
  * @param onDelete  - Callback when user clicks the delete button
- * @returns The card element ready to be appended to the sidebar list
+ * @param onCopy    - Callback when user copies the transcription
+ * @returns The card element ready to be appended to the history list
  */
 export function createHistoryCard(
   entry: HistoryEntry,
   onRestore: (id: string) => void,
   onDelete: (id: string) => void,
+  onCopy: (id: string) => void,
 ): HTMLElement {
   const card = document.createElement('div');
   card.className = [
-    'group relative',
-    'p-3 pl-3.5 rounded-xl',
-    'border border-[var(--color-border)]',
+    'history-entry group relative',
+    'p-4 pl-4 rounded-xl',
+    'border border-[var(--color-border-subtle)]',
     'bg-[var(--color-surface)]',
     'hover:border-[var(--color-border-strong)]',
     'hover:shadow-[var(--shadow-card-hover)]',
-    'hover:-translate-y-px',
-    'transition-all duration-[var(--transition-fast)]',
-    'cursor-pointer',
+    'transition-[border-color,box-shadow] duration-[var(--transition-fast)]',
     'overflow-hidden',
   ].join(' ');
   card.setAttribute('role', 'listitem');
-  card.setAttribute('tabindex', '0');
-  card.setAttribute('aria-label', `Restaurar transcripción: ${entry.text.slice(0, 50)}`);
 
-  // Emphasis indicator bar (left edge), only visible on hover/focus
-  const indicator = document.createElement('span');
-  indicator.className =
-    'absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-[var(--color-text-primary)] opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-[var(--transition-fast)]';
-  indicator.setAttribute('aria-hidden', 'true');
-  card.appendChild(indicator);
-
-  // Text preview — 2 lines max
+  // Text preview — three lines on the dashboard.
   const textP = document.createElement('p');
   textP.className =
-    'text-[13.5px] text-[var(--color-text-primary)] leading-snug line-clamp-2 text-left pr-6';
+    'text-sm text-[var(--color-text-primary)] leading-relaxed line-clamp-3 text-left pr-20';
   textP.textContent = entry.text;
 
   // Meta row: badges + time
@@ -84,56 +88,42 @@ export function createHistoryCard(
   time.textContent = timeAgo(entry.createdAt);
   meta.appendChild(time);
 
-  // Action buttons container (top-right, hover-revealed)
+  if (entry.duration !== undefined) {
+    meta.appendChild(createBadge(formatDuration(entry.duration), 'muted'));
+  }
+
+  // Primary text actions remain visible for touch and keyboard users.
   const actions = document.createElement('div');
-  actions.className =
-    'absolute top-1.5 right-1.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity duration-[var(--transition-fast)]';
+  actions.className = 'absolute top-2 right-2 flex items-center gap-0.5 opacity-100';
+
+  const copyBtn = document.createElement('button');
+  copyBtn.className = actionButtonClass;
+  copyBtn.setAttribute('aria-label', 'Copiar transcripción');
+  copyBtn.setAttribute('title', 'Copiar');
+  copyBtn.appendChild(createCopyIcon());
 
   // Play button — toggles inline audio player
   const playBtn = document.createElement('button');
-  playBtn.className = [
-    'p-1.5 rounded-md',
-    'text-[var(--color-text-muted)]',
-    'hover:text-[var(--color-text-primary)]',
-    'hover:bg-[var(--color-surface-muted)]',
-    'active:scale-90',
-    'transition-all duration-[var(--transition-fast)]',
-    'cursor-pointer',
-  ].join(' ');
+  playBtn.className = actionButtonClass;
   playBtn.setAttribute('aria-label', 'Reproducir audio');
   playBtn.setAttribute('title', 'Reproducir');
   playBtn.appendChild(createPlayIcon());
 
   // Download button
   const downloadBtn = document.createElement('button');
-  downloadBtn.className = [
-    'p-1.5 rounded-md',
-    'text-[var(--color-text-muted)]',
-    'hover:text-[var(--color-text-primary)]',
-    'hover:bg-[var(--color-surface-muted)]',
-    'active:scale-90',
-    'transition-all duration-[var(--transition-fast)]',
-    'cursor-pointer',
-  ].join(' ');
+  downloadBtn.className = actionButtonClass;
   downloadBtn.setAttribute('aria-label', 'Descargar audio');
   downloadBtn.setAttribute('title', 'Descargar audio');
   downloadBtn.appendChild(createDownloadIcon());
 
   // Delete button
   const deleteBtn = document.createElement('button');
-  deleteBtn.className = [
-    'p-1.5 rounded-md border border-transparent',
-    'text-[var(--color-text-muted)]',
-    'hover:text-[var(--color-text-primary)]',
-    'hover:bg-[var(--color-surface-sunken)] hover:border-[var(--color-border-strong)]',
-    'active:scale-90',
-    'transition-all duration-[var(--transition-fast)]',
-    'cursor-pointer',
-  ].join(' ');
+  deleteBtn.className = actionButtonClass;
   deleteBtn.setAttribute('aria-label', 'Eliminar entrada del historial');
   deleteBtn.setAttribute('title', 'Eliminar');
   deleteBtn.appendChild(createTrashIcon());
 
+  actions.appendChild(copyBtn);
   actions.appendChild(playBtn);
   actions.appendChild(downloadBtn);
   actions.appendChild(deleteBtn);
@@ -164,7 +154,7 @@ export function createHistoryCard(
     // Load blob from IndexedDB and create audio player
     playBtn.replaceChildren(createLoadingIcon());
     try {
-      const clip = await audioStore.get(entry.id);
+      const clip = await getAudio(entry.id);
       if (!clip) {
         playBtn.replaceChildren(createPlayIcon());
         return;
@@ -185,10 +175,15 @@ export function createHistoryCard(
     }
   });
 
+  copyBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    onCopy(entry.id);
+  });
+
   downloadBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     try {
-      const clip = await audioStore.get(entry.id);
+      const clip = await getAudio(entry.id);
       if (!clip) return;
       const url = URL.createObjectURL(clip.blob);
       const a = document.createElement('a');
@@ -221,16 +216,15 @@ export function createHistoryCard(
   card.appendChild(meta);
   card.appendChild(actions);
 
-  // Click to restore
-  card.addEventListener('click', () => {
-    onRestore(entry.id);
-  });
-  card.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      onRestore(entry.id);
-    }
-  });
+  const restoreBtn = document.createElement('button');
+  restoreBtn.type = 'button';
+  restoreBtn.className =
+    'mt-3 text-xs font-semibold text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] cursor-pointer';
+  restoreBtn.textContent = 'Usar en Dictar';
+  restoreBtn.addEventListener('click', () => onRestore(entry.id));
+  card.appendChild(restoreBtn);
+
+  disposers.set(card, cleanupAudio);
 
   return card;
 }
@@ -257,6 +251,24 @@ function createBadge(text: string, variant: 'primary' | 'muted' | 'accent'): HTM
   badge.className = `${base} ${variants[variant] ?? variants.muted}`;
   badge.textContent = text;
   return badge;
+}
+
+const actionButtonClass =
+  'p-2 rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-muted)] active:scale-95 transition-[color,background-color,transform] duration-[var(--transition-fast)] cursor-pointer';
+
+function formatDuration(seconds: number): string {
+  const minutes = Math.floor(seconds / 60);
+  const remaining = Math.floor(seconds % 60);
+  return `${minutes}:${String(remaining).padStart(2, '0')}`;
+}
+
+function createCopyIcon(): SVGElement {
+  const svg = createSvg();
+  svg.append(
+    svgEl('rect', { x: 8, y: 8, width: 14, height: 14, rx: 2 }),
+    svgEl('path', { d: 'M16 8V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h4' }),
+  );
+  return svg;
 }
 
 function createTrashIcon(): SVGElement {

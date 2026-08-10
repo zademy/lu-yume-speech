@@ -16,14 +16,14 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup pnpm
         # Version is read from package.json "packageManager" (pnpm@11.20.0).
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: pnpm
@@ -44,7 +44,7 @@ jobs:
         run: pnpm audit --prod || true
 
       - name: Upload coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: coverage-report
           path: coverage/
@@ -70,10 +70,6 @@ jobs:
       contents: write
       issues: write
       pull-requests: write
-    outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
-
     steps:
       - name: Update release PR or create GitHub Release
         id: release
@@ -94,7 +90,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -123,24 +119,24 @@ jobs:
       github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
       packages: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
-      - name: Resolve release tag
-        id: release-tag
+      - name: Generate calendar version
+        id: version
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CREATED_TAG: ${{ needs.release.outputs.tag_name }}
         run: |
-          tag="$CREATED_TAG"
-          if [ -z "$tag" ]; then
-            tag="$(gh api "repos/${GITHUB_REPOSITORY}/releases" --jq ".[] | select(.target_commitish == \"${GITHUB_SHA}\" and (.tag_name | test(\"^v(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)$\"))) | .tag_name" | head -n 1)"
-          fi
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          created_at="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --jq '.created_at')"
+          version="$(printf '%s' "$created_at" | cut -c1-10 | tr '-' '.').${GITHUB_RUN_NUMBER}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -155,6 +151,46 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check immutable calendar tag
+        id: image
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          registry_token="$(
+            curl --fail --silent --show-error \
+              --user "${GITHUB_ACTOR}:${GH_TOKEN}" \
+              "https://ghcr.io/token?service=ghcr.io&scope=repository:${IMAGE_NAME}:pull" \
+              | jq -r '.token'
+          )"
+          if ! status="$(
+            curl --silent --show-error \
+              --output /dev/null \
+              --write-out '%{http_code}' \
+              --request HEAD \
+              --header "Authorization: Bearer ${registry_token}" \
+              --header 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json' \
+              "https://ghcr.io/v2/${IMAGE_NAME}/manifests/${VERSION}"
+          )"; then
+            echo "::error::Could not verify whether ${IMAGE}:${VERSION} exists"
+            exit 1
+          fi
+
+          case "$status" in
+            200)
+              echo "exists=true" >> "$GITHUB_OUTPUT"
+              echo "${IMAGE}:${VERSION} already exists; preserving its digest"
+              ;;
+            404)
+              echo "exists=false" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "::error::GHCR returned HTTP ${status} while checking ${IMAGE}:${VERSION}"
+              exit 1
+              ;;
+          esac
+
       - name: Generate image metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -162,12 +198,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           flavor: latest=false
           tags: |
-            type=ref,event=branch
-            type=sha,format=short,prefix=sha-
-            type=semver,pattern={{version}},value=${{ steps.release-tag.outputs.tag }},enable=${{ steps.release-tag.outputs.tag != '' }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ steps.release-tag.outputs.tag }},enable=${{ steps.release-tag.outputs.tag != '' }}
-            type=semver,pattern={{major}},value=${{ steps.release-tag.outputs.tag }},enable=${{ steps.release-tag.outputs.tag != '' }}
-            type=raw,value=latest,enable=${{ steps.release-tag.outputs.tag != '' }}
+            type=raw,value=${{ steps.version.outputs.version }}
           labels: |
             org.opencontainers.image.title=LU YUME
             org.opencontainers.image.description=Browser speech-to-text SPA powered by Groq Whisper
@@ -175,6 +206,7 @@ jobs:
 
       - name: Build and push image
         id: build
+        if: steps.image.outputs.exists != 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -185,5 +217,110 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          provenance: mode=max
-          sbom: true
+          provenance: false
+          sbom: false
+
+  promote-latest:
+    name: Promote Latest Container
+    needs: container
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    concurrency:
+      group: ghcr-latest-${{ github.repository }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote newest calendar version to latest
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+        run: |
+          registry_token="$(
+            curl --fail --silent --show-error \
+              --user "${GITHUB_ACTOR}:${GH_TOKEN}" \
+              "https://ghcr.io/token?service=ghcr.io&scope=repository:${IMAGE_NAME}:pull" \
+              | jq -r '.token'
+          )"
+
+          newest_version() {
+            local url="https://ghcr.io/v2/${IMAGE_NAME}/tags/list?n=100"
+            local headers body next_path tags
+            headers="$(mktemp)"
+            body="$(mktemp)"
+            tags="$(mktemp)"
+
+            while [ -n "$url" ]; do
+              : > "$headers"
+              if ! curl --fail --silent --show-error \
+                --dump-header "$headers" \
+                --output "$body" \
+                --header "Authorization: Bearer ${registry_token}" \
+                "$url"; then
+                rm -f "$headers" "$body" "$tags"
+                return 1
+              fi
+              if ! jq -r '.tags[]? | select(test("^[0-9]{4}[.][0-9]{2}[.][0-9]{2}[.][0-9]+$"))' \
+                "$body" >> "$tags"; then
+                rm -f "$headers" "$body" "$tags"
+                return 1
+              fi
+
+              next_path="$(
+                tr -d '\r' < "$headers" \
+                  | grep -i '^link:' \
+                  | cut -d'<' -f2 \
+                  | cut -d'>' -f1 \
+                  || true
+              )"
+              if [ -n "$next_path" ]; then
+                url="https://ghcr.io${next_path}"
+              else
+                url=""
+              fi
+            done
+
+            latest_version="$(sort -V "$tags" | tail -n 1)"
+            rm -f "$headers" "$body" "$tags"
+            printf '%s\n' "$latest_version"
+          }
+
+          for attempt in 1 2 3 4 5; do
+            if ! version="$(newest_version)"; then
+              echo "::error::Could not list all calendar-versioned images"
+              exit 1
+            fi
+            if [ -z "$version" ]; then
+              echo "::error::No calendar-versioned image was found"
+              exit 1
+            fi
+
+            docker buildx imagetools create \
+              --tag "$TARGET_IMAGE" \
+              "${REGISTRY}/${IMAGE_NAME}:${version}"
+
+            if ! newest_after="$(newest_version)"; then
+              echo "::error::Could not verify the newest calendar version after promotion"
+              exit 1
+            fi
+            if [ "$version" = "$newest_after" ]; then
+              echo "Promoted ${version} to latest"
+              exit 0
+            fi
+
+            echo "A newer version appeared during promotion; retrying (${attempt}/5)"
+          done
+
+          echo "::error::Could not converge latest on the newest calendar version"
+          exit 1
