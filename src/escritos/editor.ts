@@ -192,23 +192,23 @@ export async function mountEditor(
     if (lines.length === 0) return;
     const tr = state.tr;
     const end = state.doc.content.size;
+    // If the doc ends with an empty paragraph (e.g. a brand-new note),
+    // replace it so the dictated text doesn't leave a blank line above.
+    const lastChild = state.doc.lastChild;
+    const emptyLast =
+      lastChild && lastChild.type === paragraphType && lastChild.content.size === 0
+        ? lastChild
+        : null;
     let pos = end;
-    // Ensure a block boundary before the appended content when the doc does
-    // not already end on one (e.g. empty doc).
-    const needsGap = end > 0;
     for (const [i, lineRaw] of lines.entries()) {
-      const line = lineRaw;
-      if (i > 0 || needsGap) {
-        // Inserting a fresh empty paragraph node keeps block boundaries clean
-        // rather than gluing text onto the tail of the last block.
-        const gap = paragraphType.create();
-        tr.insert(pos, gap);
-        pos += gap.nodeSize;
+      const para = paragraphType.create(null, schema.text(lineRaw));
+      if (i === 0 && emptyLast) {
+        tr.replaceWith(pos - emptyLast.nodeSize, pos, para);
+        pos = pos - emptyLast.nodeSize + para.nodeSize;
+      } else {
+        tr.insert(pos, para);
+        pos += para.nodeSize;
       }
-      const textNode = schema.text(line);
-      const para = paragraphType.create(null, textNode);
-      tr.insert(pos, para);
-      pos += para.nodeSize;
     }
     // Do NOT scroll the selection — the user's caret stays where it was.
     view.dispatch(tr);
