@@ -47,3 +47,4 @@ Thumbs.db
 # Local Pi runtime state
 .atl/
 /.opencode/error-explainer
+/docs/superpowers
