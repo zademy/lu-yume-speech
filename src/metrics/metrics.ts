@@ -21,16 +21,33 @@ export interface MetricsInput {
   storageQuota: number;
 }
 
+/** One language with its grabación count, for the idioma breakdown. */
+export interface IdiomaCount {
+  lang: string;
+  count: number;
+}
+
 /** Computed indicators. */
 export interface MetricsResult {
   grabaciones: { total: number; minutosAudio: number };
   tamaño: { usageBytes: number; quotaBytes: number; pct: number; audioBytes: number };
   resumenes: number;
-  idioma: { origenTop?: string; destinoTop?: string };
+  idioma: {
+    origenTop?: string;
+    destinoTop?: string;
+    /** Source languages ranked by grabación count (descending). */
+    origenes: IdiomaCount[];
+  };
   diasDeUso: number;
   /** Per-day counts keyed 'YYYY-MM-DD' (UTC) for the activity heatmap. */
   porDia: Record<string, number>;
   wpm: { promedio: number; refHumanaMin: number; refHumanaMax: number };
+  /** Total words dictated across all grabaciones. */
+  palabras: { total: number };
+  /** Grabación count split by operation mode. */
+  modo: { transcribe: number; translate: number };
+  /** Usage streaks in days, derived from consecutive active days. */
+  racha: { actual: number; masLarga: number };
 }
 
 /** Reference human speaking rate (words per minute), shown alongside the user's WPM. */
@@ -49,6 +66,9 @@ export function computeMetrics(input: MetricsInput): MetricsResult {
 
   let segundos = 0;
   let audioBytes = 0;
+  let palabrasTotal = 0;
+  let transcribe = 0;
+  let translate = 0;
   const origenCounts = new Map<string, number>();
   const destinoCounts = new Map<string, number>();
   const porDia: Record<string, number> = {};
@@ -57,6 +77,9 @@ export function computeMetrics(input: MetricsInput): MetricsResult {
   for (const m of metas) {
     segundos += m.duration ?? 0;
     audioBytes += m.audioBytes;
+    palabrasTotal += countWords(m.text);
+    if (m.operationMode === 'translate') translate++;
+    else transcribe++;
 
     if (m.language) bump(origenCounts, m.language);
     // Target language: the app translates to English; in transcribe mode it stays.
@@ -73,15 +96,25 @@ export function computeMetrics(input: MetricsInput): MetricsResult {
 
   const wpmPromedio = wpms.length ? wpms.reduce((a, b) => a + b, 0) / wpms.length : 0;
   const pct = storageQuota > 0 ? (storageUsage / storageQuota) * 100 : 0;
+  const origenes = [...origenCounts.entries()]
+    .map(([lang, count]) => ({ lang, count }))
+    .sort((a, b) => b.count - a.count);
 
   return {
     grabaciones: { total: metas.length, minutosAudio: segundos / 60 },
     tamaño: { usageBytes: storageUsage, quotaBytes: storageQuota, pct, audioBytes },
     resumenes: resumenesCount,
-    idioma: { origenTop: topKey(origenCounts), destinoTop: topKey(destinoCounts) },
+    idioma: {
+      origenTop: topKey(origenCounts),
+      destinoTop: topKey(destinoCounts),
+      origenes,
+    },
     diasDeUso: Object.keys(porDia).length,
     porDia,
     wpm: { promedio: wpmPromedio, refHumanaMin: WPM_HUMANO_MIN, refHumanaMax: WPM_HUMANO_MAX },
+    palabras: { total: palabrasTotal },
+    modo: { transcribe, translate },
+    racha: computeStreaks(porDia),
   };
 }
 
@@ -92,6 +125,47 @@ export function formatBytes(bytes: number): string {
   const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   const value = bytes / Math.pow(1024, i);
   return `${i === 0 ? value : value.toFixed(1)} ${units[i]}`;
+}
+
+/**
+ * Current and longest usage streaks (in days) from the set of active days.
+ *
+ * The current streak counts consecutive active days ending today (with a one-day
+ * grace window so a streak isn't broken until a full day is missed). The longest
+ * streak is the largest run of consecutive active days ever recorded.
+ */
+export function computeStreaks(porDia: Record<string, number>): {
+  actual: number;
+  masLarga: number;
+} {
+  const days = new Set(Object.keys(porDia));
+  if (days.size === 0) return { actual: 0, masLarga: 0 };
+
+  // Longest run across all recorded days.
+  const sorted = [...days].sort();
+  let masLarga = 0;
+  let run = 0;
+  let prevTs: number | null = null;
+  const DAY_MS = 86_400_000;
+  for (const d of sorted) {
+    const ts = Date.parse(`${d}T00:00:00Z`);
+    if (prevTs !== null && ts - prevTs === DAY_MS) run++;
+    else run = 1;
+    if (run > masLarga) masLarga = run;
+    prevTs = ts;
+  }
+
+  // Current streak: walk back from today (grace: if today inactive, start yesterday).
+  let actual = 0;
+  const cursor = new Date();
+  if (!days.has(dayKey(cursor.getTime()))) {
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
+  }
+  while (days.has(dayKey(cursor.getTime()))) {
+    actual++;
+    cursor.setUTCDate(cursor.getUTCDate() - 1);
+  }
+  return { actual, masLarga };
 }
 
 // ---------------------------------------------------------------------------
