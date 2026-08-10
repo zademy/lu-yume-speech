@@ -53,6 +53,7 @@
   },
   "packageManager": "pnpm@11.20.0",
   "dependencies": {
-    "@sapphi-red/web-noise-suppressor": "^0.3.5"
+    "@sapphi-red/web-noise-suppressor": "^0.3.5",
+    "dexie": "^4.4.4"
   }
 }

@@ -34,7 +34,7 @@ import { WaveformVisualizer, type WaveformStyle } from './audio/waveform-visuali
 import { AudioProcessor } from './audio/audio-processor';
 import type { NoiseReductionMode } from './audio/audio-processor';
 import { trimSilence } from './audio/silence-trimmer';
-import * as audioStore from './audio/audio-store';
+import * as store from './db/recordings-db';
 import { GroqClient } from './api/groq-client';
 import { postProcessWithLlm } from './api/llm-postprocessor';
 import { generateSummary, SUMMARY_MODEL } from './api/summary-client';
@@ -42,12 +42,12 @@ import { renderApp } from './ui/renderer';
 import type { AppElements } from './ui/renderer';
 import { renderMetadata } from './ui/metadata-panel';
 import { showToast } from './ui/toast';
+import { createMetricsPanel } from './ui/metrics-panel';
+import { computeMetrics } from './metrics/metrics';
 import { renderSummaryHistory, summaryToText } from './ui/summary-panel';
 import { ThemeManager } from './utils/theme';
 import { createSidebar, populateEntries } from './ui/sidebar';
-import * as historyRepo from './utils/history-repo';
 import { calculateHistoryStats } from './utils/history-stats';
-import * as summaryRepo from './utils/summary-repo';
 import { buildPrompt, toPostProcessConfig } from './utils/transcription-config';
 import { postProcessText } from './utils/text-postprocess';
 
@@ -113,8 +113,8 @@ async function bootstrap(): Promise<void> {
     (id) => {
       bus.emit('history:delete', id);
     },
-    (id) => {
-      const entry = historyRepo.getById(id);
+    async (id) => {
+      const entry = await store.getGrabacion(id);
       if (!entry) return;
       void copyToClipboard(entry.text).then((copied) => {
         showToast(
@@ -132,12 +132,76 @@ async function bootstrap(): Promise<void> {
   const appDiv = getRequiredElement(document, '#app', HTMLDivElement);
   appDiv.replaceChildren(elements.root);
 
-  const renderHistory = (): void => {
-    const entries = historyRepo.getAll();
+  // Métricas panel — dedicated Inicio section, separate from the history list.
+  const metricsPanel = createMetricsPanel({ onExport: exportSnapshot, onPurge: purgeContent });
+  elements.homeView.appendChild(metricsPanel.root);
+
+  const refreshMetrics = async (): Promise<void> => {
+    const [metas, resumenesCount, estimate] = await Promise.all([
+      store.getAllGrabacionesMeta(),
+      store.countResumenes(),
+      store.getStorageEstimate(),
+    ]);
+    metricsPanel.update(
+      computeMetrics({
+        metas,
+        resumenesCount,
+        storageUsage: estimate.usage,
+        storageQuota: estimate.quota,
+      }),
+    );
+  };
+
+  const renderHistory = async (): Promise<void> => {
+    const entries = await store.getAllGrabaciones();
     populateEntries(sidebar, entries);
     renderHistoryStats(elements, entries);
+    void refreshMetrics();
   };
-  renderHistory();
+  void renderHistory();
+
+  async function purgeContent(): Promise<void> {
+    try {
+      await store.purgeAll();
+      await renderHistory();
+      showToast(elements.toastContainer, 'Contenido depurado', 'info');
+    } catch (err) {
+      console.warn('[App] Purge failed:', err);
+      showToast(elements.toastContainer, 'No se pudo depurar', 'error');
+      void renderHistory();
+    }
+  }
+
+  function exportSnapshot(): void {
+    void (async () => {
+      try {
+        const [metas, resumenes, estimate] = await Promise.all([
+          store.getAllGrabacionesMeta(),
+          store.getAllResumenes(),
+          store.getStorageEstimate(),
+        ]);
+        const snapshot = {
+          exportedAt: new Date().toISOString(),
+          storage: estimate,
+          grabaciones: metas,
+          resumenes,
+        };
+        const blob = new Blob([JSON.stringify(snapshot, null, 2)], {
+          type: 'application/json',
+        });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `yume-metricas-${new Date().toISOString().slice(0, 10)}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast(elements.toastContainer, 'Métricas exportadas', 'success');
+      } catch (err) {
+        console.warn('[App] Export failed:', err);
+        showToast(elements.toastContainer, 'No se pudo exportar', 'error');
+      }
+    })();
+  }
 
   // Theme — initialize before first paint to avoid flash
   const theme = new ThemeManager(elements.themeToggle);
@@ -538,7 +602,7 @@ function wireTranscriptionPipeline(
   elements: AppElements,
   getConfig: () => AppSettings,
   getApiKey: () => string,
-  refreshHistory: () => void,
+  refreshHistory: () => Promise<void>,
 ): void {
   // Named pipeline state — replaces the former `lastBlob` closure so a failed
   // take can never leak into a later success, and a rapid re-record surfaces
@@ -626,23 +690,18 @@ function wireTranscriptionPipeline(
       createdAt: Date.now(),
       operationMode: mode,
     };
-    const evictedIds = historyRepo.addEntry(entry);
-    refreshHistory();
-
-    // Save the recorded audio clip that matches this transcription.
     const pending = session.complete();
-    if (pending) {
-      void audioStore.save(entry.id, pending.blob, pending.mimeType).catch((err: unknown) => {
-        console.warn('[App] Failed to save audio clip:', err);
+    const blob = pending?.blob ?? new Blob([], { type: 'audio/webm' });
+    const mimeType = pending?.mimeType ?? 'audio/webm';
+    void store
+      .saveGrabacion(entry, blob, mimeType)
+      .then(() => store.requestPersistentStorage())
+      .then(() => refreshHistory())
+      .catch((err: unknown) => {
+        console.warn('[App] Failed to save grabación:', err);
+        showToast(elements.toastContainer, 'No se pudo guardar la grabación', 'error');
+        void refreshHistory();
       });
-    }
-
-    // Clean up audio for evicted history entries
-    if (evictedIds.length > 0) {
-      void audioStore.removeMany(evictedIds).catch((err: unknown) => {
-        console.warn('[App] Failed to clean up evicted audio:', err);
-      });
-    }
 
     const copied = await copyToClipboard(text);
     if (copied) {
@@ -673,10 +732,10 @@ function wireHistoryEvents(
   bus: EventBus<EventMap>,
   elements: AppElements,
   navigate: (view: AppView) => void,
-  refreshHistory: () => void,
+  refreshHistory: () => Promise<void>,
 ): void {
-  bus.on('history:restore', (id) => {
-    const entry = historyRepo.getById(id);
+  bus.on('history:restore', async (id) => {
+    const entry = await store.getGrabacion(id);
     if (!entry) return;
 
     elements.outputArea.value = entry.text;
@@ -686,17 +745,15 @@ function wireHistoryEvents(
     setStatus(elements, { message: 'Transcripción restaurada.', level: 'success' });
   });
 
-  bus.on('history:delete', (id) => {
-    historyRepo.removeEntry(id);
-    void audioStore.remove(id);
-    refreshHistory();
+  bus.on('history:delete', async (id) => {
+    await store.removeGrabacion(id);
+    void refreshHistory();
     showToast(elements.toastContainer, 'Entrada eliminada', 'info');
   });
 
-  bus.on('history:clear', () => {
-    historyRepo.clearAll();
-    void audioStore.clearAll();
-    refreshHistory();
+  bus.on('history:clear', async () => {
+    await store.clearGrabaciones();
+    void refreshHistory();
     showToast(elements.toastContainer, 'Historial limpiado', 'info');
   });
 }
@@ -751,8 +808,8 @@ function wireOutputToolbar(elements: AppElements): void {
 function wireSummaryFeature(elements: AppElements, getApiKey: () => string): void {
   let generating = false;
 
-  const renderForVisibleText = (): void => {
-    const history = summaryRepo.getSummaryHistoryBySource(elements.outputArea.value);
+  const renderForVisibleText = async (): Promise<void> => {
+    const history = await store.getSummaryHistoryBySource(elements.outputArea.value);
     elements.summarySection.hidden = history === undefined;
     renderSummaryHistory(elements.summaryPanel, history, {
       onCopy: (summary) => {
@@ -764,9 +821,9 @@ function wireSummaryFeature(elements: AppElements, getApiKey: () => string): voi
           );
         });
       },
-      onDelete: (historyId, summaryId) => {
-        summaryRepo.removeSummary(historyId, summaryId);
-        renderForVisibleText();
+      onDelete: async (historyId, summaryId) => {
+        await store.removeSummary(historyId, summaryId);
+        void renderForVisibleText();
         showToast(elements.toastContainer, 'Resumen eliminado', 'info');
       },
     });
@@ -780,7 +837,7 @@ function wireSummaryFeature(elements: AppElements, getApiKey: () => string): voi
 
   elements.outputArea.addEventListener('input', () => {
     updateButton();
-    renderForVisibleText();
+    void renderForVisibleText();
   });
 
   elements.summaryBtn.addEventListener('click', () => {
@@ -793,8 +850,8 @@ function wireSummaryFeature(elements: AppElements, getApiKey: () => string): voi
     setStatus(elements, { message: 'Generando resumen...', level: 'processing' });
 
     void generateSummary(sourceText, getApiKey())
-      .then((result) => {
-        summaryRepo.addSummary(sourceText, {
+      .then(async (result) => {
+        await store.addSummary(sourceText, {
           id: crypto.randomUUID(),
           summary: result.summary,
           keyPoints: result.keyPoints,
@@ -802,7 +859,7 @@ function wireSummaryFeature(elements: AppElements, getApiKey: () => string): voi
           createdAt: Date.now(),
         });
         const sourceIsStillVisible = elements.outputArea.value === sourceText;
-        if (sourceIsStillVisible) renderForVisibleText();
+        if (sourceIsStillVisible) void renderForVisibleText();
         showToast(
           elements.toastContainer,
           sourceIsStillVisible ? 'Resumen generado' : 'Resumen guardado para el texto anterior',
@@ -827,7 +884,7 @@ function wireSummaryFeature(elements: AppElements, getApiKey: () => string): voi
   });
 
   updateButton();
-  renderForVisibleText();
+  void renderForVisibleText();
 }
 
 // ===========================================================================

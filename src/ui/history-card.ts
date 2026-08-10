@@ -9,7 +9,7 @@
 
 import type { HistoryEntry } from '../types';
 import { timeAgo } from '../utils/time-ago';
-import * as audioStore from '../audio/audio-store';
+import { getAudio } from '../db/recordings-db';
 
 /**
  * Active disposers keyed by the card element they belong to.
@@ -154,7 +154,7 @@ export function createHistoryCard(
     // Load blob from IndexedDB and create audio player
     playBtn.replaceChildren(createLoadingIcon());
     try {
-      const clip = await audioStore.get(entry.id);
+      const clip = await getAudio(entry.id);
       if (!clip) {
         playBtn.replaceChildren(createPlayIcon());
         return;
@@ -183,7 +183,7 @@ export function createHistoryCard(
   downloadBtn.addEventListener('click', async (e) => {
     e.stopPropagation();
     try {
-      const clip = await audioStore.get(entry.id);
+      const clip = await getAudio(entry.id);
       if (!clip) return;
       const url = URL.createObjectURL(clip.blob);
       const a = document.createElement('a');
