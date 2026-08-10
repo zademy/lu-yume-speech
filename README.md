@@ -32,6 +32,7 @@
 - [API Key Setup](#api-key-setup)
 - [Scripts](#scripts)
 - [Testing](#testing)
+- [Automated Releases](#automated-releases)
 - [License](#license)
 
 ---
@@ -174,6 +175,46 @@ Published tags follow this policy:
 Release tags must use complete Semantic Versioning with a leading `v`. Images
 support `linux/amd64` and `linux/arm64` and include SBOM and provenance
 attestations.
+
+## Automated Releases
+
+Pushes to `main` use Release Please to maintain a release pull request from
+Conventional Commits. Merging that pull request automatically creates the
+GitHub Release, its `vMAJOR.MINOR.PATCH` tag, the generated changelog, and the
+matching GHCR image tags in the same workflow run.
+
+Write commit subjects in this form and use the body for additional context:
+
+```text
+feat(summary): add Markdown export
+
+Explain the user-visible behavior, motivation, or migration notes here.
+```
+
+- `fix:`, `perf:`, and `revert:` produce a patch version.
+- `feat:` produces a minor version.
+- Add `!` after the type or a `BREAKING CHANGE:` footer for a major version.
+- `docs:`, `refactor:`, `test:`, `build:`, `ci:`, and `chore:` stay hidden
+  unless they declare a breaking change.
+
+Release Please uses the commit subject as the changelog entry. The commit body
+can document extra context and supports Conventional Commit footers. To replace
+the generated notes for a squash-merged pull request, add this block to its
+description:
+
+```text
+BEGIN_COMMIT_OVERRIDE
+feat: describe the release note shown to users
+END_COMMIT_OVERRIDE
+```
+
+The repository must allow GitHub Actions to create pull requests under
+**Settings > Actions > General > Workflow permissions**.
+
+Because the workflow uses the built-in `GITHUB_TOKEN`, GitHub does not start a
+second CI run for the bot-created release pull request. Quality checks still
+run on `main` before the release is created; repositories that require checks
+on every PR should use a GitHub App or PAT instead.
 
 ---
 
