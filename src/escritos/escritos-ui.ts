@@ -29,6 +29,8 @@ export interface PlumaHandlers {
 
 export interface PlumaPanel {
   readonly root: HTMLElement;
+  /** Right-hand pane where the editor (or empty placeholder) is mounted. */
+  readonly previewPane: HTMLElement;
   setEscritos: (list: Escrito[]) => void;
   /** Show one escrito in the preview pane (undefined clears it). */
   preview: (escrito: Escrito | undefined) => void;
@@ -219,5 +221,5 @@ export function createPlumaPanel(handlers: PlumaHandlers, lang: AppLanguage): Pl
   // Initial labels.
   setLanguage(lang);
 
-  return { root, setEscritos, preview, setLanguage };
+  return { root, setEscritos, preview, setLanguage, previewPane: previewCol };
 }

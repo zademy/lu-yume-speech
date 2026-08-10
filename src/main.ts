@@ -45,6 +45,7 @@ import { showToast } from './ui/toast';
 import { createMetricsPanel } from './ui/metrics-panel';
 import { createPlumaPanel } from './escritos/escritos-ui';
 import * as escritos from './escritos/escritos-db';
+import type { EditorHandle } from './escritos/editor';
 import { translate, translateTree } from './i18n/translations';
 import type { AppLanguage } from './types';
 import { computeMetrics } from './metrics/metrics';
@@ -167,18 +168,47 @@ async function bootstrap(): Promise<void> {
   // Pluma panel — document list + read-only preview (T1). T2 swaps preview for Milkdown.
   const plumaWorkspace = elements.plumaView.querySelector<HTMLElement>('#plumaWorkspace');
   const plumaHolder: { panel: ReturnType<typeof createPlumaPanel> | null } = { panel: null };
+  let editorHandle: EditorHandle | null = null;
   const refreshEscritos = async (): Promise<void> => {
     const panel = plumaHolder.panel;
     if (panel) panel.setEscritos(await escritos.getAllEscritos());
   };
   plumaHolder.panel = createPlumaPanel(
     {
-      onSelect: async (id) => plumaHolder.panel?.preview(await escritos.getEscrito(id)),
+      onSelect: async (id) => {
+        const escrito = await escritos.getEscrito(id);
+        const panel = plumaHolder.panel;
+        if (!escrito || !panel) return;
+        // Lazy-load the editor (Crepe/ProseMirror) so it stays out of the
+        // initial bundle — only Pluma users pay for it, and only on first open.
+        const { mountEditor } = await import('./escritos/editor');
+        // Doc switch: tear down the previous editor, then mount a fresh one.
+        if (editorHandle) {
+          await editorHandle.destroy();
+          editorHandle = null;
+        }
+        panel.previewPane.replaceChildren();
+        let saveTimer: ReturnType<typeof setTimeout> | null = null;
+        editorHandle = await mountEditor(panel.previewPane, {
+          initialMD: escrito.contenidoMD,
+          onChange: (md) => {
+            const docId = escrito.id;
+            if (saveTimer) clearTimeout(saveTimer);
+            saveTimer = setTimeout(() => {
+              void escritos.updateContent(docId, md).then(() => void refreshEscritos());
+            }, 800);
+          },
+        });
+      },
       onRename: async (id, titulo) => {
         await escritos.renameEscrito(id, titulo);
         await refreshEscritos();
       },
       onRemove: async (id) => {
+        if (editorHandle) {
+          await editorHandle.destroy();
+          editorHandle = null;
+        }
         await escritos.removeEscrito(id);
         await refreshEscritos();
       },

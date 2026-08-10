@@ -28,6 +28,9 @@ export default defineConfig({
         'src/audio/audio-analyzer.ts',
         'src/audio/audio-processor.ts',
         'src/audio/waveform-visualizer.ts',
+        // Phase 3: Pluma writer — third-party DOM (Milkdown/ProseMirror) needs a
+        // real browser; verified by the production build + runtime, not jsdom.
+        'src/escritos/editor.ts',
       ],
       // Functions stays just under 90 because of inner callbacks in
       // integration code (IndexedDB transaction handlers, fetch/setTimeout
