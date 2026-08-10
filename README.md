@@ -129,6 +129,52 @@ pnpm build
 Runs lint + typecheck and outputs the optimized SPA to `dist/`. **Do not**
 deploy this publicly with a Groq key loaded — the key is stored client-side.
 
+### Production Container
+
+Build and start the production SPA at `http://localhost:8080`:
+
+```bash
+docker compose up --build -d
+```
+
+The container compiles the application with the pinned pnpm version and serves
+only `dist/` through unprivileged Nginx. It does not receive or embed the Groq
+API key; configure the key in the browser as usual.
+
+```bash
+# Check container health and status
+docker compose ps
+
+# Follow server logs
+docker compose logs -f app
+
+# Stop and remove the container
+docker compose down
+```
+
+### GitHub Container Registry
+
+Successful pushes to `main`, `develop`, and SemVer tags publish multi-platform
+images to `ghcr.io/zademy/lu-yume-speech`:
+
+```bash
+docker pull ghcr.io/zademy/lu-yume-speech:latest
+docker run --rm -p 127.0.0.1:8080:8080 ghcr.io/zademy/lu-yume-speech:latest
+```
+
+Published tags follow this policy:
+
+| Git reference       | Container tags                                  |
+| ------------------- | ----------------------------------------------- |
+| `develop`           | `develop`, `sha-<commit>`                       |
+| `main`              | `main`, `sha-<commit>`                          |
+| `v1.2.3`            | `1.2.3`, `1.2`, `1`, `latest`, `sha-<commit>`   |
+| `v1.2.3-rc.1`       | `v1.2.3-rc.1`, `sha-<commit>`                   |
+
+Release tags must use complete Semantic Versioning with a leading `v`. Images
+support `linux/amd64` and `linux/arm64` and include SBOM and provenance
+attestations.
+
 ---
 
 ## Project Structure
