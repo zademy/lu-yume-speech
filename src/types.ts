@@ -126,6 +126,19 @@ export const RESPONSE_FORMATS: readonly {
 ] as const;
 
 // ---------------------------------------------------------------------------
+// Interface language
+// ---------------------------------------------------------------------------
+
+/** Languages available for the application UI. English is the default. */
+export type AppLanguage = 'en' | 'es';
+
+/** Available UI languages for the settings selector. */
+export const APP_LANGUAGES: readonly { value: AppLanguage; label: string }[] = [
+  { value: 'en', label: 'English' },
+  { value: 'es', label: 'Español' },
+];
+
+// ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
 
@@ -135,6 +148,8 @@ export const RESPONSE_FORMATS: readonly {
  * Each field is independent — modules only read what they need (ISP).
  */
 export interface AppSettings {
+  /** Interface language (English by default). */
+  appLanguage: AppLanguage;
   model: WhisperModel;
   operationMode: OperationMode;
   language: string;
@@ -166,6 +181,7 @@ export interface AppSettings {
 
 /** Sensible defaults so the app works without any stored preferences. */
 export const DEFAULT_SETTINGS: Readonly<AppSettings> = {
+  appLanguage: 'en',
   model: 'whisper-large-v3-turbo',
   operationMode: 'transcribe',
   language: 'auto',

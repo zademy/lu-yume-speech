@@ -7,9 +7,10 @@
  * Design: A readable list row with full metadata and direct actions.
  */
 
-import type { HistoryEntry } from '../types';
+import type { AppLanguage, HistoryEntry } from '../types';
 import { timeAgo } from '../utils/time-ago';
 import { getAudio } from '../db/recordings-db';
+import { translate } from '../i18n/translations';
 
 /**
  * Active disposers keyed by the card element they belong to.
@@ -39,6 +40,7 @@ export function createHistoryCard(
   onRestore: (id: string) => void,
   onDelete: (id: string) => void,
   onCopy: (id: string) => void,
+  lang: AppLanguage,
 ): HTMLElement {
   const card = document.createElement('div');
   card.className = [
@@ -98,29 +100,29 @@ export function createHistoryCard(
 
   const copyBtn = document.createElement('button');
   copyBtn.className = actionButtonClass;
-  copyBtn.setAttribute('aria-label', 'Copiar transcripción');
-  copyBtn.setAttribute('title', 'Copiar');
+  copyBtn.setAttribute('aria-label', translate(lang, 'card.copy.aria'));
+  copyBtn.setAttribute('title', translate(lang, 'card.copy.title'));
   copyBtn.appendChild(createCopyIcon());
 
   // Play button — toggles inline audio player
   const playBtn = document.createElement('button');
   playBtn.className = actionButtonClass;
-  playBtn.setAttribute('aria-label', 'Reproducir audio');
-  playBtn.setAttribute('title', 'Reproducir');
+  playBtn.setAttribute('aria-label', translate(lang, 'card.play.aria'));
+  playBtn.setAttribute('title', translate(lang, 'card.play.title'));
   playBtn.appendChild(createPlayIcon());
 
   // Download button
   const downloadBtn = document.createElement('button');
   downloadBtn.className = actionButtonClass;
-  downloadBtn.setAttribute('aria-label', 'Descargar audio');
-  downloadBtn.setAttribute('title', 'Descargar audio');
+  downloadBtn.setAttribute('aria-label', translate(lang, 'card.download.aria'));
+  downloadBtn.setAttribute('title', translate(lang, 'card.download.title'));
   downloadBtn.appendChild(createDownloadIcon());
 
   // Delete button
   const deleteBtn = document.createElement('button');
   deleteBtn.className = actionButtonClass;
-  deleteBtn.setAttribute('aria-label', 'Eliminar entrada del historial');
-  deleteBtn.setAttribute('title', 'Eliminar');
+  deleteBtn.setAttribute('aria-label', translate(lang, 'card.delete.aria'));
+  deleteBtn.setAttribute('title', translate(lang, 'card.delete.title'));
   deleteBtn.appendChild(createTrashIcon());
 
   actions.appendChild(copyBtn);
@@ -220,7 +222,7 @@ export function createHistoryCard(
   restoreBtn.type = 'button';
   restoreBtn.className =
     'mt-3 text-xs font-semibold text-[var(--color-text-secondary)] hover:text-[var(--color-text-primary)] cursor-pointer';
-  restoreBtn.textContent = 'Usar en Dictar';
+  restoreBtn.textContent = translate(lang, 'card.restore');
   restoreBtn.addEventListener('click', () => onRestore(entry.id));
   card.appendChild(restoreBtn);
 

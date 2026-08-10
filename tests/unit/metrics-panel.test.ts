@@ -23,7 +23,7 @@ function fixture(over: Partial<MetricsResult> = {}): MetricsResult {
 
 describe('metrics-panel', () => {
   it('renders the action buttons and refreshes card values from a snapshot', () => {
-    const panel = createMetricsPanel({ onExport: () => {}, onPurge: () => {} });
+    const panel = createMetricsPanel({ onExport: () => {}, onPurge: () => {} }, 'es');
     panel.update(fixture());
 
     const values = panel.root.querySelectorAll('.text-xl.font-semibold');
@@ -39,7 +39,7 @@ describe('metrics-panel', () => {
   });
 
   it('sets the purge dialog warning from the snapshot and disables confirm when empty', () => {
-    const panel = createMetricsPanel({ onExport: () => {}, onPurge: () => {} });
+    const panel = createMetricsPanel({ onExport: () => {}, onPurge: () => {} }, 'es');
 
     panel.update(fixture());
     const dialog = panel.root.querySelector('dialog')!;
@@ -57,7 +57,7 @@ describe('metrics-panel', () => {
   });
 
   it('tints the heatmap cells that have activity', () => {
-    const panel = createMetricsPanel({ onExport: () => {}, onPurge: () => {} });
+    const panel = createMetricsPanel({ onExport: () => {}, onPurge: () => {} }, 'es');
     panel.update(fixture());
 
     const cells = panel.root.querySelectorAll<HTMLElement>('.w-3.h-3');
@@ -73,7 +73,7 @@ describe('metrics-panel', () => {
   it('invokes onExport and onPurge from the action buttons', () => {
     const onExport = vi.fn();
     const onPurge = vi.fn().mockResolvedValue(undefined);
-    const panel = createMetricsPanel({ onExport, onPurge });
+    const panel = createMetricsPanel({ onExport, onPurge }, 'es');
     panel.update(fixture());
 
     const buttons = panel.root.querySelectorAll<HTMLButtonElement>('button');

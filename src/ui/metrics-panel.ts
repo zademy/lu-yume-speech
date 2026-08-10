@@ -1,15 +1,20 @@
 /**
- * Métricas panel — a dedicated Inicio section that renders derived indicators.
+ * Métricas panel — a dedicated view that renders derived indicators.
  *
  * Pure DOM: receives a `MetricsResult` snapshot via `update()` and renders metric
- * cards plus a 30-day activity heatmap. Owns the Exportar and Depurar affordances;
+ * cards plus a 30-day activity heatmap. Owns the Export and Purge affordances;
  * the actual data work is delegated to callbacks from the composition root.
+ *
+ * Language-aware: static labels and buttons are rendered with the active
+ * `AppLanguage` and refreshed through `setLanguage()`.
  *
  * SRP: this module only renders the Métricas UI and forwards user actions.
  */
 
 import { formatBytes } from '../metrics/metrics';
 import type { MetricsResult } from '../metrics/metrics';
+import type { AppLanguage } from '../types';
+import { translate } from '../i18n/translations';
 
 export interface MetricsPanelHandlers {
   onExport: () => void;
@@ -19,52 +24,60 @@ export interface MetricsPanelHandlers {
 export interface MetricsPanel {
   readonly root: HTMLElement;
   update: (result: MetricsResult) => void;
+  setLanguage: (lang: AppLanguage) => void;
 }
 
 const CARD_BASE =
   'rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-4 flex flex-col gap-1';
 
-/**
- * Build the Métricas panel. The returned `update(result)` refreshes every value
- * and the heatmap intensities from a freshly computed snapshot.
- */
-export function createMetricsPanel(handlers: MetricsPanelHandlers): MetricsPanel {
+/** Build the Métricas panel. `update(result)` refreshes values + heatmap. */
+export function createMetricsPanel(
+  handlers: MetricsPanelHandlers,
+  lang: AppLanguage,
+): MetricsPanel {
+  let currentLang: AppLanguage = lang;
+  let lastResult: MetricsResult | null = null;
+
   const root = document.createElement('section');
   root.className = 'metrics-panel flex flex-col gap-3';
-  root.setAttribute('aria-label', 'Métricas');
+  root.setAttribute('aria-label', translate(currentLang, 'metrics.title'));
 
   const actions = document.createElement('div');
   actions.className = 'flex items-center justify-end gap-1';
 
-  const exportBtn = mkButton('Exportar', 'secondary');
-  const purgeBtn = mkButton('Depurar', 'danger');
+  const exportBtn = mkButton(translate(currentLang, 'metrics.action.export'), 'secondary');
+  const purgeBtn = mkButton(translate(currentLang, 'metrics.action.purge'), 'danger');
   actions.appendChild(exportBtn);
   actions.appendChild(purgeBtn);
 
   const grid = document.createElement('div');
   grid.className = 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2';
 
-  const cardGrabaciones = mkCard('Grabaciones');
-  const cardAudio = mkCard('Minutos de audio');
-  const cardTamaño = mkCard('Almacenamiento');
-  const cardResumenes = mkCard('Resúmenes');
-  const cardIdioma = mkCard('Idioma (origen → destino)');
-  const cardDias = mkCard('Días de uso');
-  const cardWpm = mkCard('Palabras por minuto');
-  grid.appendChild(cardGrabaciones.el);
-  grid.appendChild(cardAudio.el);
-  grid.appendChild(cardTamaño.el);
-  grid.appendChild(cardResumenes.el);
-  grid.appendChild(cardIdioma.el);
-  grid.appendChild(cardDias.el);
-  grid.appendChild(cardWpm.el);
+  const cardGrabaciones = mkCard(translate(currentLang, 'metrics.card.recordings'));
+  const cardAudio = mkCard(translate(currentLang, 'metrics.card.audio'));
+  const cardTamaño = mkCard(translate(currentLang, 'metrics.card.storage'));
+  const cardResumenes = mkCard(translate(currentLang, 'metrics.card.summaries'));
+  const cardIdioma = mkCard(translate(currentLang, 'metrics.card.language'));
+  const cardDias = mkCard(translate(currentLang, 'metrics.card.days'));
+  const cardWpm = mkCard(translate(currentLang, 'metrics.card.wpm'));
+  for (const card of [
+    cardGrabaciones,
+    cardAudio,
+    cardTamaño,
+    cardResumenes,
+    cardIdioma,
+    cardDias,
+    cardWpm,
+  ]) {
+    grid.appendChild(card.el);
+  }
 
   const heatWrap = document.createElement('div');
   heatWrap.className =
     'rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-4 flex flex-col gap-2';
   const heatLabel = document.createElement('span');
   heatLabel.className = 'text-[11px] text-[var(--color-text-muted)]';
-  heatLabel.textContent = 'Últimos 30 días';
+  heatLabel.textContent = translate(currentLang, 'metrics.heatmap.label');
   const heatStrip = document.createElement('div');
   heatStrip.className = 'flex flex-wrap gap-[3px]';
   const heatCells: HTMLElement[] = [];
@@ -87,8 +100,8 @@ export function createMetricsPanel(handlers: MetricsPanelHandlers): MetricsPanel
   dialogText.className = 'text-sm mb-4';
   const dialogActions = document.createElement('div');
   dialogActions.className = 'flex justify-end gap-2';
-  const cancelBtn = mkButton('Cancelar', 'secondary');
-  const confirmBtn = mkButton('Borrar todo', 'danger');
+  const cancelBtn = mkButton(translate(currentLang, 'metrics.dialog.cancel'), 'secondary');
+  const confirmBtn = mkButton(translate(currentLang, 'metrics.dialog.confirmBtn'), 'danger');
   dialogActions.appendChild(cancelBtn);
   dialogActions.appendChild(confirmBtn);
   dialog.appendChild(dialogText);
@@ -111,26 +124,36 @@ export function createMetricsPanel(handlers: MetricsPanelHandlers): MetricsPanel
   root.appendChild(dialog);
 
   const update = (result: MetricsResult): void => {
+    lastResult = result;
     cardGrabaciones.setValue(String(result.grabaciones.total));
     cardGrabaciones.setHint(
-      result.grabaciones.total === 1 ? '1 grabación' : `${result.grabaciones.total} grabaciones`,
+      translate(currentLang, 'metrics.card.recordings.other', { n: result.grabaciones.total }),
     );
-    cardAudio.setValue(formatMinutes(result.grabaciones.minutosAudio));
-    cardAudio.setHint('minutos transcritos');
+    cardAudio.setValue(formatMinutes(result.grabaciones.minutosAudio, currentLang));
+    cardAudio.setHint(translate(currentLang, 'metrics.card.audio.hint'));
     cardTamaño.setValue(`${result.tamaño.pct.toFixed(1)}%`);
     cardTamaño.setHint(
-      `${formatBytes(result.tamaño.usageBytes)} de ${formatBytes(result.tamaño.quotaBytes)}`,
+      `${formatBytes(result.tamaño.usageBytes)} / ${formatBytes(result.tamaño.quotaBytes)}`,
     );
     cardResumenes.setValue(String(result.resumenes));
-    cardResumenes.setHint(formatBytes(result.tamaño.audioBytes) + ' de audio');
+    cardResumenes.setHint(
+      translate(currentLang, 'metrics.card.summaries.hint', {
+        bytes: formatBytes(result.tamaño.audioBytes),
+      }),
+    );
     const origen = result.idioma.origenTop ?? '—';
     const destino = result.idioma.destinoTop ?? '—';
     cardIdioma.setValue(`${origen} → ${destino}`);
-    cardIdioma.setHint('idioma más usado');
+    cardIdioma.setHint(translate(currentLang, 'metrics.card.language.hint'));
     cardDias.setValue(String(result.diasDeUso));
-    cardDias.setHint('días con grabaciones');
+    cardDias.setHint(translate(currentLang, 'metrics.card.days.hint'));
     cardWpm.setValue(result.wpm.promedio > 0 ? String(Math.round(result.wpm.promedio)) : '—');
-    cardWpm.setHint(`humano: ${result.wpm.refHumanaMin}–${result.wpm.refHumanaMax}`);
+    cardWpm.setHint(
+      translate(currentLang, 'metrics.card.wpm.hint', {
+        min: result.wpm.refHumanaMin,
+        max: result.wpm.refHumanaMax,
+      }),
+    );
 
     // Heatmap: last 30 days (UTC), intensity by count relative to the day's max.
     const today = new Date();
@@ -155,12 +178,34 @@ export function createMetricsPanel(handlers: MetricsPanelHandlers): MetricsPanel
 
     dialogText.textContent =
       result.grabaciones.total === 0
-        ? 'No hay grabaciones para depurar.'
-        : `Se borrarán ${result.grabaciones.total} grabaciones y ${result.resumenes} resúmenes (${formatBytes(result.tamaño.audioBytes)} de audio). Esta acción no se puede deshacer.`;
+        ? translate(currentLang, 'metrics.dialog.empty')
+        : translate(currentLang, 'metrics.dialog.confirm', {
+            recordings: result.grabaciones.total,
+            summaries: result.resumenes,
+            bytes: formatBytes(result.tamaño.audioBytes),
+          });
     confirmBtn.disabled = result.grabaciones.total === 0;
   };
 
-  return { root, update };
+  const setLanguage = (next: AppLanguage): void => {
+    currentLang = next;
+    root.setAttribute('aria-label', translate(currentLang, 'metrics.title'));
+    exportBtn.textContent = translate(currentLang, 'metrics.action.export');
+    purgeBtn.textContent = translate(currentLang, 'metrics.action.purge');
+    cancelBtn.textContent = translate(currentLang, 'metrics.dialog.cancel');
+    confirmBtn.textContent = translate(currentLang, 'metrics.dialog.confirmBtn');
+    heatLabel.textContent = translate(currentLang, 'metrics.heatmap.label');
+    cardGrabaciones.setLabel(translate(currentLang, 'metrics.card.recordings'));
+    cardAudio.setLabel(translate(currentLang, 'metrics.card.audio'));
+    cardTamaño.setLabel(translate(currentLang, 'metrics.card.storage'));
+    cardResumenes.setLabel(translate(currentLang, 'metrics.card.summaries'));
+    cardIdioma.setLabel(translate(currentLang, 'metrics.card.language'));
+    cardDias.setLabel(translate(currentLang, 'metrics.card.days'));
+    cardWpm.setLabel(translate(currentLang, 'metrics.card.wpm'));
+    if (lastResult) update(lastResult);
+  };
+
+  return { root, update, setLanguage };
 }
 
 // ---------------------------------------------------------------------------
@@ -171,6 +216,7 @@ interface Card {
   el: HTMLElement;
   setValue: (v: string) => void;
   setHint: (v: string) => void;
+  setLabel: (v: string) => void;
 }
 
 function mkCard(label: string): Card {
@@ -195,6 +241,9 @@ function mkCard(label: string): Card {
     setHint: (v) => {
       hintEl.textContent = v;
     },
+    setLabel: (v) => {
+      labelEl.textContent = v;
+    },
   };
 }
 
@@ -212,8 +261,9 @@ function mkButton(label: string, variant: 'secondary' | 'danger'): HTMLButtonEle
   return btn;
 }
 
-function formatMinutes(minutos: number): string {
+function formatMinutes(minutos: number, lang: AppLanguage): string {
   if (minutos <= 0) return '0';
+  const locale = lang === 'es' ? 'es-MX' : 'en-US';
   if (minutos < 10) return minutos.toFixed(1);
-  return Math.round(minutos).toLocaleString('es-MX');
+  return Math.round(minutos).toLocaleString(locale);
 }
