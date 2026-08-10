@@ -13,29 +13,28 @@ function fixture(over: Partial<MetricsResult> = {}): MetricsResult {
     grabaciones: { total: 5, minutosAudio: 12.5 },
     tamaño: { usageBytes: 2048, quotaBytes: 1_048_576, pct: 0.19, audioBytes: 1024 },
     resumenes: 3,
-    idioma: { origenTop: 'es', destinoTop: 'en' },
+    idioma: { origenTop: 'es', destinoTop: 'en', origenes: [{ lang: 'es', count: 5 }] },
     diasDeUso: 2,
     porDia: { [dayKeyOffset(0)]: 4, [dayKeyOffset(1)]: 1 },
     wpm: { promedio: 160, refHumanaMin: 150, refHumanaMax: 200 },
+    palabras: { total: 1151 },
+    modo: { transcribe: 3, translate: 2 },
+    racha: { actual: 2, masLarga: 2 },
     ...over,
   };
 }
 
 describe('metrics-panel', () => {
-  it('renders the action buttons and refreshes card values from a snapshot', () => {
+  it('renders the headline numbers (WPM, total words, grabaciones) from a snapshot', () => {
     const panel = createMetricsPanel({ onExport: () => {}, onPurge: () => {} }, 'es');
     panel.update(fixture());
 
-    const values = panel.root.querySelectorAll('.text-xl.font-semibold');
-    expect(values.length).toBe(7);
-    // First card = Grabaciones total.
-    expect(values[0]!.textContent).toBe('5');
-    // Idioma card shows origen → destino.
-    const idioma = Array.from(values).find((v) => v.textContent === 'es → en');
-    expect(idioma).toBeDefined();
-    // WPM rounded.
-    const wpm = Array.from(values).find((v) => v.textContent === '160');
-    expect(wpm).toBeDefined();
+    const values = panel.root.querySelectorAll('.text-4xl.font-bold');
+    // gaugeValue, wordsValue, recValue.
+    expect(values.length).toBe(3);
+    const texts = Array.from(values).map((v) => v.textContent ?? '');
+    expect(texts).toContain('5'); // grabaciones total
+    expect(texts).toContain('160'); // WPM rounded
   });
 
   it('sets the purge dialog warning from the snapshot and disables confirm when empty', () => {
@@ -56,18 +55,20 @@ describe('metrics-panel', () => {
     expect(confirm.disabled).toBe(true);
   });
 
-  it('tints the heatmap cells that have activity', () => {
+  it('tints the heatmap cell for an active day and leaves empty days muted', () => {
     const panel = createMetricsPanel({ onExport: () => {}, onPurge: () => {} }, 'es');
     panel.update(fixture());
 
-    const cells = panel.root.querySelectorAll<HTMLElement>('.w-3.h-3');
-    expect(cells.length).toBe(30);
-    // Last cell = today (count 4, the max) → fully opaque.
-    const todayCell = cells[29]!;
-    expect(Number(todayCell.style.opacity)).toBeGreaterThan(0.9);
-    // A cell far in the past (count 0) → low opacity.
-    const emptyCell = cells[0]!;
-    expect(Number(emptyCell.style.opacity)).toBeLessThan(0.5);
+    const cells = panel.root.querySelectorAll<HTMLElement>('.hm-cell');
+    // 18 weeks × 7 weekdays.
+    expect(cells.length).toBe(126);
+    const todayKey = dayKeyOffset(0);
+    const active = Array.from(cells).find((c) => c.title.startsWith(`${todayKey}:`))!;
+    expect(active).toBeDefined();
+    expect(active.style.background).toBe('rgb(13, 148, 136)'); // accent — high intensity
+    // An empty day is muted.
+    const empty = Array.from(cells).find((c) => c.title.endsWith(': 0'))!;
+    expect(empty.style.background).toBe('var(--color-surface-muted)');
   });
 
   it('invokes onExport and onPurge from the action buttons', () => {
