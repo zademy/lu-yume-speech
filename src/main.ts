@@ -173,6 +173,28 @@ async function bootstrap(): Promise<void> {
     const panel = plumaHolder.panel;
     if (panel) panel.setEscritos(await escritos.getAllEscritos());
   };
+  // Image persistence adapter — pasted/dropped images become Dexie blobs
+  // referenced as `app-image:<id>` (see src/escritos/images.ts).
+  const imagesAdapter = {
+    loadBlob: (id: string) => escritos.getImagen(id).then((img) => (img ? img.blob : null)),
+    saveImage: async (file: File, escritoId: string) => {
+      const id = crypto.randomUUID();
+      try {
+        await escritos.saveImagen({
+          id,
+          escritoId,
+          blob: file,
+          mimeType: file.type || 'image/png',
+          createdAt: Date.now(),
+        });
+        return id;
+      } catch (err) {
+        console.warn('[Pluma] image save failed:', err);
+        showToast(elements.toastContainer, t('pluma.image.error'), 'error');
+        throw err;
+      }
+    },
+  };
   plumaHolder.panel = createPlumaPanel(
     {
       onSelect: async (id) => {
@@ -191,6 +213,8 @@ async function bootstrap(): Promise<void> {
         let saveTimer: ReturnType<typeof setTimeout> | null = null;
         editorHandle = await mountEditor(panel.previewPane, {
           initialMD: escrito.contenidoMD,
+          escritoId: escrito.id,
+          images: imagesAdapter,
           onChange: (md) => {
             const docId = escrito.id;
             if (saveTimer) clearTimeout(saveTimer);

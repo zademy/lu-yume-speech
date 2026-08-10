@@ -133,6 +133,7 @@ const en: Dictionary = {
   'pluma.rename.prompt': 'Document title',
   'pluma.delete.aria': 'Delete escrito',
   'pluma.delete.confirm': 'Delete this escrito? This cannot be undone.',
+  'pluma.image.error': 'Could not save the image.',
   'metrics.description':
     'Your voice activity on this device: recordings, storage, languages and speaking pace.',
   'metrics.action.export': 'Export',
@@ -352,6 +353,7 @@ const es: Dictionary = {
   'pluma.rename.prompt': 'Título del documento',
   'pluma.delete.aria': 'Eliminar escrito',
   'pluma.delete.confirm': '¿Eliminar este escrito? No se puede deshacer.',
+  'pluma.image.error': 'No se pudo guardar la imagen.',
   'metrics.description':
     'Tu actividad de voz en este dispositivo: grabaciones, almacenamiento, idiomas y ritmo de habla.',
   'metrics.action.export': 'Exportar',
