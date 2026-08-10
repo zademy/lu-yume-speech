@@ -30,6 +30,8 @@
  */
 
 import '@milkdown/crepe/theme/nord.css';
+import '@milkdown/kit/prose/view/style/prosemirror.css';
+import '@milkdown/kit/prose/gapcursor/style/gapcursor.css';
 import { Crepe } from '@milkdown/crepe';
 import { editorViewCtx } from '@milkdown/kit/core';
 import type { Transaction } from '@milkdown/kit/prose/state';
