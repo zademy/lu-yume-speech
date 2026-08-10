@@ -62,24 +62,29 @@ describe('dictation controller', () => {
 
     expect(editor.calls).toEqual(['first', 'second', 'third']);
 
-    // Disarm — further events ignored.
+    // Disarm while recording — pendingAppend keeps the next text:append alive
+    // because the Groq round-trip may still be in flight.
     controller.toggle();
     expect(deps.isRecording()).toBe(false);
     deps.bus.emit('text:append', 'after');
-    expect(editor.calls).toEqual(['first', 'second', 'third']);
+    expect(editor.calls).toEqual(['first', 'second', 'third', 'after']);
 
     controller.dispose();
   });
 
-  it('emits dictation:target pluma when armed and output when disarmed', () => {
+  it('emits dictation:target pluma when armed; output only after transcription lands', () => {
     const editor = fakeEditor();
     const deps = makeDeps(editor);
     const targets: Array<'output' | 'pluma'> = [];
     deps.bus.on('dictation:target', (t) => targets.push(t));
     const controller = createDictationController(deps);
 
-    controller.toggle(); // arm
-    controller.toggle(); // disarm
+    controller.toggle(); // arm → 'pluma'
+    controller.toggle(); // disarm while recording → target stays 'pluma' (pendingAppend)
+    expect(targets).toEqual(['pluma']);
+
+    // Transcription lands → append + target released to 'output'
+    deps.bus.emit('text:append', 'hello');
     expect(targets).toEqual(['pluma', 'output']);
 
     controller.dispose();

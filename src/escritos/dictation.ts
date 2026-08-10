@@ -150,6 +150,10 @@ export function createDictationController(deps: DictationDeps): DictationControl
     message: translate(lang, 'pluma.dictation.idle'),
     level: 'idle',
   };
+  // True when the writer stopped recording but the transcription hasn't
+  // landed yet — keeps the dictation target on Pluma until text:append
+  // or transcription:error arrives.
+  let pendingAppend = false;
 
   const root = document.createElement('div');
   root.className = 'pluma-dictation flex items-center gap-2';
@@ -192,9 +196,18 @@ export function createDictationController(deps: DictationDeps): DictationControl
   const onToggle = (): void => {
     if (state.active) {
       // Disarm — stop the recorder if it is running.
-      if (deps.isRecording()) deps.stopRecorder();
+      const wasRecording = deps.isRecording();
+      if (wasRecording) deps.stopRecorder();
       const next = nextDictationState(state, { type: 'toggle', nowRecording: false }, lang);
-      deps.bus.emit('dictation:target', 'output');
+      // If we were recording, the transcription is still in flight — keep
+      // the target on Pluma so the result lands in the editor, not in
+      // Dictate. The target resets when text:append / transcription:error
+      // arrives. If we weren't recording, nothing is pending — reset now.
+      if (wasRecording) {
+        pendingAppend = true;
+      } else {
+        deps.bus.emit('dictation:target', 'output');
+      }
       apply(next);
       return;
     }
@@ -218,10 +231,33 @@ export function createDictationController(deps: DictationDeps): DictationControl
 
   // Bus wiring — append text + reflect recorder lifecycle.
   const offAppend = deps.bus.on('text:append', (text) => {
-    if (!state.active) return;
+    // Accept while armed OR while a transcription is pending (writer stopped
+    // recording but the Groq round-trip hasn't landed yet).
+    if (!state.active && !pendingAppend) return;
     const editor = deps.getEditor();
     if (!editor) return;
     editor.appendParagraph(text);
+    // Always show "appended" confirmation — whether still armed or pending.
+    apply(
+      nextDictationState(
+        state,
+        { type: 'status', message: translate(lang, 'pluma.dictation.appended'), level: 'success' },
+        lang,
+      ),
+    );
+    // Only release the target when the writer already disarmed — if still
+    // armed, keep the target on Pluma for the next dictation segment.
+    if (!pendingAppend) return;
+    pendingAppend = false;
+    deps.bus.emit('dictation:target', 'output');
+  });
+
+  // Reset target + status if the Groq call fails while we were waiting.
+  const offError = deps.bus.on('transcription:error', () => {
+    if (!pendingAppend) return;
+    pendingAppend = false;
+    deps.bus.emit('dictation:target', 'output');
+    apply(nextDictationState(state, { type: 'reset' }, lang));
   });
 
   const offStart = deps.bus.on('recording:start', () => {
@@ -254,6 +290,7 @@ export function createDictationController(deps: DictationDeps): DictationControl
     },
     dispose: () => {
       offAppend();
+      offError();
       offStart();
       offStop();
       offStatus();
