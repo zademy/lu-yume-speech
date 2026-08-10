@@ -46,6 +46,8 @@ import { createMetricsPanel } from './ui/metrics-panel';
 import { createPlumaPanel } from './escritos/escritos-ui';
 import * as escritos from './escritos/escritos-db';
 import type { EditorHandle } from './escritos/editor';
+import { createDictationController } from './escritos/dictation';
+import { createImproveController } from './escritos/improve-ui';
 import { translate, translateTree } from './i18n/translations';
 import type { AppLanguage } from './types';
 import { computeMetrics } from './metrics/metrics';
@@ -223,6 +225,9 @@ async function bootstrap(): Promise<void> {
             }, 800);
           },
         });
+        // The improve controller re-binds its selection subscription to the
+        // freshly mounted editor on every swap.
+        improveController.attach(editorHandle);
       },
       onRename: async (id, titulo) => {
         await escritos.renameEscrito(id, titulo);
@@ -241,6 +246,30 @@ async function bootstrap(): Promise<void> {
   );
   const plumaPanel = plumaHolder.panel;
   plumaWorkspace?.appendChild(plumaPanel.root);
+
+  // T4 — dictation toggle in the Pluma status bar. Reuses the shared recorder
+  // + Groq pipeline; flips `dictation:target` so transcription lands here.
+  const dictationController = createDictationController({
+    bus,
+    startRecorder: () => recorder.start(),
+    stopRecorder: () => recorder.stop(),
+    isRecording: () => recorder.state === 'recording',
+    getEditor: () => editorHandle,
+    toastContainer: elements.toastContainer,
+    getLang: () => config.appLanguage,
+  });
+  plumaPanel.statusBar.prepend(dictationController.root);
+
+  // T5 — improve star + popover anchored to the editor pane. Subscribes to
+  // selection changes via the editor handle; re-subscribes on doc swap.
+  const improveController = createImproveController({
+    getEditor: () => editorHandle,
+    anchor: plumaPanel.previewPane,
+    toastContainer: elements.toastContainer,
+    getApiKey,
+    getLang: () => config.appLanguage,
+  });
+
   void refreshEscritos();
   elements.plumaView
     .querySelector<HTMLButtonElement>('#plumaNewButton')
@@ -400,6 +429,13 @@ async function bootstrap(): Promise<void> {
 
   // Wire everything through the event bus
   const activeView: { view: AppView } = { view: 'home' };
+  // Dictation routing — 'output' (Dictar view, default) vs 'pluma' (editor).
+  // The Pluma dictation controller flips this when its toggle is on so the
+  // shared capture/transcription pipeline knows where to deliver the result.
+  const dictationTarget: { current: 'output' | 'pluma' } = { current: 'output' };
+  bus.on('dictation:target', (next) => {
+    dictationTarget.current = next;
+  });
   const navigate = wireNavigation(
     elements,
     () => getApiKey(),
@@ -413,7 +449,15 @@ async function bootstrap(): Promise<void> {
   });
   updateApiKeyState(elements, apiKey);
 
-  wireTranscriptionPipeline(bus, client, elements, getConfig, getApiKey, renderHistory);
+  wireTranscriptionPipeline(
+    bus,
+    client,
+    elements,
+    getConfig,
+    getApiKey,
+    renderHistory,
+    () => dictationTarget.current,
+  );
   wireRecordingHandlers(bus, elements, analyzer, timer, visualizer, recorder);
   wireHistoryEvents(bus, elements, navigate, renderHistory);
 
@@ -750,6 +794,7 @@ function wireTranscriptionPipeline(
   getConfig: () => AppSettings,
   getApiKey: () => string,
   refreshHistory: () => Promise<void>,
+  getDictationTarget: () => 'output' | 'pluma',
 ): void {
   // Named pipeline state — replaces the former `lastBlob` closure so a failed
   // take can never leak into a later success, and a rapid re-record surfaces
@@ -815,6 +860,16 @@ function wireTranscriptionPipeline(
       session.complete();
       showToast(elements.toastContainer, t('toast.noText'), 'warning');
       setStatus(elements, { message: 'No se detectó texto.', level: 'idle' });
+      return;
+    }
+
+    // Pluma dictation: post-processed text goes to the editor via the bus;
+    // skip the Dictar-view append, history record, and clipboard copy so the
+    // grabación history stays about real Dictar sessions (T4 out-of-scope note).
+    if (getDictationTarget() === 'pluma') {
+      bus.emit('text:append', text);
+      session.complete();
+      setStatus(elements, { message: t('pluma.dictation.appended'), level: 'success' });
       return;
     }
 

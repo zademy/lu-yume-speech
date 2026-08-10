@@ -252,6 +252,8 @@ export interface EventMap {
   'status:change': StatusUpdate;
   /** One or more settings changed */
   'settings:change': Partial<AppSettings>;
+  /** Active dictation target — 'output' (Dictar view) or 'pluma' (editor). */
+  'dictation:target': 'output' | 'pluma';
   /** A history entry was saved */
   'history:save': HistoryEntry;
   /** A history entry was deleted (payload = id) */

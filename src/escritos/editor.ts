@@ -16,15 +16,22 @@
  * Doc switching is handled by destroy + remount — cheap, and it avoids the edge
  * cases of in-place `setMarkdown` across ProseMirror transactions.
  *
+ * Selection-aware operations power T4 (dictation append) and T5 (AI improve):
+ * `appendParagraph` adds a new block at doc end without disturbing the caret;
+ * `getSelectionRange`/`getSelectionText`/`replaceRangeText` drive the improve
+ * popover; `onSelectionChange` notifies the star trigger.
+ *
  * Not unit-tested in jsdom (Crepe/ProseMirror need a real DOM); excluded from
- * coverage. The pure image transforms live in `./images.ts` (covered). Editor
- * integration is verified by the production build + runtime.
+ * coverage. The pure transforms live in `./images.ts`, `./dictation.ts` and
+ * `./improve.ts` (covered). Editor integration is verified by the production
+ * build + runtime.
  *
  * SRP: this module only bridges the Pluma UI and the Milkdown editor.
  */
 
 import '@milkdown/crepe/theme/nord.css';
 import { Crepe } from '@milkdown/crepe';
+import { editorViewCtx } from '@milkdown/kit/core';
 
 import { type ImageAdapter, hydrateImages, serializeImages } from './images';
 
@@ -39,11 +46,40 @@ export interface MountEditorOptions {
   images?: ImageAdapter;
 }
 
+/** A half-open ProseMirror document range. */
+export interface DocRange {
+  /** Inclusive start offset (0-based, ProseMirror position). */
+  from: number;
+  /** Exclusive end offset. */
+  to: number;
+}
+
 export interface EditorHandle {
   /** Destroy the editor, revoke object URLs, detach DOM. Safe to call once. */
   destroy: () => Promise<void>;
   /** Read the current document as serialized markdown (stable `app-image:` refs). */
   getMarkdown: () => string;
+  /**
+   * Append `text` as a new paragraph block at the end of the document. The
+   * caret/selection is NOT moved — callers that had a cursor stay where they
+   * were. Used by dictation append (T4).
+   */
+  appendParagraph: (text: string) => void;
+  /** Current selection range, or `null` when the editor has no selection. */
+  getSelectionRange: () => DocRange | null;
+  /** Plain-text content of the current selection (empty when collapsed). */
+  getSelectionText: () => string;
+  /**
+   * Replace the half-open `[from, to)` range with `text`, dispatching a single
+   * ProseMirror transaction. Used by AI improve Accept (T5). No-op when the
+   * editor is unavailable.
+   */
+  replaceRangeText: (from: number, to: number, text: string) => void;
+  /**
+   * Subscribe to selection changes inside the editor. Returns an unsubscribe
+   * function. The callback receives the latest range (null when collapsed).
+   */
+  onSelectionChange: (cb: (range: DocRange | null) => void) => () => void;
 }
 
 /**
@@ -96,8 +132,107 @@ export async function mountEditor(
   });
   await crepe.create();
 
+  // Selection listeners for T5 (improve star). Wired once on mount; each
+  // callback is notified on every ProseMirror transaction that may have moved
+  // the selection.
+  const selectionListeners = new Set<(range: DocRange | null) => void>();
+  const readSelection = (): DocRange | null => {
+    const view = crepe.editor.ctx.get(editorViewCtx);
+    const { selection } = view.state;
+    return selection.empty || selection.to === selection.from
+      ? null
+      : { from: selection.from, to: selection.to };
+  };
+  const notifySelection = (): void => {
+    const range = readSelection();
+    for (const cb of selectionListeners) {
+      try {
+        cb(range);
+      } catch {
+        /* listener error must not break others */
+      }
+    }
+  };
+  // Override dispatch on the view to fan-out selection notifications after a
+  // transaction lands. We keep the original behavior and only add the notify.
+  const view0 = crepe.editor.ctx.get(editorViewCtx);
+  const originalDispatch = view0.dispatch.bind(view0);
+  view0.setProps({
+    dispatchTransaction(tr) {
+      originalDispatch(tr);
+      notifySelection();
+    },
+  });
+
+  /** Append `text` as a new paragraph block at doc end, caret untouched. */
+  const appendParagraph = (text: string): void => {
+    if (!text.trim()) return;
+    const view = crepe.editor.ctx.get(editorViewCtx);
+    const { state } = view;
+    const schema = state.schema;
+    const paragraphType = schema.nodes.paragraph;
+    if (!paragraphType) return;
+    const lines = text
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    if (lines.length === 0) return;
+    const tr = state.tr;
+    const end = state.doc.content.size;
+    let pos = end;
+    // Ensure a block boundary before the appended content when the doc does
+    // not already end on one (e.g. empty doc).
+    const needsGap = end > 0;
+    for (const [i, lineRaw] of lines.entries()) {
+      const line = lineRaw;
+      if (i > 0 || needsGap) {
+        // Inserting a fresh empty paragraph node keeps block boundaries clean
+        // rather than gluing text onto the tail of the last block.
+        const gap = paragraphType.create();
+        tr.insert(pos, gap);
+        pos += gap.nodeSize;
+      }
+      const textNode = schema.text(line);
+      const para = paragraphType.create(null, textNode);
+      tr.insert(pos, para);
+      pos += para.nodeSize;
+    }
+    // Do NOT scroll the selection — the user's caret stays where it was.
+    view.dispatch(tr);
+  };
+
+  const getSelectionRange = (): DocRange | null => {
+    const view = crepe.editor.ctx.get(editorViewCtx);
+    const { selection } = view.state;
+    if (selection.empty || selection.to === selection.from) return null;
+    return { from: selection.from, to: selection.to };
+  };
+
+  const getSelectionText = (): string => {
+    const view = crepe.editor.ctx.get(editorViewCtx);
+    const { selection, doc } = view.state;
+    if (selection.empty) return '';
+    return doc.textBetween(selection.from, selection.to, '\n');
+  };
+
+  const replaceRangeText = (from: number, to: number, text: string): void => {
+    const view = crepe.editor.ctx.get(editorViewCtx);
+    let tr = view.state.tr;
+    if (from < 0 || to < from || to > view.state.doc.content.size) return;
+    tr = tr.insertText(text, from, to);
+    view.dispatch(tr);
+  };
+
+  const onSelectionChange = (cb: (range: DocRange | null) => void): (() => void) => {
+    selectionListeners.add(cb);
+    return () => {
+      selectionListeners.delete(cb);
+    };
+  };
+
   return {
     destroy: async () => {
+      selectionListeners.clear();
       for (const obj of objectToId.keys()) URL.revokeObjectURL(obj);
       objectToId.clear();
       try {
@@ -107,5 +242,10 @@ export async function mountEditor(
       }
     },
     getMarkdown: () => serialize(crepe.getMarkdown()),
+    appendParagraph,
+    getSelectionRange,
+    getSelectionText,
+    replaceRangeText,
+    onSelectionChange,
   };
 }

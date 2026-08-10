@@ -31,6 +31,8 @@ export interface PlumaPanel {
   readonly root: HTMLElement;
   /** Right-hand pane where the editor (or empty placeholder) is mounted. */
   readonly previewPane: HTMLElement;
+  /** Status bar above the editor — owns the dictation toggle (T4). */
+  readonly statusBar: HTMLElement;
   setEscritos: (list: Escrito[]) => void;
   /** Show one escrito in the preview pane (undefined clears it). */
   preview: (escrito: Escrito | undefined) => void;
@@ -80,10 +82,20 @@ export function createPlumaPanel(handlers: PlumaHandlers, lang: AppLanguage): Pl
   // --- Preview column ---
   const previewCol = document.createElement('section');
   previewCol.className =
-    'rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-4 min-h-[40vh]';
+    'rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-4 min-h-[40vh] flex flex-col gap-2';
+  // Status bar — T4 dictation toggle + status pill mount here; T5 improve
+  // popover also attaches to this column.
+  const statusBar = document.createElement('div');
+  statusBar.className = 'pluma-status-bar flex items-center justify-between gap-2 min-h-[2rem]';
+  const statusSpacer = document.createElement('span');
+  statusSpacer.className = 'flex-1';
+  statusBar.appendChild(statusSpacer);
   const previewEmpty = document.createElement('p');
   previewEmpty.className = 'text-sm text-[var(--color-text-muted)]';
-  previewCol.appendChild(previewEmpty);
+  const previewBody = document.createElement('div');
+  previewBody.className = 'pluma-preview-body flex-1';
+  previewBody.append(previewEmpty);
+  previewCol.append(statusBar, previewBody);
 
   root.appendChild(listCol);
   root.appendChild(previewCol);
@@ -188,9 +200,9 @@ export function createPlumaPanel(handlers: PlumaHandlers, lang: AppLanguage): Pl
   };
 
   const preview = (escrito: Escrito | undefined): void => {
-    previewCol.replaceChildren();
+    previewBody.replaceChildren();
     if (!escrito) {
-      previewCol.appendChild(previewEmpty);
+      previewBody.appendChild(previewEmpty);
       return;
     }
     const title = document.createElement('h3');
@@ -202,7 +214,7 @@ export function createPlumaPanel(handlers: PlumaHandlers, lang: AppLanguage): Pl
     const body = document.createElement('article');
     body.className = 'text-sm whitespace-pre-wrap text-[var(--color-text-primary)]';
     body.textContent = escrito.contenidoMD || translate(currentLang, 'pluma.preview.empty');
-    previewCol.append(title, note, body);
+    previewBody.append(title, note, body);
   };
 
   const setLanguage = (next: AppLanguage): void => {
@@ -221,5 +233,5 @@ export function createPlumaPanel(handlers: PlumaHandlers, lang: AppLanguage): Pl
   // Initial labels.
   setLanguage(lang);
 
-  return { root, setEscritos, preview, setLanguage, previewPane: previewCol };
+  return { root, setEscritos, preview, setLanguage, previewPane: previewBody, statusBar };
 }
