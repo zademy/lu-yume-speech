@@ -211,9 +211,9 @@ async function bootstrap(): Promise<void> {
           await editorHandle.destroy();
           editorHandle = null;
         }
-        panel.previewPane.replaceChildren();
+        panel.editorMount.replaceChildren();
         let saveTimer: ReturnType<typeof setTimeout> | null = null;
-        editorHandle = await mountEditor(panel.previewPane, {
+        editorHandle = await mountEditor(panel.editorMount, {
           initialMD: escrito.contenidoMD,
           escritoId: escrito.id,
           images: imagesAdapter,

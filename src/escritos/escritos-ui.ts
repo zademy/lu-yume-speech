@@ -29,8 +29,10 @@ export interface PlumaHandlers {
 
 export interface PlumaPanel {
   readonly root: HTMLElement;
-  /** Right-hand pane where the editor (or empty placeholder) is mounted. */
+  /** Right-hand section (permanent) — anchors floating affordances (T5 star). */
   readonly previewPane: HTMLElement;
+  /** Editor mount point inside the pane — replaced on every doc swap. */
+  readonly editorMount: HTMLElement;
   /** Status bar above the editor — owns the dictation toggle (T4). */
   readonly statusBar: HTMLElement;
   setEscritos: (list: Escrito[]) => void;
@@ -233,5 +235,13 @@ export function createPlumaPanel(handlers: PlumaHandlers, lang: AppLanguage): Pl
   // Initial labels.
   setLanguage(lang);
 
-  return { root, setEscritos, preview, setLanguage, previewPane: previewBody, statusBar };
+  return {
+    root,
+    setEscritos,
+    preview,
+    setLanguage,
+    previewPane: previewCol,
+    editorMount: previewBody,
+    statusBar,
+  };
 }

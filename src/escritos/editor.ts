@@ -32,6 +32,7 @@
 import '@milkdown/crepe/theme/nord.css';
 import { Crepe } from '@milkdown/crepe';
 import { editorViewCtx } from '@milkdown/kit/core';
+import type { Transaction } from '@milkdown/kit/prose/state';
 
 import { type ImageAdapter, hydrateImages, serializeImages } from './images';
 
@@ -153,13 +154,18 @@ export async function mountEditor(
       }
     }
   };
-  // Override dispatch on the view to fan-out selection notifications after a
-  // transaction lands. We keep the original behavior and only add the notify.
+  // Observe transactions on the view to fan-out selection notifications.
+  // We override `dispatchTransaction` the idiomatic ProseMirror way: apply the
+  // transaction ourselves via `updateState(state.apply(tr))` — which does NOT
+  // re-enter `dispatchTransaction` — instead of calling `view.dispatch`, which
+  // would re-invoke this override and recurse (RangeError: Maximum call stack).
   const view0 = crepe.editor.ctx.get(editorViewCtx);
-  const originalDispatch = view0.dispatch.bind(view0);
+  const userDispatch = (view0.props as { dispatchTransaction?: (tr: Transaction) => void })
+    .dispatchTransaction;
   view0.setProps({
     dispatchTransaction(tr) {
-      originalDispatch(tr);
+      if (userDispatch) userDispatch(tr);
+      else view0.updateState(view0.state.apply(tr));
       notifySelection();
     },
   });
