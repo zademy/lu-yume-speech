@@ -61,15 +61,8 @@ export function createImproveController(deps: ImproveDeps): ImproveController {
 
   const root = document.createElement('div');
   root.className = 'pluma-improve-root';
-  // Overlay the anchor so the star can float above the editor. The anchor is
-  // marked relative so absolute children anchor to it, not the viewport.
+  // The anchor must be relative so the star/popover absolute-position inside it.
   deps.anchor.style.position = 'relative';
-  Object.assign(root.style, {
-    position: 'absolute',
-    inset: '0',
-    pointerEvents: 'none',
-    zIndex: '50',
-  } satisfies Partial<CSSStyleDeclaration>);
   root.setAttribute('aria-hidden', 'true');
 
   const star = document.createElement('button');
@@ -77,23 +70,6 @@ export function createImproveController(deps: ImproveDeps): ImproveController {
   star.className = 'pluma-improve-star';
   star.hidden = true;
   star.textContent = '★';
-  Object.assign(star.style, {
-    position: 'absolute',
-    pointerEvents: 'auto',
-    width: '28px',
-    height: '28px',
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: '16px',
-    lineHeight: '1',
-    borderRadius: '6px',
-    border: '1px solid var(--color-border-subtle)',
-    background: 'var(--color-surface)',
-    color: 'var(--color-text)',
-    cursor: 'pointer',
-    padding: '0',
-  } satisfies Partial<CSSStyleDeclaration>);
   star.setAttribute('aria-label', translate(lang, 'pluma.improve.star.aria'));
 
   const popover = document.createElement('div');
@@ -101,33 +77,16 @@ export function createImproveController(deps: ImproveDeps): ImproveController {
   popover.setAttribute('role', 'dialog');
   popover.setAttribute('aria-label', translate(lang, 'pluma.improve.label'));
   popover.hidden = true;
-  Object.assign(popover.style, {
-    position: 'absolute',
-    pointerEvents: 'auto',
-    top: '36px',
-    right: '0',
-    width: '320px',
-    maxWidth: '90vw',
-    background: 'var(--color-surface)',
-    border: '1px solid var(--color-border-subtle)',
-    borderRadius: '8px',
-    padding: '12px',
-    boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
-    zIndex: '51',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '8px',
-  } satisfies Partial<CSSStyleDeclaration>);
 
   const label = document.createElement('span');
-  label.className = 'pluma-improve-label text-[11px] font-semibold text-[var(--color-text-muted)]';
+  label.className = 'pluma-improve-label';
   label.textContent = translate(lang, 'pluma.improve.label');
 
   const body = document.createElement('div');
   body.className = 'pluma-improve-body';
 
   const actions = document.createElement('div');
-  actions.className = 'pluma-improve-actions flex items-center gap-2';
+  actions.className = 'pluma-improve-actions';
   const acceptBtn = document.createElement('button');
   acceptBtn.type = 'button';
   acceptBtn.className = 'pluma-improve-accept';

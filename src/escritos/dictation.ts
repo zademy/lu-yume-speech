@@ -234,7 +234,13 @@ export function createDictationController(deps: DictationDeps): DictationControl
     // Only surface processing/error/success messages — the global pipeline
     // also emits idle ones that are not relevant to Pluma.
     if (update.level === 'idle') return;
-    apply(nextDictationState(state, { type: 'status', ...update }, lang));
+    // Never surface the pipeline's technical "Procesando con <model>..." text.
+    // Pluma shows its own i18n label instead so the writer sees a clean status.
+    const message =
+      update.level === 'processing'
+        ? translate(lang, 'pluma.dictation.processing')
+        : update.message;
+    apply(nextDictationState(state, { type: 'status', message, level: update.level }, lang));
   });
 
   render();

@@ -154,9 +154,29 @@ describe('dictation controller', () => {
     const deps = makeDeps(editor);
     const controller = createDictationController(deps);
     controller.toggle(); // arm
-    deps.bus.emit('status:change', { message: 'Custom status', level: 'processing' });
+    // 'processing' level is replaced by the i18n label (never shows technical
+    // pipeline text like "Procesando con whisper-large-v3-turbo..."), so we
+    // test the passthrough with a 'warning' level instead.
+    deps.bus.emit('status:change', { message: 'Custom status', level: 'warning' });
     const status = controller.root.querySelector('.pluma-dictation-status');
     expect(status?.textContent).toBe('Custom status');
+    expect(status?.getAttribute('data-level')).toBe('warning');
+    controller.dispose();
+  });
+
+  it('replaces processing status with i18n label (no technical model name)', () => {
+    const editor = fakeEditor();
+    const deps = makeDeps(editor);
+    const controller = createDictationController(deps);
+    controller.toggle(); // arm
+    deps.bus.emit('status:change', {
+      message: 'Procesando con whisper-large-v3-turbo...',
+      level: 'processing',
+    });
+    const status = controller.root.querySelector('.pluma-dictation-status');
+    // Must show the clean i18n label, never the pipeline's technical text.
+    expect(status?.textContent).toBe('Transcribing…');
+    expect(status?.textContent).not.toContain('whisper');
     expect(status?.getAttribute('data-level')).toBe('processing');
     controller.dispose();
   });
