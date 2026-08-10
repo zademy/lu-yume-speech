@@ -251,7 +251,10 @@ async function bootstrap(): Promise<void> {
   // + Groq pipeline; flips `dictation:target` so transcription lands here.
   const dictationController = createDictationController({
     bus,
-    startRecorder: () => recorder.start(),
+    startRecorder: async () => {
+      await ensureAudioReady();
+      recorder.start();
+    },
     stopRecorder: () => recorder.stop(),
     isRecording: () => recorder.state === 'recording',
     getEditor: () => editorHandle,
@@ -458,7 +461,15 @@ async function bootstrap(): Promise<void> {
     renderHistory,
     () => dictationTarget.current,
   );
-  wireRecordingHandlers(bus, elements, analyzer, timer, visualizer, recorder);
+  wireRecordingHandlers(
+    bus,
+    elements,
+    analyzer,
+    timer,
+    visualizer,
+    recorder,
+    () => dictationTarget.current,
+  );
   wireHistoryEvents(bus, elements, navigate, renderHistory);
 
   // Interface language — switching it re-translates the shell in place.
@@ -752,8 +763,10 @@ function wireRecordingHandlers(
   timer: RecordingTimer,
   visualizer: WaveformVisualizer,
   recorder: Recorder,
+  getDictationTarget: () => 'output' | 'pluma',
 ): void {
   bus.on('recording:start', () => {
+    if (getDictationTarget() === 'pluma') return;
     analyzer.start();
     timer.start();
     visualizer.setRecording(true);
@@ -763,6 +776,7 @@ function wireRecordingHandlers(
   });
 
   bus.on('recording:stop', () => {
+    if (getDictationTarget() === 'pluma') return;
     analyzer.stop();
     timer.stop();
     visualizer.stop();
@@ -776,6 +790,7 @@ function wireRecordingHandlers(
   });
 
   bus.on('recording:silence', () => {
+    if (getDictationTarget() === 'pluma') return;
     if (timer.getElapsed() > 1) {
       recorder.stop();
       showToast(elements.toastContainer, t('toast.silence'), 'info');

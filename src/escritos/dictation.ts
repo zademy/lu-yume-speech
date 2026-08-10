@@ -113,7 +113,7 @@ export function nextDictationState(
 export interface DictationDeps {
   bus: EventBus<EventMap>;
   /** Start/stop the shared recorder. */
-  startRecorder: () => void;
+  startRecorder: () => Promise<void>;
   stopRecorder: () => void;
   /** Returns whether the shared recorder is currently capturing. */
   isRecording: () => boolean;
@@ -211,20 +211,17 @@ export function createDictationController(deps: DictationDeps): DictationControl
       apply(next);
       return;
     }
-    // Arm — the composition root's `ensureAudioReady` is the caller's job; we
-    // only flip the target and start the recorder. If the recorder is not
-    // ready yet (mic still initializing), `recording:start` will arrive later
-    // via the bus and `nextDictationState` will move us to `recording`.
+    // Arm — flip the target and kick off the recorder. `startRecorder` is
+    // async (it may need to call getUserMedia); we apply "armed" immediately
+    // and let the recorder's `recording:start` event move us to "recording"
+    // once the microphone is live.
     deps.bus.emit('dictation:target', 'pluma');
-    try {
-      deps.startRecorder();
-    } catch (err) {
+    apply(nextDictationState(state, { type: 'toggle', nowRecording: false }, lang));
+    deps.startRecorder().catch((err: unknown) => {
       console.warn('[Pluma] dictation start failed:', err);
       apply(nextDictationState(state, { type: 'reset' }, lang));
       deps.bus.emit('dictation:target', 'output');
-      return;
-    }
-    apply(nextDictationState(state, { type: 'toggle', nowRecording: deps.isRecording() }, lang));
+    });
   };
 
   button.addEventListener('click', onToggle);

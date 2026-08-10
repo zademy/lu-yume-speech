@@ -31,6 +31,7 @@ function makeDeps(editor: EditorHandle) {
     bus: new EventBus<EventMap>(),
     startRecorder: () => {
       recording = true;
+      return Promise.resolve();
     },
     stopRecorder: () => {
       recording = false;
@@ -102,19 +103,14 @@ describe('dictation controller', () => {
     controller.dispose();
   });
 
-  it('toggle returns to idle when startRecorder throws', () => {
+  it('toggle returns to idle when startRecorder fails', async () => {
     const editor = fakeEditor();
     const deps = makeDeps(editor);
-    deps.startRecorder = () => {
-      throw new Error('mic denied');
-    };
+    deps.startRecorder = () => Promise.reject(new Error('mic denied'));
     const controller = createDictationController(deps);
     controller.toggle();
-    // Arm failed — recorder is not active and target is back to output.
-    const targets: Array<'output' | 'pluma'> = [];
-    deps.bus.on('dictation:target', (t) => targets.push(t));
-    // already reset; a second toggle would arm again but our startRecorder
-    // still throws, so we just verify the post-failure state directly.
+    // startRecorder is async — wait for the rejection handler to reset.
+    await new Promise((r) => setTimeout(r, 0));
     expect(
       controller.root.querySelector('.pluma-dictation-toggle')?.getAttribute('aria-pressed'),
     ).toBe('false');
