@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/zademy/lu-yume-speech/compare/v1.0.0...v1.1.0) (2026-08-10)
+
+
+### Features
+
+* **storage:** persist structured data in IndexedDB/Dexie + Métricas panel ([10148fe](https://github.com/zademy/lu-yume-speech/commit/10148fe3116329aeaf66333c22be3a6c4f2c9037))
+
 ## 1.0.0 (2026-08-10)
 
 
