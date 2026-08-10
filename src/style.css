@@ -1246,6 +1246,12 @@ details[open] > .summary-card-heading::after {
   box-shadow: 0 0 0 1px var(--color-accent-emphasis, rgba(31, 35, 40, 0.12));
 }
 
+.pluma-dictation-toggle:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 /* Recording dot — neutral when idle, dark + pulsing when recording */
 .pluma-dictation-dot {
   width: 8px;

@@ -228,6 +228,7 @@ async function bootstrap(): Promise<void> {
         // The improve controller re-binds its selection subscription to the
         // freshly mounted editor on every swap.
         improveController.attach(editorHandle);
+        dictationController.setEnabled(true);
       },
       onRename: async (id, titulo) => {
         await escritos.renameEscrito(id, titulo);
@@ -238,6 +239,7 @@ async function bootstrap(): Promise<void> {
           await editorHandle.destroy();
           editorHandle = null;
         }
+        dictationController.setEnabled(false);
         await escritos.removeEscrito(id);
         await refreshEscritos();
       },
@@ -262,6 +264,8 @@ async function bootstrap(): Promise<void> {
     getLang: () => config.appLanguage,
   });
   plumaPanel.statusBar.prepend(dictationController.root);
+  // No document is open initially — disable the toggle until a note is selected.
+  dictationController.setEnabled(false);
 
   // T5 — improve star + popover anchored to the editor pane. Subscribes to
   // selection changes via the editor handle; re-subscribes on doc swap.

@@ -130,6 +130,8 @@ export interface DictationController {
   toggle: () => void;
   /** Refresh all labels after a language change. */
   setLanguage: (lang: AppLanguage) => void;
+  /** Enable/disable the toggle button — disable when no document is open. */
+  setEnabled: (enabled: boolean) => void;
   /** Detach bus listeners. */
   dispose: () => void;
   /** The toggle button element (for the panel to mount). */
@@ -281,6 +283,10 @@ export function createDictationController(deps: DictationDeps): DictationControl
   return {
     root,
     toggle: onToggle,
+    setEnabled: (enabled: boolean) => {
+      button.disabled = !enabled;
+      root.classList.toggle('is-disabled', !enabled);
+    },
     setLanguage: (next) => {
       lang = next;
       apply(nextDictationState(state, { type: 'reset' }, lang));
