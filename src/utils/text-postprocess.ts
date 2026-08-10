@@ -80,8 +80,7 @@ function buildNGram(words: string[]): string {
  */
 function findBestMatch(
   candidate: string,
-  customWords: string[],
-  customWordsNoSpace: string[],
+  customWords: ReadonlyArray<{ word: string; normalized: string }>,
   threshold: number,
 ): { word: string; score: number } | undefined {
   if (candidate.length === 0 || candidate.length > 50) return undefined;
@@ -89,8 +88,7 @@ function findBestMatch(
   let bestWord: string | undefined;
   let bestScore = Number.POSITIVE_INFINITY;
 
-  for (let i = 0; i < customWordsNoSpace.length; i++) {
-    const target = customWordsNoSpace[i]!;
+  for (const { word, normalized: target } of customWords) {
     const lenDiff = Math.abs(candidate.length - target.length);
     const maxLen = Math.max(candidate.length, target.length);
     const maxAllowedDiff = Math.max(maxLen * 0.25, 2);
@@ -101,7 +99,7 @@ function findBestMatch(
     const combined = soundexMatch(candidate, target) ? score * 0.3 : score;
 
     if (combined < threshold && combined < bestScore) {
-      bestWord = customWords[i];
+      bestWord = word;
       bestScore = combined;
     }
   }
@@ -123,7 +121,10 @@ export function applyCustomWords(
 ): string {
   if (customWords.length === 0) return text;
 
-  const customWordsNoSpace = customWords.map((w) => w.toLowerCase().replace(/\s+/g, ''));
+  const normalizedCustomWords = customWords.map((word) => ({
+    word,
+    normalized: word.toLowerCase().replace(/\s+/g, ''),
+  }));
 
   const words = text.split(/\s+/).filter((w) => w.length > 0);
   const result: string[] = [];
@@ -134,12 +135,15 @@ export function applyCustomWords(
 
     for (let n = Math.min(3, words.length - i); n >= 1; n--) {
       const ngramWords = words.slice(i, i + n);
+      const firstWord = ngramWords[0];
+      const lastWord = ngramWords[n - 1];
+      if (firstWord === undefined || lastWord === undefined) continue;
       const ngram = buildNGram(ngramWords);
-      const best = findBestMatch(ngram, customWords, customWordsNoSpace, threshold);
+      const best = findBestMatch(ngram, normalizedCustomWords, threshold);
       if (best) {
-        const prefix = leadingPunctuation(ngramWords[0]!);
-        const suffix = trailingPunctuation(ngramWords[n - 1]!);
-        result.push(prefix + preserveCase(ngramWords[0]!, best.word) + suffix);
+        const prefix = leadingPunctuation(firstWord);
+        const suffix = trailingPunctuation(lastWord);
+        result.push(prefix + preserveCase(firstWord, best.word) + suffix);
         i += n;
         matched = true;
         break;
@@ -147,7 +151,9 @@ export function applyCustomWords(
     }
 
     if (!matched) {
-      result.push(words[i]!);
+      const word = words[i];
+      if (word === undefined) break;
+      result.push(word);
       i += 1;
     }
   }
@@ -252,10 +258,12 @@ function collapseStutters(text: string): string {
   const result: string[] = [];
   let i = 0;
   while (i < words.length) {
-    const word = words[i]!;
+    const word = words[i];
+    if (word === undefined) break;
     if (/^\p{L}+$/u.test(word)) {
       let count = 1;
-      while (i + count < words.length && words[i + count]!.toLowerCase() === word.toLowerCase()) {
+      const normalizedWord = word.toLowerCase();
+      while (words[i + count]?.toLowerCase() === normalizedWord) {
         count += 1;
       }
       result.push(word);

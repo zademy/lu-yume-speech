@@ -67,6 +67,18 @@ import { apiKeySchema } from './platform/api-key.schema';
 // API Key Modal
 // ===========================================================================
 
+function getRequiredElement<T extends Element>(
+  root: ParentNode,
+  selector: string,
+  elementType: new () => T,
+): T {
+  const element = root.querySelector(selector);
+  if (!(element instanceof elementType)) {
+    throw new Error(`Required element has an invalid type: ${selector}`);
+  }
+  return element;
+}
+
 async function promptApiKey(platform: Platform): Promise<string | null> {
   return new Promise((resolve) => {
     const overlay = document.createElement('div');
@@ -103,10 +115,10 @@ async function promptApiKey(platform: Platform): Promise<string | null> {
 
     document.body.appendChild(overlay);
 
-    const input = overlay.querySelector<HTMLInputElement>('#apikey-input')!;
-    const error = overlay.querySelector<HTMLParagraphElement>('#apikey-error')!;
-    const saveBtn = overlay.querySelector<HTMLButtonElement>('#apikey-save')!;
-    const cancelBtn = overlay.querySelector<HTMLButtonElement>('#apikey-cancel')!;
+    const input = getRequiredElement(overlay, '#apikey-input', HTMLInputElement);
+    const error = getRequiredElement(overlay, '#apikey-error', HTMLParagraphElement);
+    const saveBtn = getRequiredElement(overlay, '#apikey-save', HTMLButtonElement);
+    const cancelBtn = getRequiredElement(overlay, '#apikey-cancel', HTMLButtonElement);
 
     input.focus();
 
@@ -190,7 +202,7 @@ async function bootstrap(): Promise<void> {
   populateEntries(sidebar, historyRepo.getAll());
 
   // Compose layout: centered container with sidebar + app side by side
-  const appDiv = document.querySelector<HTMLDivElement>('#app')!;
+  const appDiv = getRequiredElement(document, '#app', HTMLDivElement);
   appDiv.className = 'flex items-start justify-center gap-4 p-4 md:p-6 min-h-screen';
 
   // Wrapper for sidebar + main content — wider to comfortably host the sidebar.

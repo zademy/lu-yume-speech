@@ -35,6 +35,19 @@ function setTrustedHTML(el: HTMLElement, html: string): void {
   el.appendChild(fragment);
 }
 
+/** Return a required descendant or fail immediately with its selector. */
+function getRequiredElement<T extends Element>(
+  root: ParentNode,
+  selector: string,
+  elementType: new () => T,
+): T {
+  const element = root.querySelector(selector);
+  if (!(element instanceof elementType)) {
+    throw new Error(`Required element has an invalid type: ${selector}`);
+  }
+  return element;
+}
+
 export interface AppElements {
   root: HTMLDivElement;
   modelSelect: HTMLSelectElement;
@@ -106,43 +119,71 @@ export function renderApp(): AppElements {
 
   return {
     root,
-    modelSelect: settingsModal.querySelector('#modelSelect')!,
-    operationModeSelect: settingsModal.querySelector('#operationModeSelect')!,
-    recordModeSelect: settingsModal.querySelector('#recordModeSelect')!,
-    noiseReductionSelect: settingsModal.querySelector('#noiseReductionSelect')!,
-    languageSelect: settingsModal.querySelector('#languageSelect')!,
-    promptInput: settingsModal.querySelector('#promptInput')!,
-    temperatureSlider: settingsModal.querySelector('#temperatureSlider')!,
-    temperatureValue: settingsModal.querySelector('#temperatureValue')!,
-    responseFormatSelect: settingsModal.querySelector('#responseFormatSelect')!,
-    timestampToggle: settingsModal.querySelector('#timestampToggle')!,
-    statusDiv: root.querySelector('#status')!,
-    waveformCanvas: root.querySelector('#waveformCanvas')!,
-    waveformContainer: root.querySelector('#waveformContainer')!,
-    timerDisplay: root.querySelector('#timerDisplay')!,
-    outputArea: root.querySelector('#output') as HTMLTextAreaElement,
-    wordCount: root.querySelector('#wordCount')!,
-    metadataPanel: root.querySelector('#metadataPanel')!,
-    summaryBtn: root.querySelector('#summaryBtn')!,
-    summarySection: root.querySelector('#summarySection')!,
-    summaryPanel: root.querySelector('#summaryPanel')!,
-    toastContainer: root.querySelector('#toastContainer')!,
-    themeToggle: root.querySelector('#themeToggle')!,
-    copyAllBtn: root.querySelector('#copyAllBtn')!,
-    clearBtn: root.querySelector('#clearBtn')!,
-    downloadBtn: root.querySelector('#downloadBtn')!,
-    settingsBtn: root.querySelector('#settingsBtn')!,
-    settingsModal: settingsModal.querySelector('#settingsModal')!,
-    settingsCloseBtn: settingsModal.querySelector('#settingsCloseBtn')!,
-    headerActions: root.querySelector('#headerActions')!,
-    customWordsInput: settingsModal.querySelector('#customWordsInput')!,
-    wordCorrectionThresholdSlider: settingsModal.querySelector('#wordCorrectionThresholdSlider')!,
-    wordCorrectionThresholdValue: settingsModal.querySelector('#wordCorrectionThresholdValue')!,
-    customFillerWordsInput: settingsModal.querySelector('#customFillerWordsInput')!,
-    silenceTrimToggle: settingsModal.querySelector('#silenceTrimToggle')!,
-    llmToggle: settingsModal.querySelector('#llmToggle')!,
-    llmModelInput: settingsModal.querySelector('#llmModelInput')!,
-    llmInstructionsInput: settingsModal.querySelector('#llmInstructionsInput')!,
+    modelSelect: getRequiredElement(settingsModal, '#modelSelect', HTMLSelectElement),
+    operationModeSelect: getRequiredElement(
+      settingsModal,
+      '#operationModeSelect',
+      HTMLSelectElement,
+    ),
+    recordModeSelect: getRequiredElement(settingsModal, '#recordModeSelect', HTMLSelectElement),
+    noiseReductionSelect: getRequiredElement(
+      settingsModal,
+      '#noiseReductionSelect',
+      HTMLSelectElement,
+    ),
+    languageSelect: getRequiredElement(settingsModal, '#languageSelect', HTMLSelectElement),
+    promptInput: getRequiredElement(settingsModal, '#promptInput', HTMLTextAreaElement),
+    temperatureSlider: getRequiredElement(settingsModal, '#temperatureSlider', HTMLInputElement),
+    temperatureValue: getRequiredElement(settingsModal, '#temperatureValue', HTMLSpanElement),
+    responseFormatSelect: getRequiredElement(
+      settingsModal,
+      '#responseFormatSelect',
+      HTMLSelectElement,
+    ),
+    timestampToggle: getRequiredElement(settingsModal, '#timestampToggle', HTMLInputElement),
+    statusDiv: getRequiredElement(root, '#status', HTMLDivElement),
+    waveformCanvas: getRequiredElement(root, '#waveformCanvas', HTMLCanvasElement),
+    waveformContainer: getRequiredElement(root, '#waveformContainer', HTMLDivElement),
+    timerDisplay: getRequiredElement(root, '#timerDisplay', HTMLSpanElement),
+    outputArea: getRequiredElement(root, '#output', HTMLTextAreaElement),
+    wordCount: getRequiredElement(root, '#wordCount', HTMLSpanElement),
+    metadataPanel: getRequiredElement(root, '#metadataPanel', HTMLDivElement),
+    summaryBtn: getRequiredElement(root, '#summaryBtn', HTMLButtonElement),
+    summarySection: getRequiredElement(root, '#summarySection', HTMLElement),
+    summaryPanel: getRequiredElement(root, '#summaryPanel', HTMLDivElement),
+    toastContainer: getRequiredElement(root, '#toastContainer', HTMLDivElement),
+    themeToggle: getRequiredElement(root, '#themeToggle', HTMLButtonElement),
+    copyAllBtn: getRequiredElement(root, '#copyAllBtn', HTMLButtonElement),
+    clearBtn: getRequiredElement(root, '#clearBtn', HTMLButtonElement),
+    downloadBtn: getRequiredElement(root, '#downloadBtn', HTMLButtonElement),
+    settingsBtn: getRequiredElement(root, '#settingsBtn', HTMLButtonElement),
+    settingsModal: getRequiredElement(settingsModal, '#settingsModal', HTMLDivElement),
+    settingsCloseBtn: getRequiredElement(settingsModal, '#settingsCloseBtn', HTMLButtonElement),
+    headerActions: getRequiredElement(root, '#headerActions', HTMLDivElement),
+    customWordsInput: getRequiredElement(settingsModal, '#customWordsInput', HTMLTextAreaElement),
+    wordCorrectionThresholdSlider: getRequiredElement(
+      settingsModal,
+      '#wordCorrectionThresholdSlider',
+      HTMLInputElement,
+    ),
+    wordCorrectionThresholdValue: getRequiredElement(
+      settingsModal,
+      '#wordCorrectionThresholdValue',
+      HTMLSpanElement,
+    ),
+    customFillerWordsInput: getRequiredElement(
+      settingsModal,
+      '#customFillerWordsInput',
+      HTMLInputElement,
+    ),
+    silenceTrimToggle: getRequiredElement(settingsModal, '#silenceTrimToggle', HTMLInputElement),
+    llmToggle: getRequiredElement(settingsModal, '#llmToggle', HTMLInputElement),
+    llmModelInput: getRequiredElement(settingsModal, '#llmModelInput', HTMLInputElement),
+    llmInstructionsInput: getRequiredElement(
+      settingsModal,
+      '#llmInstructionsInput',
+      HTMLTextAreaElement,
+    ),
   };
 }
 
