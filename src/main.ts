@@ -44,9 +44,9 @@ import { renderMetadata } from './ui/metadata-panel';
 import { showToast } from './ui/toast';
 import { renderSummaryHistory, summaryToText } from './ui/summary-panel';
 import { ThemeManager } from './utils/theme';
-import { createSidebar, populateEntries, prependEntry, removeCard, clearCards } from './ui/sidebar';
-import type { SidebarElements } from './ui/sidebar';
+import { createSidebar, populateEntries } from './ui/sidebar';
 import * as historyRepo from './utils/history-repo';
+import { calculateHistoryStats } from './utils/history-stats';
 import * as summaryRepo from './utils/summary-repo';
 import { buildPrompt, toPostProcessConfig } from './utils/transcription-config';
 import { postProcessText } from './utils/text-postprocess';
@@ -63,10 +63,6 @@ import { detectPlatform } from './platform/platform';
 import type { Platform } from './platform/platform';
 import { apiKeySchema } from './platform/api-key.schema';
 
-// ===========================================================================
-// API Key Modal
-// ===========================================================================
-
 function getRequiredElement<T extends Element>(
   root: ParentNode,
   selector: string,
@@ -77,81 +73,6 @@ function getRequiredElement<T extends Element>(
     throw new Error(`Required element has an invalid type: ${selector}`);
   }
   return element;
-}
-
-async function promptApiKey(platform: Platform): Promise<string | null> {
-  return new Promise((resolve) => {
-    const overlay = document.createElement('div');
-    overlay.style.cssText =
-      'position:fixed;inset:0;background:rgba(0,0,0,0.7);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px)';
-
-    overlay.innerHTML = `
-      <div role="dialog" aria-modal="true" aria-labelledby="apikey-title" style="background:var(--color-surface,#151b23);border-radius:16px;padding:2rem;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.5);border:1px solid var(--color-border,#3d444d)">
-        <h2 id="apikey-title" style="color:var(--color-text-primary,#f0f6fc);font-family:Inter,sans-serif;font-size:1.25rem;font-weight:700;margin:0 0 0.5rem">
-          <span style="filter:grayscale(1)">🔑</span> Groq API Key
-        </h2>
-        <p style="color:var(--color-text-muted,#9198a1);font-family:Inter,sans-serif;font-size:0.875rem;margin:0 0 1.5rem">
-          Obtén tu key gratis en <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:var(--color-text-primary,#f0f6fc)">console.groq.com/keys</a>
-        </p>
-        <input
-          type="password"
-          id="apikey-input"
-          placeholder="gsk_..."
-          autocomplete="off"
-          spellcheck="false"
-          style="width:100%;box-sizing:border-box;padding:0.75rem 1rem;border-radius:8px;border:1px solid var(--color-border,#3d444d);background:var(--color-surface-sunken,#0d1117);color:var(--color-text-primary,#f0f6fc);font-family:'JetBrains Mono',monospace;font-size:0.875rem;outline:none;margin-bottom:0.5rem"
-        />
-        <p id="apikey-error" style="color:var(--color-text-primary,#f0f6fc);font-family:Inter,sans-serif;font-size:0.75rem;font-weight:600;margin:0 0 1rem;min-height:1rem"></p>
-        <div style="display:flex;gap:0.75rem;justify-content:flex-end">
-          <button id="apikey-cancel" style="padding:0.6rem 1.25rem;border-radius:8px;border:1px solid var(--color-border,#3d444d);background:transparent;color:var(--color-text-muted,#9198a1);font-family:Inter,sans-serif;font-size:0.875rem;cursor:pointer">
-            Cancelar
-          </button>
-          <button id="apikey-save" style="padding:0.6rem 1.25rem;border-radius:8px;border:none;background:var(--color-control-emphasis,#f0f6fc);color:var(--color-text-inverse,#0d1117);font-family:Inter,sans-serif;font-size:0.875rem;font-weight:600;cursor:pointer">
-            Guardar
-          </button>
-        </div>
-      </div>
-    `;
-
-    document.body.appendChild(overlay);
-
-    const input = getRequiredElement(overlay, '#apikey-input', HTMLInputElement);
-    const error = getRequiredElement(overlay, '#apikey-error', HTMLParagraphElement);
-    const saveBtn = getRequiredElement(overlay, '#apikey-save', HTMLButtonElement);
-    const cancelBtn = getRequiredElement(overlay, '#apikey-cancel', HTMLButtonElement);
-
-    input.focus();
-
-    const close = (result: string | null) => {
-      overlay.remove();
-      resolve(result);
-    };
-
-    const submit = async () => {
-      const key = input.value.trim();
-      if (!key) {
-        error.textContent = 'Pega tu API key aquí.';
-        return;
-      }
-      const result = apiKeySchema.safeParse(key);
-      if (!result.success) {
-        error.textContent =
-          'Formato inválido. Debe empezar con gsk_ y tener al menos 44 caracteres.';
-        return;
-      }
-      saveBtn.textContent = 'Guardando...';
-      saveBtn.disabled = true;
-      await platform.setApiKey(key);
-      close(key);
-    };
-
-    saveBtn.addEventListener('click', () => void submit());
-    cancelBtn.addEventListener('click', () => close(null));
-    input.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') void submit();
-      if (e.key === 'Escape') close(null);
-    });
-  });
 }
 
 // ===========================================================================
@@ -175,52 +96,48 @@ async function bootstrap(): Promise<void> {
 
   // Platform bridge — browser storage (localStorage)
   const platform = detectPlatform();
-  let apiKey = await platform.getApiKey();
-  if (!apiKey) {
-    apiKey = await promptApiKey(platform);
-    if (apiKey) {
-      console.warn('[App] API key saved.');
-    }
-  }
+  let apiKey = (await platform.getApiKey()) ?? '';
+  const getApiKey = (): string => apiKey;
 
   const elements = renderApp();
 
-  // Sidebar
+  // Inicio history panel
   const sidebar = createSidebar(
+    elements.historyList,
+    elements.historyEmptyState,
+    elements.historyClearButton,
+    elements.historyCount,
     (id) => {
       bus.emit('history:restore', id);
     },
     (id) => {
       bus.emit('history:delete', id);
     },
+    (id) => {
+      const entry = historyRepo.getById(id);
+      if (!entry) return;
+      void copyToClipboard(entry.text).then((copied) => {
+        showToast(
+          elements.toastContainer,
+          copied ? 'Transcripción copiada' : 'No se pudo copiar',
+          copied ? 'success' : 'error',
+        );
+      });
+    },
     () => {
       bus.emit('history:clear', undefined);
     },
   );
 
-  // Load existing history into sidebar
-  populateEntries(sidebar, historyRepo.getAll());
-
-  // Compose layout: centered container with sidebar + app side by side
   const appDiv = getRequiredElement(document, '#app', HTMLDivElement);
-  appDiv.className = 'flex items-start justify-center gap-4 p-4 md:p-6 min-h-screen';
+  appDiv.replaceChildren(elements.root);
 
-  // Wrapper for sidebar + main content — wider to comfortably host the sidebar.
-  const wrapper = document.createElement('div');
-  wrapper.className = 'flex items-start gap-4 md:gap-6 w-full max-w-6xl';
-
-  wrapper.appendChild(sidebar.root);
-
-  const mainEl = document.createElement('main');
-  mainEl.className =
-    'flex-1 min-w-0 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-[var(--shadow-elevated)] overflow-hidden animate-slide-up-fade';
-  mainEl.appendChild(elements.root);
-  wrapper.appendChild(mainEl);
-
-  appDiv.appendChild(wrapper);
-
-  // Insert sidebar toggle button into the app header (before theme toggle)
-  elements.headerActions.insertBefore(sidebar.toggleBtn, elements.themeToggle);
+  const renderHistory = (): void => {
+    const entries = historyRepo.getAll();
+    populateEntries(sidebar, entries);
+    renderHistoryStats(elements, entries);
+  };
+  renderHistory();
 
   // Theme — initialize before first paint to avoid flash
   const theme = new ThemeManager(elements.themeToggle);
@@ -229,19 +146,7 @@ async function bootstrap(): Promise<void> {
   // Wire live UI interactions
   wireLiveControls(elements);
   wireOutputToolbar(elements);
-  wireSummaryFeature(elements, apiKey ?? '');
-
-  // Settings modal open/close
-  const openSettings = () => elements.settingsModal.classList.remove('hidden');
-  const closeSettings = () => elements.settingsModal.classList.add('hidden');
-  elements.settingsBtn.addEventListener('click', openSettings);
-  elements.settingsCloseBtn.addEventListener('click', closeSettings);
-  elements.settingsModal.addEventListener('click', (e) => {
-    if (e.target === elements.settingsModal) closeSettings();
-  });
-  elements.settingsModal.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') closeSettings();
-  });
+  wireSummaryFeature(elements, getApiKey);
 
   // Noise reduction mode switch
   elements.noiseReductionSelect.addEventListener('change', () => {
@@ -259,7 +164,7 @@ async function bootstrap(): Promise<void> {
   const recorder = new Recorder(bus);
   const analyzer = new AudioAnalyzer(bus);
   const timer = new RecordingTimer(bus);
-  const client = new GroqClient(bus, apiKey ?? '');
+  const client = new GroqClient(bus, getApiKey);
   const visualizer = new WaveformVisualizer(
     elements.waveformCanvas,
     resolveWaveformStyle(elements.waveformCanvas),
@@ -273,22 +178,37 @@ async function bootstrap(): Promise<void> {
     }
   });
 
-  // Microphone access — process through audio enhancement chain before recording
-  try {
-    const rawStream = await recorder.init();
-    const processed = await audioProcessor.process(rawStream, 'dsp');
-    recorder.setRecordingStream(processed.stream);
-    analyzer.connectAnalyser(processed.analyser);
-    visualizer.connectAnalyser(processed.analyser);
-  } catch (error) {
-    console.error('[App] Microphone access denied:', error);
-    showToast(elements.toastContainer, 'No se pudo acceder al micrófono', 'error');
-    return;
-  }
-
-  // Canvas sizing
-  visualizer.syncSize();
-  visualizer.drawIdle();
+  // Microphone access is deferred until Dictar is opened with a configured key.
+  let audioReady = false;
+  let audioInitialization: Promise<boolean> | null = null;
+  const ensureAudioReady = (): Promise<boolean> => {
+    if (audioReady) return Promise.resolve(true);
+    if (audioInitialization) return audioInitialization;
+    audioInitialization = recorder
+      .init()
+      .then((rawStream) =>
+        audioProcessor.process(
+          rawStream,
+          elements.noiseReductionSelect.value as NoiseReductionMode,
+        ),
+      )
+      .then((processed) => {
+        recorder.setRecordingStream(processed.stream);
+        analyzer.connectAnalyser(processed.analyser);
+        visualizer.connectAnalyser(processed.analyser);
+        visualizer.syncSize();
+        visualizer.drawIdle();
+        audioReady = true;
+        return true;
+      })
+      .catch((error: unknown) => {
+        console.error('[App] Microphone access denied:', error);
+        showToast(elements.toastContainer, 'No se pudo acceder al micrófono', 'error');
+        audioInitialization = null;
+        return false;
+      });
+    return audioInitialization;
+  };
   const resizeObserver =
     typeof ResizeObserver === 'function' ? new ResizeObserver(() => visualizer.syncSize()) : null;
   resizeObserver?.observe(elements.waveformCanvas);
@@ -310,17 +230,32 @@ async function bootstrap(): Promise<void> {
   wireQualitySettings(elements, bus, platform, getConfig, setConfig);
 
   // Wire everything through the event bus
-  wireTranscriptionPipeline(bus, client, elements, sidebar, getConfig, apiKey ?? '');
+  const navigate = wireNavigation(elements, () => getApiKey(), ensureAudioReady);
+  wireApiKeySettings(elements, platform, getApiKey, (next) => {
+    apiKey = next;
+    updateApiKeyState(elements, next);
+  });
+  updateApiKeyState(elements, apiKey);
+
+  wireTranscriptionPipeline(bus, client, elements, getConfig, getApiKey, renderHistory);
   wireRecordingHandlers(bus, elements, analyzer, timer, visualizer, recorder);
-  wireHistoryEvents(bus, sidebar, elements);
+  wireHistoryEvents(bus, elements, navigate, renderHistory);
 
   // Keyboard shortcuts
   const cleanup = registerKeyboardShortcuts({
     onRecordStart: () => {
-      recorder.start();
+      if (!getApiKey()) {
+        navigate('settings');
+        showToast(elements.toastContainer, 'Configura tu API key para dictar', 'warning');
+        return;
+      }
+      navigate('dictation');
+      void ensureAudioReady().then((ready) => {
+        if (ready) recorder.start();
+      });
     },
     onRecordStop: () => {
-      recorder.stop();
+      if (audioReady) recorder.stop();
     },
     getMode: () => elements.recordModeSelect.value as 'push-to-talk' | 'toggle',
   });
@@ -336,6 +271,151 @@ async function bootstrap(): Promise<void> {
     recorder.dispose();
     bus.clear();
   });
+}
+
+// ===========================================================================
+// Application shell
+// ===========================================================================
+
+type AppView = 'home' | 'dictation' | 'settings';
+
+function wireNavigation(
+  elements: AppElements,
+  getApiKey: () => string,
+  ensureAudioReady: () => Promise<boolean>,
+): (view: AppView) => void {
+  const views: Record<AppView, HTMLElement> = {
+    home: elements.homeView,
+    dictation: elements.dictationView,
+    settings: elements.settingsView,
+  };
+  const buttons: Record<AppView, HTMLButtonElement> = {
+    home: elements.homeNavButton,
+    dictation: elements.dictationNavButton,
+    settings: elements.settingsNavButton,
+  };
+  const titles: Record<AppView, string> = {
+    home: 'Inicio',
+    dictation: 'Dictar',
+    settings: 'Ajustes',
+  };
+
+  const closeNavigation = (): void => {
+    elements.navigation.dataset.open = 'false';
+    elements.mobileMenuButton.setAttribute('aria-expanded', 'false');
+  };
+  const navigate = (view: AppView): void => {
+    for (const [key, panel] of Object.entries(views) as Array<[AppView, HTMLElement]>) {
+      const active = key === view;
+      panel.hidden = !active;
+      buttons[key].classList.toggle('is-active', active);
+      buttons[key].setAttribute('aria-current', active ? 'page' : 'false');
+    }
+    elements.pageTitle.textContent = titles[view];
+    closeNavigation();
+    if (view === 'dictation' && getApiKey()) {
+      void ensureAudioReady();
+    }
+    document.querySelector<HTMLElement>('#mainContent')?.focus({ preventScroll: true });
+  };
+
+  for (const [view, button] of Object.entries(buttons) as Array<[AppView, HTMLButtonElement]>) {
+    button.addEventListener('click', () => navigate(view));
+  }
+  elements.root.querySelectorAll<HTMLButtonElement>('[data-open-view]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const view = button.dataset.openView;
+      if (view === 'home' || view === 'dictation' || view === 'settings') navigate(view);
+    });
+  });
+  elements.dictationKeyGateButton.addEventListener('click', () => navigate('settings'));
+  elements.mobileMenuButton.addEventListener('click', () => {
+    const open = elements.navigation.dataset.open !== 'true';
+    elements.navigation.dataset.open = String(open);
+    elements.mobileMenuButton.setAttribute('aria-expanded', String(open));
+  });
+  elements.navBackdrop.addEventListener('click', closeNavigation);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeNavigation();
+  });
+  return navigate;
+}
+
+function wireApiKeySettings(
+  elements: AppElements,
+  platform: Platform,
+  getApiKey: () => string,
+  setApiKey: (next: string) => void,
+): void {
+  elements.apiKeyToggle.addEventListener('click', () => {
+    const visible = elements.apiKeyInput.type === 'text';
+    elements.apiKeyInput.type = visible ? 'password' : 'text';
+    elements.apiKeyToggle.setAttribute('aria-pressed', String(!visible));
+    elements.apiKeyToggle.setAttribute(
+      'aria-label',
+      visible ? 'Mostrar API key' : 'Ocultar API key',
+    );
+  });
+
+  elements.apiKeyForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const key = elements.apiKeyInput.value.trim();
+    const result = apiKeySchema.safeParse(key);
+    if (!result.success) {
+      elements.apiKeyError.textContent =
+        'Formato inválido. Debe empezar con gsk_ y tener al menos 44 caracteres.';
+      elements.apiKeyInput.setAttribute('aria-invalid', 'true');
+      elements.apiKeyInput.focus();
+      return;
+    }
+    elements.apiKeySaveButton.disabled = true;
+    elements.apiKeySaveButton.textContent = 'Guardando...';
+    void platform
+      .setApiKey(key)
+      .then(() => {
+        setApiKey(key);
+        elements.apiKeyInput.value = '';
+        elements.apiKeyError.textContent = '';
+        elements.apiKeyInput.removeAttribute('aria-invalid');
+        showToast(elements.toastContainer, 'API key guardada y activa', 'success');
+      })
+      .finally(() => {
+        elements.apiKeySaveButton.disabled = false;
+        elements.apiKeySaveButton.textContent = 'Guardar key';
+      });
+  });
+
+  elements.apiKeyDeleteButton.addEventListener('click', () => {
+    if (!getApiKey()) return;
+    void platform.deleteApiKey().then(() => {
+      setApiKey('');
+      elements.apiKeyInput.value = '';
+      elements.apiKeyError.textContent = '';
+      showToast(elements.toastContainer, 'API key eliminada', 'info');
+    });
+  });
+}
+
+function updateApiKeyState(elements: AppElements, apiKey: string): void {
+  const configured = apiKey.length > 0;
+  elements.apiKeyStatus.textContent = configured ? 'Configurada' : 'Sin configurar';
+  elements.apiKeyStatus.classList.toggle('is-configured', configured);
+  elements.apiKeyDeleteButton.disabled = !configured;
+  elements.dictationKeyGate.hidden = configured;
+  elements.dictationWorkspace.hidden = !configured;
+}
+
+function renderHistoryStats(elements: AppElements, entries: HistoryEntry[]): void {
+  const stats = calculateHistoryStats(entries);
+  elements.wordsMetric.textContent = stats.words.toLocaleString('es-MX');
+  elements.transcriptionsMetric.textContent = stats.transcriptions.toLocaleString('es-MX');
+  const minutes = stats.audioSeconds / 60;
+  elements.audioMinutesMetric.textContent =
+    minutes === 0
+      ? '0'
+      : minutes < 10
+        ? minutes.toFixed(1)
+        : Math.round(minutes).toLocaleString('es-MX');
 }
 
 // ===========================================================================
@@ -456,9 +536,9 @@ function wireTranscriptionPipeline(
   bus: EventBus<EventMap>,
   client: GroqClient,
   elements: AppElements,
-  sidebar: SidebarElements,
   getConfig: () => AppSettings,
-  apiKey: string,
+  getApiKey: () => string,
+  refreshHistory: () => void,
 ): void {
   // Named pipeline state — replaces the former `lastBlob` closure so a failed
   // take can never leak into a later success, and a rapid re-record surfaces
@@ -514,7 +594,7 @@ function wireTranscriptionPipeline(
 
     if (config.enableLlmPostProcess && text.trim()) {
       setStatus(elements, { message: 'Refinando con LLM…', level: 'processing' });
-      text = await postProcessWithLlm(text, apiKey, {
+      text = await postProcessWithLlm(text, getApiKey(), {
         model: config.llmModel,
         instructions: config.llmInstructions,
       });
@@ -547,7 +627,7 @@ function wireTranscriptionPipeline(
       operationMode: mode,
     };
     const evictedIds = historyRepo.addEntry(entry);
-    prependEntry(sidebar, entry);
+    refreshHistory();
 
     // Save the recorded audio clip that matches this transcription.
     const pending = session.complete();
@@ -566,8 +646,8 @@ function wireTranscriptionPipeline(
 
     const copied = await copyToClipboard(text);
     if (copied) {
-      showToast(elements.toastContainer, 'Texto copiado al portapapeles', 'success');
-      setStatus(elements, { message: 'Texto copiado al portapapeles.', level: 'success' });
+      showToast(elements.toastContainer, 'Transcripción copiada', 'success');
+      setStatus(elements, { message: 'Transcripción copiada.', level: 'success' });
     } else {
       setStatus(elements, { message: 'Listo.', level: 'idle' });
     }
@@ -591,8 +671,9 @@ function wireTranscriptionPipeline(
 
 function wireHistoryEvents(
   bus: EventBus<EventMap>,
-  sidebar: SidebarElements,
   elements: AppElements,
+  navigate: (view: AppView) => void,
+  refreshHistory: () => void,
 ): void {
   bus.on('history:restore', (id) => {
     const entry = historyRepo.getById(id);
@@ -600,6 +681,7 @@ function wireHistoryEvents(
 
     elements.outputArea.value = entry.text;
     elements.outputArea.dispatchEvent(new Event('input'));
+    navigate('dictation');
     showToast(elements.toastContainer, 'Transcripción restaurada', 'success');
     setStatus(elements, { message: 'Transcripción restaurada.', level: 'success' });
   });
@@ -607,14 +689,14 @@ function wireHistoryEvents(
   bus.on('history:delete', (id) => {
     historyRepo.removeEntry(id);
     void audioStore.remove(id);
-    removeCard(sidebar, id);
+    refreshHistory();
     showToast(elements.toastContainer, 'Entrada eliminada', 'info');
   });
 
   bus.on('history:clear', () => {
     historyRepo.clearAll();
     void audioStore.clearAll();
-    clearCards(sidebar);
+    refreshHistory();
     showToast(elements.toastContainer, 'Historial limpiado', 'info');
   });
 }
@@ -666,7 +748,7 @@ function wireOutputToolbar(elements: AppElements): void {
 // Transcript summaries
 // ===========================================================================
 
-function wireSummaryFeature(elements: AppElements, apiKey: string): void {
+function wireSummaryFeature(elements: AppElements, getApiKey: () => string): void {
   let generating = false;
 
   const renderForVisibleText = (): void => {
@@ -710,7 +792,7 @@ function wireSummaryFeature(elements: AppElements, apiKey: string): void {
     updateButton();
     setStatus(elements, { message: 'Generando resumen...', level: 'processing' });
 
-    void generateSummary(sourceText, apiKey)
+    void generateSummary(sourceText, getApiKey())
       .then((result) => {
         summaryRepo.addSummary(sourceText, {
           id: crypto.randomUUID(),
