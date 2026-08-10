@@ -132,9 +132,9 @@ async function bootstrap(): Promise<void> {
   const appDiv = getRequiredElement(document, '#app', HTMLDivElement);
   appDiv.replaceChildren(elements.root);
 
-  // Métricas panel — dedicated Inicio section, separate from the history list.
+  // Métricas panel — lives in its own sidebar view (Inicio | Dictar | Ajustes | Métricas).
   const metricsPanel = createMetricsPanel({ onExport: exportSnapshot, onPurge: purgeContent });
-  elements.homeView.appendChild(metricsPanel.root);
+  elements.metricsView.appendChild(metricsPanel.root);
 
   const refreshMetrics = async (): Promise<void> => {
     const [metas, resumenesCount, estimate] = await Promise.all([
@@ -341,7 +341,7 @@ async function bootstrap(): Promise<void> {
 // Application shell
 // ===========================================================================
 
-type AppView = 'home' | 'dictation' | 'settings';
+type AppView = 'home' | 'dictation' | 'settings' | 'metrics';
 
 function wireNavigation(
   elements: AppElements,
@@ -352,16 +352,19 @@ function wireNavigation(
     home: elements.homeView,
     dictation: elements.dictationView,
     settings: elements.settingsView,
+    metrics: elements.metricsView,
   };
   const buttons: Record<AppView, HTMLButtonElement> = {
     home: elements.homeNavButton,
     dictation: elements.dictationNavButton,
     settings: elements.settingsNavButton,
+    metrics: elements.metricsNavButton,
   };
   const titles: Record<AppView, string> = {
     home: 'Inicio',
     dictation: 'Dictar',
     settings: 'Ajustes',
+    metrics: 'Métricas',
   };
 
   const closeNavigation = (): void => {
@@ -389,7 +392,8 @@ function wireNavigation(
   elements.root.querySelectorAll<HTMLButtonElement>('[data-open-view]').forEach((button) => {
     button.addEventListener('click', () => {
       const view = button.dataset.openView;
-      if (view === 'home' || view === 'dictation' || view === 'settings') navigate(view);
+      if (view === 'home' || view === 'dictation' || view === 'settings' || view === 'metrics')
+        navigate(view);
     });
   });
   elements.dictationKeyGateButton.addEventListener('click', () => navigate('settings'));

@@ -22,11 +22,10 @@ function fixture(over: Partial<MetricsResult> = {}): MetricsResult {
 }
 
 describe('metrics-panel', () => {
-  it('renders the title and refreshes card values from a snapshot', () => {
+  it('renders the action buttons and refreshes card values from a snapshot', () => {
     const panel = createMetricsPanel({ onExport: () => {}, onPurge: () => {} });
     panel.update(fixture());
 
-    expect(panel.root.querySelector('h3')?.textContent).toBe('Métricas');
     const values = panel.root.querySelectorAll('.text-xl.font-semibold');
     expect(values.length).toBe(7);
     // First card = Grabaciones total.

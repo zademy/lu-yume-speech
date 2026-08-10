@@ -33,22 +33,13 @@ export function createMetricsPanel(handlers: MetricsPanelHandlers): MetricsPanel
   root.className = 'metrics-panel flex flex-col gap-3';
   root.setAttribute('aria-label', 'Métricas');
 
-  const header = document.createElement('div');
-  header.className = 'flex items-center justify-between gap-2';
-
-  const title = document.createElement('h3');
-  title.className = 'text-sm font-semibold text-[var(--color-text-primary)]';
-  title.textContent = 'Métricas';
-
   const actions = document.createElement('div');
-  actions.className = 'flex items-center gap-1';
+  actions.className = 'flex items-center justify-end gap-1';
 
   const exportBtn = mkButton('Exportar', 'secondary');
   const purgeBtn = mkButton('Depurar', 'danger');
   actions.appendChild(exportBtn);
   actions.appendChild(purgeBtn);
-  header.appendChild(title);
-  header.appendChild(actions);
 
   const grid = document.createElement('div');
   grid.className = 'grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2';
@@ -114,7 +105,7 @@ export function createMetricsPanel(handlers: MetricsPanelHandlers): MetricsPanel
   });
   exportBtn.addEventListener('click', () => handlers.onExport());
 
-  root.appendChild(header);
+  root.appendChild(actions);
   root.appendChild(grid);
   root.appendChild(heatWrap);
   root.appendChild(dialog);

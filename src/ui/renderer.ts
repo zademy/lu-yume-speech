@@ -41,10 +41,12 @@ export interface AppElements {
   homeNavButton: HTMLButtonElement;
   dictationNavButton: HTMLButtonElement;
   settingsNavButton: HTMLButtonElement;
+  metricsNavButton: HTMLButtonElement;
   pageTitle: HTMLHeadingElement;
   homeView: HTMLElement;
   dictationView: HTMLElement;
   settingsView: HTMLElement;
+  metricsView: HTMLElement;
   historyList: HTMLDivElement;
   historyEmptyState: HTMLElement;
   historyClearButton: HTMLButtonElement;
@@ -113,6 +115,7 @@ export function renderApp(): AppElements {
           ${renderHomeView()}
           ${renderDictationView(detectOS().modifierLabel)}
           ${renderSettingsView()}
+          ${renderMetricsView()}
         </main>
       </div>
       ${renderToastContainer()}
@@ -127,10 +130,12 @@ export function renderApp(): AppElements {
     homeNavButton: getRequiredElement(root, '#homeNavButton', HTMLButtonElement),
     dictationNavButton: getRequiredElement(root, '#dictationNavButton', HTMLButtonElement),
     settingsNavButton: getRequiredElement(root, '#settingsNavButton', HTMLButtonElement),
+    metricsNavButton: getRequiredElement(root, '#metricsNavButton', HTMLButtonElement),
     pageTitle: getRequiredElement(root, '#mobilePageTitle', HTMLHeadingElement),
     homeView: getRequiredElement(root, '#homeView', HTMLElement),
     dictationView: getRequiredElement(root, '#dictationView', HTMLElement),
     settingsView: getRequiredElement(root, '#settingsView', HTMLElement),
+    metricsView: getRequiredElement(root, '#metricsView', HTMLElement),
     historyList: getRequiredElement(root, '#historyList', HTMLDivElement),
     historyEmptyState: getRequiredElement(root, '#historyEmptyState', HTMLElement),
     historyClearButton: getRequiredElement(root, '#historyClearButton', HTMLButtonElement),
@@ -205,6 +210,7 @@ function renderNavigation(): string {
       <nav class="flex flex-col gap-1" aria-label="Secciones">
         ${renderNavButton('homeNavButton', 'home', 'Inicio', icons.home, true)}
         ${renderNavButton('dictationNavButton', 'dictation', 'Dictar', icons.mic, false)}
+        ${renderNavButton('metricsNavButton', 'metrics', 'Métricas', icons.chart, false)}
       </nav>
       <div class="mt-auto border-t border-[var(--color-border-subtle)] pt-3">
         ${renderNavButton('settingsNavButton', 'settings', 'Ajustes', icons.settings, false)}
@@ -276,6 +282,19 @@ function renderHomeView(): string {
           ${renderMetric('audioMinutesMetric', 'Minutos de audio', '0', 'Duración procesada')}
           <p class="stats-note">Las cifras se calculan localmente con el historial guardado en este navegador.</p>
         </aside>
+      </div>
+    </section>`;
+}
+
+function renderMetricsView(): string {
+  return `
+    <section id="metricsView" class="view-panel" aria-labelledby="metricsTitle" hidden>
+      <div class="view-heading">
+        <div>
+          <p class="eyebrow">Rendimiento</p>
+          <h2 id="metricsTitle">Métricas</h2>
+          <p>Tu actividad de voz en este dispositivo: grabaciones, almacenamiento, idiomas y ritmo de habla.</p>
+        </div>
       </div>
     </section>`;
 }
@@ -554,6 +573,8 @@ const icons = {
     '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>',
   sparkle:
     '<svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.9 15.5A2 2 0 0 0 8.5 14l-6.1-1.5a.5.5 0 0 1 0-1L8.5 10A2 2 0 0 0 10 8.5l1.5-6.1a.5.5 0 0 1 1 0L14 8.5a2 2 0 0 0 1.5 1.5l6.1 1.5a.5.5 0 0 1 0 1L15.5 14a2 2 0 0 0-1.5 1.5l-1.5 6.1a.5.5 0 0 1-1 0z"/></svg>',
+  chart:
+    '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="5" width="3" height="13"/></svg>',
   arrowUpRight:
     '<svg aria-hidden="true" class="inline" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M7 17 17 7M7 7h10v10"/></svg>',
 };
