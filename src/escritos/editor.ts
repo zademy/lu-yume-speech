@@ -29,9 +29,8 @@
  * SRP: this module only bridges the Pluma UI and the Milkdown editor.
  */
 
+import '@milkdown/crepe/theme/common/style.css';
 import '@milkdown/crepe/theme/nord.css';
-import '@milkdown/kit/prose/view/style/prosemirror.css';
-import '@milkdown/kit/prose/gapcursor/style/gapcursor.css';
 import { Crepe } from '@milkdown/crepe';
 import { editorViewCtx } from '@milkdown/kit/core';
 import type { Transaction } from '@milkdown/kit/prose/state';
@@ -112,9 +111,15 @@ export async function mountEditor(
   const crepe = new Crepe({
     root: container,
     defaultValue: initialMD,
-    ...(images && escritoId
-      ? {
-          featureConfigs: {
+    features: {
+      // TopBar is OFF by default in Crepe. Enable it so the editor shows a
+      // fixed formatting toolbar (headings, bold, italic, lists, etc) at the
+      // top — the WYSIWYG affordance users expect from a rich editor.
+      [Crepe.Feature.TopBar]: true,
+    },
+    featureConfigs: {
+      ...(images && escritoId
+        ? {
             [Crepe.Feature.ImageBlock]: {
               onUpload: async (file: File) => {
                 const id = await images.saveImage(file, escritoId);
@@ -123,9 +128,9 @@ export async function mountEditor(
                 return obj;
               },
             },
-          },
-        }
-      : {}),
+          }
+        : {}),
+    },
   });
 
   crepe.on((api) => {
