@@ -49,12 +49,13 @@
 - **Noise suppression** — DSP filter chain or AI-backed RNNoise suppression on the captured audio.
 - **Waveform visualization** — Live audio waveform rendered on a `<canvas>` element during recording.
 - **Silence detection** — Automatically stops recording after a configurable silence threshold.
-- **Transcription history** — Persistent sidebar with full CRUD: restore past transcriptions, delete individual entries, or clear all history.
+- **Application workspace** — Responsive navigation separates Inicio, Dictar, and Ajustes for a focused, extensible workflow.
+- **Transcription history** — Inicio keeps up to 100 recent transcriptions with local word, transcription, and audio-minute metrics; copy, restore, delete, or clear entries directly.
 - **Metadata panel** — When using `verbose_json` format, displays detected language, confidence, segment timestamps, and duration.
 - **Output toolbar** — Copy to clipboard, clear text, or download as `.txt`.
 - **Dark / Light theme** — Toggle between themes with system preference detection. Choice persists across sessions.
 - **Keyboard shortcuts** — OS-aware shortcuts (Cmd on macOS, Ctrl elsewhere) for record start/stop.
-- **Local key storage** — API key stored in the browser's `localStorage`, never in the JS bundle.
+- **Local key storage** — Manage the API key from Ajustes; it is stored in the browser's `localStorage`, applied immediately, and never included in the JS bundle.
 - **Network resilience** — 30s timeout, automatic retry with exponential backoff on 429/503/504, typed error classification.
 - **Cross-platform** — Runs in any modern browser.
 
@@ -118,8 +119,10 @@ pnpm install
 pnpm dev
 ```
 
-Opens the SPA at `http://localhost:1420`. Microphone permission is requested on
-first launch. The `WebBridge` stores the API key in `localStorage`.
+Opens the SPA at `http://localhost:1420`. Add your API key from **Ajustes** when
+you want to use Dictar; microphone permission is then requested on first use.
+The `WebBridge` stores the key in `localStorage`, while Inicio remains available
+without a configured key.
 
 ### Production Build
 
@@ -155,8 +158,14 @@ docker compose down
 
 ### GitHub Container Registry
 
-Successful pushes to `main`, `develop`, and SemVer tags publish multi-platform
-images to `ghcr.io/zademy/lu-yume-speech`:
+The container workflow follows the promotion path `develop` → `releases` →
+`main`:
+
+- Pull requests and `develop` run application quality checks only.
+- `releases` runs the same checks and builds the `linux/amd64` and
+  `linux/arm64` image without pushing it to a registry.
+- `main` rebuilds the promoted source and publishes its image to
+  `ghcr.io/zademy/lu-yume-speech`.
 
 ```bash
 docker pull ghcr.io/zademy/lu-yume-speech:latest
@@ -165,23 +174,31 @@ docker run --rm -p 127.0.0.1:8080:8080 ghcr.io/zademy/lu-yume-speech:latest
 
 Published tags follow this policy:
 
-| Git reference       | Container tags                                  |
-| ------------------- | ----------------------------------------------- |
-| `develop`           | `develop`, `sha-<commit>`                       |
-| `main`              | `main`, `sha-<commit>`                          |
-| `v1.2.3`            | `1.2.3`, `1.2`, `1`, `latest`, `sha-<commit>`   |
-| `v1.2.3-rc.1`       | `v1.2.3-rc.1`, `sha-<commit>`                   |
+| Git reference | Action                                           |
+| ------------- | ------------------------------------------------ |
+| `develop`     | Quality checks only                              |
+| `releases`    | Multi-platform container build, no registry push |
+| `main`        | Publish `YYYY.MM.DD.N` and update `latest`       |
 
-Release tags must use complete Semantic Versioning with a leading `v`. Images
-support `linux/amd64` and `linux/arm64` and include SBOM and provenance
-attestations.
+Release Please creates complete Semantic Versioning tags with a leading `v` on
+`main` for GitHub Releases. Container tags use the UTC build date plus the
+GitHub Actions run number, for example `2026.08.09.42`; `latest` always points
+to the newest successful build. Docker tags do not permit `+`, so the run
+number uses a period separator. Published images omit SBOM and provenance
+attestations to avoid additional untagged attestation manifests in GHCR.
+
+The image remains multi-platform (`linux/amd64` and `linux/arm64`). GHCR may
+show internal `sha256:*` child manifests for those architectures; these are
+content digests required by the multi-platform image, not pullable version
+tags. Docker Hub commonly hides these implementation details in its UI.
 
 ## Automated Releases
 
 Pushes to `main` use Release Please to maintain a release pull request from
 Conventional Commits. Merging that pull request automatically creates the
-GitHub Release, its `vMAJOR.MINOR.PATCH` tag, the generated changelog, and the
-matching GHCR image tags in the same workflow run.
+GitHub Release, its `vMAJOR.MINOR.PATCH` tag, and the generated changelog. The
+same workflow publishes the calendar-versioned GHCR image and updates
+`latest`.
 
 Write commit subjects in this form and use the body for additional context:
 
@@ -249,12 +266,13 @@ speech-to-text/
 │   │   ├── history-card.ts        # Single history entry renderer
 │   │   ├── metadata-panel.ts      # Verbose JSON metadata display
 │   │   ├── renderer.ts            # Full app DOM layout builder
-│   │   ├── sidebar.ts             # Floating history panel
+│   │   ├── sidebar.ts             # Inicio history list controller
 │   │   ├── summary-panel.ts        # Summary generation history renderer
 │   │   └── toast.ts               # Non-blocking notification toasts
 │   ├── utils/
 │   │   ├── clipboard.ts           # Clipboard API wrapper
 │   │   ├── history-repo.ts        # CRUD over storage history
+│   │   ├── history-stats.ts       # Local activity metric calculator
 │   │   ├── keyboard.ts            # Global shortcut manager
 │   │   ├── os-detect.ts           # Platform detection (macOS vs other)
 │   │   ├── settings.ts            # Reads UI state into typed config

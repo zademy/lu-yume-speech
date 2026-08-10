@@ -22,16 +22,27 @@ export function levenshtein(a: string, b: string): number {
 
   let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
   let curr = new Array<number>(b.length + 1).fill(0);
+  let distance = b.length;
 
   for (let i = 1; i <= a.length; i++) {
-    curr[0] = i;
+    let left = i;
+    let diagonal = i - 1;
+    curr[0] = left;
     for (let j = 1; j <= b.length; j++) {
+      const above = prev[j];
+      if (above === undefined) {
+        throw new RangeError(`Invalid Levenshtein column: ${j}`);
+      }
       const cost = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
-      curr[j] = Math.min(curr[j - 1]! + 1, prev[j]! + 1, prev[j - 1]! + cost);
+      const value = Math.min(left + 1, above + 1, diagonal + cost);
+      curr[j] = value;
+      left = value;
+      diagonal = above;
     }
+    distance = left;
     [prev, curr] = [curr, prev];
   }
-  return prev[b.length]!;
+  return distance;
 }
 
 /** Maps a lowercased ASCII letter to its Soundex digit (or separator/transparent marker). */
@@ -82,15 +93,15 @@ function soundexDigit(ch: string): string {
 export function soundex(input: string): string {
   const word = input.toLowerCase();
   let i = 0;
-  while (i < word.length && !/[a-z]/.test(word[i]!)) i++;
+  while (i < word.length && !/[a-z]/.test(word.charAt(i))) i++;
   if (i >= word.length) return '0000';
 
-  const first = word[i]!.toUpperCase();
-  let prevDigit = soundexDigit(word[i]!);
+  const first = word.charAt(i).toUpperCase();
+  let prevDigit = soundexDigit(word.charAt(i));
   let code = '';
 
   for (let k = i + 1; k < word.length && code.length < 3; k++) {
-    const ch = word[k]!;
+    const ch = word.charAt(k);
     if (!/[a-z]/.test(ch)) continue;
     const digit = soundexDigit(ch);
     if (digit >= '1' && digit <= '6') {
