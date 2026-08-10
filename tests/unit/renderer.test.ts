@@ -18,9 +18,11 @@ describe('renderApp application shell', () => {
     expect(elements.dictationNavButton.textContent).toContain('Dictar');
     expect(elements.settingsNavButton.textContent).toContain('Ajustes');
     expect(elements.metricsNavButton.textContent).toContain('Métricas');
+    expect(elements.plumaNavButton.textContent).toContain('Pluma');
     expect(elements.homeView.hidden).toBe(false);
     expect(elements.dictationView.hidden).toBe(true);
     expect(elements.settingsView.hidden).toBe(true);
+    expect(elements.plumaView.hidden).toBe(true);
   });
 
   it('places history and activity metrics in Inicio', () => {

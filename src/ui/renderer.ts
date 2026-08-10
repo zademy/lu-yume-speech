@@ -45,11 +45,13 @@ export interface AppElements {
   homeNavButton: HTMLButtonElement;
   dictationNavButton: HTMLButtonElement;
   metricsNavButton: HTMLButtonElement;
+  plumaNavButton: HTMLButtonElement;
   settingsNavButton: HTMLButtonElement;
   pageTitle: HTMLHeadingElement;
   homeView: HTMLElement;
   dictationView: HTMLElement;
   metricsView: HTMLElement;
+  plumaView: HTMLElement;
   settingsView: HTMLElement;
   historyList: HTMLDivElement;
   historyEmptyState: HTMLElement;
@@ -120,6 +122,7 @@ export function renderApp(): AppElements {
           ${renderHomeView()}
           ${renderDictationView(detectOS().modifierLabel)}
           ${renderMetricsView()}
+          ${renderPlumaView()}
           ${renderSettingsView()}
         </main>
       </div>
@@ -135,11 +138,13 @@ export function renderApp(): AppElements {
     homeNavButton: getRequiredElement(root, '#homeNavButton', HTMLButtonElement),
     dictationNavButton: getRequiredElement(root, '#dictationNavButton', HTMLButtonElement),
     metricsNavButton: getRequiredElement(root, '#metricsNavButton', HTMLButtonElement),
+    plumaNavButton: getRequiredElement(root, '#plumaNavButton', HTMLButtonElement),
     settingsNavButton: getRequiredElement(root, '#settingsNavButton', HTMLButtonElement),
     pageTitle: getRequiredElement(root, '#mobilePageTitle', HTMLHeadingElement),
     homeView: getRequiredElement(root, '#homeView', HTMLElement),
     dictationView: getRequiredElement(root, '#dictationView', HTMLElement),
     metricsView: getRequiredElement(root, '#metricsView', HTMLElement),
+    plumaView: getRequiredElement(root, '#plumaView', HTMLElement),
     settingsView: getRequiredElement(root, '#settingsView', HTMLElement),
     historyList: getRequiredElement(root, '#historyList', HTMLDivElement),
     historyEmptyState: getRequiredElement(root, '#historyEmptyState', HTMLElement),
@@ -218,6 +223,7 @@ function renderNavigation(): string {
         ${renderNavButton('homeNavButton', 'home', 'nav.home', icons.home, true)}
         ${renderNavButton('dictationNavButton', 'dictation', 'nav.dictation', icons.mic, false)}
         ${renderNavButton('metricsNavButton', 'metrics', 'nav.metrics', icons.chart, false)}
+        ${renderNavButton('plumaNavButton', 'pluma', 'nav.pluma', icons.feather, false)}
       </nav>
       <div class="mt-auto border-t border-[var(--color-border-subtle)] pt-3">
         ${renderNavButton('settingsNavButton', 'settings', 'nav.settings', icons.settings, false)}
@@ -338,6 +344,21 @@ function renderMetricsView(): string {
           <p data-i18n="metrics.description"></p>
         </div>
       </div>
+    </section>`;
+}
+
+function renderPlumaView(): string {
+  return `
+    <section id="plumaView" class="view-panel" aria-labelledby="plumaTitle" hidden>
+      <div class="view-heading">
+        <div>
+          <p class="eyebrow" data-i18n="pluma.eyebrow">Writer</p>
+          <h2 id="plumaTitle" data-i18n="pluma.title">Pluma</h2>
+          <p data-i18n="pluma.description"></p>
+        </div>
+        <button id="plumaNewButton" type="button" class="primary-action"><span data-i18n="pluma.new"></span></button>
+      </div>
+      <div id="plumaWorkspace" class="pluma-workspace"></div>
     </section>`;
 }
 
@@ -608,6 +629,8 @@ const icons = {
   mic: '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="6" height="11" x="9" y="2" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>',
   chart:
     '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 16V9"/><path d="M12 16v-5"/><path d="M17 16V6"/></svg>',
+  feather:
+    '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"/><line x1="16" x2="2" y1="8" y2="22"/><line x1="17.5" x2="9" y1="15" y2="15"/></svg>',
   globe:
     '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
   menu: '<svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>',

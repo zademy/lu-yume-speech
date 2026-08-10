@@ -43,6 +43,8 @@ import type { AppElements } from './ui/renderer';
 import { renderMetadata } from './ui/metadata-panel';
 import { showToast } from './ui/toast';
 import { createMetricsPanel } from './ui/metrics-panel';
+import { createPlumaPanel } from './escritos/escritos-ui';
+import * as escritos from './escritos/escritos-db';
 import { translate, translateTree } from './i18n/translations';
 import type { AppLanguage } from './types';
 import { computeMetrics } from './metrics/metrics';
@@ -161,6 +163,39 @@ async function bootstrap(): Promise<void> {
     config.appLanguage,
   );
   elements.metricsView.appendChild(metricsPanel.root);
+
+  // Pluma panel — document list + read-only preview (T1). T2 swaps preview for Milkdown.
+  const plumaWorkspace = elements.plumaView.querySelector<HTMLElement>('#plumaWorkspace');
+  const plumaHolder: { panel: ReturnType<typeof createPlumaPanel> | null } = { panel: null };
+  const refreshEscritos = async (): Promise<void> => {
+    const panel = plumaHolder.panel;
+    if (panel) panel.setEscritos(await escritos.getAllEscritos());
+  };
+  plumaHolder.panel = createPlumaPanel(
+    {
+      onSelect: async (id) => plumaHolder.panel?.preview(await escritos.getEscrito(id)),
+      onRename: async (id, titulo) => {
+        await escritos.renameEscrito(id, titulo);
+        await refreshEscritos();
+      },
+      onRemove: async (id) => {
+        await escritos.removeEscrito(id);
+        await refreshEscritos();
+      },
+    },
+    config.appLanguage,
+  );
+  const plumaPanel = plumaHolder.panel;
+  plumaWorkspace?.appendChild(plumaPanel.root);
+  void refreshEscritos();
+  elements.plumaView
+    .querySelector<HTMLButtonElement>('#plumaNewButton')
+    ?.addEventListener('click', async () => {
+      const escrito = await escritos.createEscrito(t('pluma.untitled'));
+      await refreshEscritos();
+      plumaPanel.preview(escrito);
+    });
+  elements.plumaNavButton.addEventListener('click', () => void refreshEscritos());
 
   const refreshMetrics = async (): Promise<void> => {
     const [metas, resumenesCount, estimate] = await Promise.all([
@@ -339,9 +374,11 @@ async function bootstrap(): Promise<void> {
     bus.emit('settings:change', { appLanguage: lang });
     translateTree(elements.root, lang);
     metricsPanel.setLanguage(lang);
+    plumaPanel.setLanguage(lang);
     sidebar._lang = lang;
     await renderHistory();
     await refreshMetrics();
+    await refreshEscritos();
     navigate(activeView.view);
   });
 
@@ -381,7 +418,7 @@ async function bootstrap(): Promise<void> {
 // Application shell
 // ===========================================================================
 
-type AppView = 'home' | 'dictation' | 'settings' | 'metrics';
+type AppView = 'home' | 'dictation' | 'settings' | 'metrics' | 'pluma';
 
 function wireNavigation(
   elements: AppElements,
@@ -395,18 +432,21 @@ function wireNavigation(
     dictation: elements.dictationView,
     settings: elements.settingsView,
     metrics: elements.metricsView,
+    pluma: elements.plumaView,
   };
   const buttons: Record<AppView, HTMLButtonElement> = {
     home: elements.homeNavButton,
     dictation: elements.dictationNavButton,
     settings: elements.settingsNavButton,
     metrics: elements.metricsNavButton,
+    pluma: elements.plumaNavButton,
   };
   const titles: Record<AppView, string> = {
     home: 'home.title',
     dictation: 'dictation.title',
     settings: 'settings.title',
     metrics: 'metrics.title',
+    pluma: 'pluma.title',
   };
 
   const closeNavigation = (): void => {
@@ -435,7 +475,13 @@ function wireNavigation(
   elements.root.querySelectorAll<HTMLButtonElement>('[data-open-view]').forEach((button) => {
     button.addEventListener('click', () => {
       const view = button.dataset.openView;
-      if (view === 'home' || view === 'dictation' || view === 'settings' || view === 'metrics')
+      if (
+        view === 'home' ||
+        view === 'dictation' ||
+        view === 'settings' ||
+        view === 'metrics' ||
+        view === 'pluma'
+      )
         navigate(view);
     });
   });

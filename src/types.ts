@@ -262,6 +262,48 @@ export interface EventMap {
   'history:restore': string;
   /** The history list was updated (full list pushed to sidebar) */
   'history:updated': HistoryEntry[];
+  /** A new escrito was created (payload = id) */
+  'escrito:create': string;
+  /** An escrito should be opened in the editor (payload = id) */
+  'escrito:open': string;
+  /** An escrito's markdown was saved (payload = id) */
+  'escrito:save': string;
+  /** An escrito was deleted (payload = id) */
+  'escrito:delete': string;
+  /** The escrito list was updated (full list pushed to the Pluma sidebar) */
+  'escrito:updated': Escrito[];
+}
+
+// ---------------------------------------------------------------------------
+// Escritos (Pluma)
+// ---------------------------------------------------------------------------
+
+/** A Markdown document in the Pluma writer's surface. */
+export interface Escrito {
+  /** Unique identifier (crypto.randomUUID) */
+  id: string;
+  /** Document title */
+  titulo: string;
+  /** Markdown source — the source of truth for the document body */
+  contenidoMD: string;
+  /** Unix timestamp in milliseconds */
+  createdAt: number;
+  /** Unix timestamp of the last edit */
+  updatedAt: number;
+}
+
+/** An image embedded in an Escrito, stored as a blob for offline use. */
+export interface ImagenEscrito {
+  /** Unique identifier; referenced in markdown as `app-image:<id>` */
+  id: string;
+  /** Owning escrito id */
+  escritoId: string;
+  /** Raw image bytes */
+  blob: Blob;
+  /** Image MIME type (image/png, image/jpeg, ...) */
+  mimeType: string;
+  /** Unix timestamp in milliseconds */
+  createdAt: number;
 }
 
 // ---------------------------------------------------------------------------
