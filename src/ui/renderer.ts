@@ -490,10 +490,12 @@ function renderAboutView(githubIcon: string, arrowIcon: string): string {
   return `
     <section id="aboutView" class="view-panel about-view" aria-labelledby="aboutTitle" hidden>
       <div class="view-heading">
-        <p class="eyebrow" data-i18n="about.eyebrow"></p>
-        <h2 id="aboutTitle" data-i18n="about.title"></h2>
+        <div>
+          <p class="eyebrow" data-i18n="about.eyebrow"></p>
+          <h2 id="aboutTitle" data-i18n="about.title"></h2>
+          <p data-i18n="about.description"></p>
+        </div>
       </div>
-      <p class="view-description" data-i18n="about.description"></p>
       <div class="about-content">
         <div class="about-card about-app">
           <div class="about-app-header">
