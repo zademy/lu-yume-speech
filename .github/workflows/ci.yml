@@ -133,10 +133,102 @@ jobs:
         id: version
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
         run: |
+          set -eo pipefail
           created_at="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --jq '.created_at')"
-          version="$(printf '%s' "$created_at" | cut -c1-10 | tr '-' '.').${GITHUB_RUN_NUMBER}"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          today="$(printf '%s' "$created_at" | cut -c1-10 | tr '-' '.')"
+
+          # Retry transient GHCR/network errors (curl exit 18, connection reset, etc.)
+          with_retry() {
+            local attempt
+            for attempt in 1 2 3 4 5; do
+              if "$@"; then return 0; fi
+              echo "::warning::Transient network failure (attempt ${attempt}/5); retrying in $((attempt * 2))s..."
+              sleep "$((attempt * 2))"
+            done
+            return 1
+          }
+
+          # Fetch a GHCR pull token.
+          token_response=""
+          if ! token_response="$(with_retry curl --fail --silent --show-error \
+                --user "${GITHUB_ACTOR}:${GH_TOKEN}" \
+                "https://ghcr.io/token?service=ghcr.io&scope=repository:${IMAGE_NAME}:pull")"; then
+            echo "::error::Could not fetch GHCR pull token after retries"
+            exit 1
+          fi
+          registry_token="$(printf '%s' "$token_response" | jq -r '.token')"
+
+          # List calendar-versioned tags (with pagination) and find today's highest counter.
+          list_today_counters() {
+            local url="https://ghcr.io/v2/${IMAGE_NAME}/tags/list?n=100"
+            local headers body next_path
+            headers="$(mktemp)"; body="$(mktemp)"
+            while [ -n "$url" ]; do
+              : > "$headers"
+              if ! with_retry curl --fail --silent --show-error \
+                --dump-header "$headers" \
+                --output "$body" \
+                --header "Authorization: Bearer ${registry_token}" \
+                "$url"; then
+                rm -f "$headers" "$body"
+                echo "::error::Could not list tags from GHCR"
+                return 1
+              fi
+              jq -r --arg prefix "${today}." \
+                '.tags[]? | select(startswith($prefix)) | sub("^" + $prefix; "") | tonumber' \
+                "$body"
+              next_path="$(tr -d '\r' < "$headers" \
+                | grep -i '^link:' | cut -d'<' -f2 | cut -d'>' -f1 || true)"
+              if [ -n "$next_path" ]; then
+                url="https://ghcr.io${next_path}"
+              else
+                url=""
+              fi
+            done
+            rm -f "$headers" "$body"
+          }
+
+          if ! max_n="$(list_today_counters | sort -n | tail -n 1)"; then
+            exit 1
+          fi
+          if [ -z "$max_n" ]; then max_n=0; fi
+
+          # Pick the first free counter for today (handles parallel-run collisions).
+          candidate_n=$((max_n + 1))
+          while :; do
+            version="${today}.${candidate_n}"
+            status="$(
+              with_retry curl --silent --show-error \
+                --output /dev/null \
+                --write-out '%{http_code}' \
+                --request HEAD \
+                --header "Authorization: Bearer ${registry_token}" \
+                --header 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json' \
+                "https://ghcr.io/v2/${IMAGE_NAME}/manifests/${version}"
+            )"
+            case "$status" in
+              404)
+                echo "version=${version}" >> "$GITHUB_OUTPUT"
+                echo "exists=false" >> "$GITHUB_OUTPUT"
+                echo "Generated version ${version}"
+                exit 0
+                ;;
+              200)
+                echo "Version ${version} already exists; incrementing counter"
+                candidate_n=$((candidate_n + 1))
+                if [ "$candidate_n" -gt $((max_n + 20)) ]; then
+                  echo "::error::Too many version collisions for ${today}"
+                  exit 1
+                fi
+                ;;
+              *)
+                echo "::error::GHCR returned HTTP ${status} for ${IMAGE}:${version}"
+                exit 1
+                ;;
+            esac
+          done
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -150,46 +242,6 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Check immutable calendar tag
-        id: image
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          registry_token="$(
-            curl --fail --silent --show-error \
-              --user "${GITHUB_ACTOR}:${GH_TOKEN}" \
-              "https://ghcr.io/token?service=ghcr.io&scope=repository:${IMAGE_NAME}:pull" \
-              | jq -r '.token'
-          )"
-          if ! status="$(
-            curl --silent --show-error \
-              --output /dev/null \
-              --write-out '%{http_code}' \
-              --request HEAD \
-              --header "Authorization: Bearer ${registry_token}" \
-              --header 'Accept: application/vnd.oci.image.index.v1+json, application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.list.v2+json, application/vnd.docker.distribution.manifest.v2+json' \
-              "https://ghcr.io/v2/${IMAGE_NAME}/manifests/${VERSION}"
-          )"; then
-            echo "::error::Could not verify whether ${IMAGE}:${VERSION} exists"
-            exit 1
-          fi
-
-          case "$status" in
-            200)
-              echo "exists=true" >> "$GITHUB_OUTPUT"
-              echo "${IMAGE}:${VERSION} already exists; preserving its digest"
-              ;;
-            404)
-              echo "exists=false" >> "$GITHUB_OUTPUT"
-              ;;
-            *)
-              echo "::error::GHCR returned HTTP ${status} while checking ${IMAGE}:${VERSION}"
-              exit 1
-              ;;
-          esac
 
       - name: Generate image metadata
         id: meta
@@ -206,7 +258,7 @@ jobs:
 
       - name: Build and push image
         id: build
-        if: steps.image.outputs.exists != 'true'
+        if: steps.version.outputs.exists == 'false'
         uses: docker/build-push-action@v6
         with:
           context: .

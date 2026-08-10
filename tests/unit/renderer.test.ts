@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { renderApp } from '../../src/ui/renderer';
+import { translateTree } from '../../src/i18n/translations';
 
 describe('renderApp application shell', () => {
   afterEach(() => {
@@ -10,11 +11,13 @@ describe('renderApp application shell', () => {
   it('renders Inicio, Dictar and Ajustes as application views', () => {
     const elements = renderApp();
     document.body.appendChild(elements.root);
+    translateTree(elements.root, 'es');
 
     expect(elements.navigation.getAttribute('aria-label')).toBe('Navegación principal');
     expect(elements.homeNavButton.textContent).toContain('Inicio');
     expect(elements.dictationNavButton.textContent).toContain('Dictar');
     expect(elements.settingsNavButton.textContent).toContain('Ajustes');
+    expect(elements.metricsNavButton.textContent).toContain('Métricas');
     expect(elements.homeView.hidden).toBe(false);
     expect(elements.dictationView.hidden).toBe(true);
     expect(elements.settingsView.hidden).toBe(true);

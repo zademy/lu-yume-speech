@@ -43,6 +43,8 @@ import type { AppElements } from './ui/renderer';
 import { renderMetadata } from './ui/metadata-panel';
 import { showToast } from './ui/toast';
 import { createMetricsPanel } from './ui/metrics-panel';
+import { translate, translateTree } from './i18n/translations';
+import type { AppLanguage } from './types';
 import { computeMetrics } from './metrics/metrics';
 import { renderSummaryHistory, summaryToText } from './ui/summary-panel';
 import { ThemeManager } from './utils/theme';
@@ -79,6 +81,12 @@ function getRequiredElement<T extends Element>(
 // Bootstrap
 // ===========================================================================
 
+let activeLang: AppLanguage = DEFAULT_SETTINGS.appLanguage;
+
+function t(key: string, params?: Record<string, string | number>): string {
+  return translate(activeLang, key, params);
+}
+
 async function main(): Promise<void> {
   try {
     await bootstrap();
@@ -86,7 +94,9 @@ async function main(): Promise<void> {
     console.error('[App] Fatal error during initialization:', err);
     document.body.insertAdjacentHTML(
       'beforeend',
-      '<div role="alert" style="position:fixed;bottom:1rem;right:1rem;background:var(--color-surface-sunken,#0d1117);color:var(--color-text-primary,#f0f6fc);border:2px solid var(--color-border-strong,#6e7681);padding:1rem;border-radius:8px;z-index:9999;font-family:sans-serif">No se pudo iniciar la app. Revisa la consola.</div>',
+      '<div role="alert" style="position:fixed;bottom:1rem;right:1rem;background:var(--color-surface-sunken,#0d1117);color:var(--color-text-primary,#f0f6fc);border:2px solid var(--color-border-strong,#6e7681);padding:1rem;border-radius:8px;z-index:9999;font-family:sans-serif">' +
+        translate('en', 'fatal.message') +
+        '</div>',
     );
   }
 }
@@ -99,7 +109,19 @@ async function bootstrap(): Promise<void> {
   let apiKey = (await platform.getApiKey()) ?? '';
   const getApiKey = (): string => apiKey;
 
+  // Live configuration: loaded once, refreshed on settings:change.
+  let config: AppSettings = { ...DEFAULT_SETTINGS, ...((await platform.loadSettings()) ?? {}) };
+  const getConfig = (): AppSettings => config;
+  const setConfig = (next: AppSettings): void => {
+    config = next;
+  };
+  bus.on('settings:change', (patch) => {
+    config = { ...config, ...patch };
+  });
+  activeLang = config.appLanguage;
+
   const elements = renderApp();
+  translateTree(elements.root, config.appLanguage);
 
   // Inicio history panel
   const sidebar = createSidebar(
@@ -119,7 +141,7 @@ async function bootstrap(): Promise<void> {
       void copyToClipboard(entry.text).then((copied) => {
         showToast(
           elements.toastContainer,
-          copied ? 'Transcripción copiada' : 'No se pudo copiar',
+          copied ? t('toast.copied') : t('toast.copyFail'),
           copied ? 'success' : 'error',
         );
       });
@@ -127,14 +149,18 @@ async function bootstrap(): Promise<void> {
     () => {
       bus.emit('history:clear', undefined);
     },
+    config.appLanguage,
   );
 
   const appDiv = getRequiredElement(document, '#app', HTMLDivElement);
   appDiv.replaceChildren(elements.root);
 
-  // Métricas panel — dedicated Inicio section, separate from the history list.
-  const metricsPanel = createMetricsPanel({ onExport: exportSnapshot, onPurge: purgeContent });
-  elements.homeView.appendChild(metricsPanel.root);
+  // Métricas panel — lives in its own sidebar view (Inicio | Dictar | Ajustes | Métricas).
+  const metricsPanel = createMetricsPanel(
+    { onExport: exportSnapshot, onPurge: purgeContent },
+    config.appLanguage,
+  );
+  elements.metricsView.appendChild(metricsPanel.root);
 
   const refreshMetrics = async (): Promise<void> => {
     const [metas, resumenesCount, estimate] = await Promise.all([
@@ -164,10 +190,10 @@ async function bootstrap(): Promise<void> {
     try {
       await store.purgeAll();
       await renderHistory();
-      showToast(elements.toastContainer, 'Contenido depurado', 'info');
+      showToast(elements.toastContainer, t('toast.contentPurged'), 'info');
     } catch (err) {
       console.warn('[App] Purge failed:', err);
-      showToast(elements.toastContainer, 'No se pudo depurar', 'error');
+      showToast(elements.toastContainer, t('toast.purgeFail'), 'error');
       void renderHistory();
     }
   }
@@ -195,10 +221,10 @@ async function bootstrap(): Promise<void> {
         a.download = `yume-metricas-${new Date().toISOString().slice(0, 10)}.json`;
         a.click();
         URL.revokeObjectURL(url);
-        showToast(elements.toastContainer, 'Métricas exportadas', 'success');
+        showToast(elements.toastContainer, t('toast.metricsExported'), 'success');
       } catch (err) {
         console.warn('[App] Export failed:', err);
-        showToast(elements.toastContainer, 'No se pudo exportar', 'error');
+        showToast(elements.toastContainer, t('toast.exportFail'), 'error');
       }
     })();
   }
@@ -267,7 +293,7 @@ async function bootstrap(): Promise<void> {
       })
       .catch((error: unknown) => {
         console.error('[App] Microphone access denied:', error);
-        showToast(elements.toastContainer, 'No se pudo acceder al micrófono', 'error');
+        showToast(elements.toastContainer, t('toast.micDenied'), 'error');
         audioInitialization = null;
         return false;
       });
@@ -279,22 +305,19 @@ async function bootstrap(): Promise<void> {
   const onResize = resizeObserver ? null : () => visualizer.syncSize();
   if (onResize) window.addEventListener('resize', onResize);
 
-  // Live configuration: loaded once, refreshed on settings:change.
-  let config: AppSettings = { ...DEFAULT_SETTINGS, ...((await platform.loadSettings()) ?? {}) };
-  const getConfig = (): AppSettings => config;
-  const setConfig = (next: AppSettings): void => {
-    config = next;
-  };
-  bus.on('settings:change', (patch) => {
-    config = { ...config, ...patch };
-  });
-
   // Reflect persisted quality settings in the modal and persist any change.
   populateQualitySettings(elements, config);
   wireQualitySettings(elements, bus, platform, getConfig, setConfig);
 
   // Wire everything through the event bus
-  const navigate = wireNavigation(elements, () => getApiKey(), ensureAudioReady);
+  const activeView: { view: AppView } = { view: 'home' };
+  const navigate = wireNavigation(
+    elements,
+    () => getApiKey(),
+    ensureAudioReady,
+    () => config.appLanguage,
+    activeView,
+  );
   wireApiKeySettings(elements, platform, getApiKey, (next) => {
     apiKey = next;
     updateApiKeyState(elements, next);
@@ -305,12 +328,29 @@ async function bootstrap(): Promise<void> {
   wireRecordingHandlers(bus, elements, analyzer, timer, visualizer, recorder);
   wireHistoryEvents(bus, elements, navigate, renderHistory);
 
+  // Interface language — switching it re-translates the shell in place.
+  elements.appLanguageSelect.value = config.appLanguage;
+  elements.appLanguageSelect.addEventListener('change', async () => {
+    const lang = elements.appLanguageSelect.value as AppLanguage;
+    activeLang = lang;
+    const next = { ...getConfig(), appLanguage: lang };
+    setConfig(next);
+    await platform.saveSettings(next);
+    bus.emit('settings:change', { appLanguage: lang });
+    translateTree(elements.root, lang);
+    metricsPanel.setLanguage(lang);
+    sidebar._lang = lang;
+    await renderHistory();
+    await refreshMetrics();
+    navigate(activeView.view);
+  });
+
   // Keyboard shortcuts
   const cleanup = registerKeyboardShortcuts({
     onRecordStart: () => {
       if (!getApiKey()) {
         navigate('settings');
-        showToast(elements.toastContainer, 'Configura tu API key para dictar', 'warning');
+        showToast(elements.toastContainer, t('toast.needApiKey'), 'warning');
         return;
       }
       navigate('dictation');
@@ -341,27 +381,32 @@ async function bootstrap(): Promise<void> {
 // Application shell
 // ===========================================================================
 
-type AppView = 'home' | 'dictation' | 'settings';
+type AppView = 'home' | 'dictation' | 'settings' | 'metrics';
 
 function wireNavigation(
   elements: AppElements,
   getApiKey: () => string,
   ensureAudioReady: () => Promise<boolean>,
+  getLang: () => AppLanguage,
+  holder: { view: AppView },
 ): (view: AppView) => void {
   const views: Record<AppView, HTMLElement> = {
     home: elements.homeView,
     dictation: elements.dictationView,
     settings: elements.settingsView,
+    metrics: elements.metricsView,
   };
   const buttons: Record<AppView, HTMLButtonElement> = {
     home: elements.homeNavButton,
     dictation: elements.dictationNavButton,
     settings: elements.settingsNavButton,
+    metrics: elements.metricsNavButton,
   };
   const titles: Record<AppView, string> = {
-    home: 'Inicio',
-    dictation: 'Dictar',
-    settings: 'Ajustes',
+    home: 'home.title',
+    dictation: 'dictation.title',
+    settings: 'settings.title',
+    metrics: 'metrics.title',
   };
 
   const closeNavigation = (): void => {
@@ -375,7 +420,8 @@ function wireNavigation(
       buttons[key].classList.toggle('is-active', active);
       buttons[key].setAttribute('aria-current', active ? 'page' : 'false');
     }
-    elements.pageTitle.textContent = titles[view];
+    holder.view = view;
+    elements.pageTitle.textContent = translate(getLang(), titles[view]);
     closeNavigation();
     if (view === 'dictation' && getApiKey()) {
       void ensureAudioReady();
@@ -389,7 +435,8 @@ function wireNavigation(
   elements.root.querySelectorAll<HTMLButtonElement>('[data-open-view]').forEach((button) => {
     button.addEventListener('click', () => {
       const view = button.dataset.openView;
-      if (view === 'home' || view === 'dictation' || view === 'settings') navigate(view);
+      if (view === 'home' || view === 'dictation' || view === 'settings' || view === 'metrics')
+        navigate(view);
     });
   });
   elements.dictationKeyGateButton.addEventListener('click', () => navigate('settings'));
@@ -441,7 +488,7 @@ function wireApiKeySettings(
         elements.apiKeyInput.value = '';
         elements.apiKeyError.textContent = '';
         elements.apiKeyInput.removeAttribute('aria-invalid');
-        showToast(elements.toastContainer, 'API key guardada y activa', 'success');
+        showToast(elements.toastContainer, t('toast.apiKeySaved'), 'success');
       })
       .finally(() => {
         elements.apiKeySaveButton.disabled = false;
@@ -455,7 +502,7 @@ function wireApiKeySettings(
       setApiKey('');
       elements.apiKeyInput.value = '';
       elements.apiKeyError.textContent = '';
-      showToast(elements.toastContainer, 'API key eliminada', 'info');
+      showToast(elements.toastContainer, t('toast.apiKeyDeleted'), 'info');
     });
   });
 }
@@ -568,7 +615,7 @@ function wireRecordingHandlers(
     visualizer.setRecording(true);
     visualizer.start();
     elements.waveformContainer.classList.add('recording-active');
-    setStatus(elements, { message: 'Escuchando...', level: 'recording' });
+    setStatus(elements, { message: t('status.listening'), level: 'recording' });
   });
 
   bus.on('recording:stop', () => {
@@ -587,7 +634,7 @@ function wireRecordingHandlers(
   bus.on('recording:silence', () => {
     if (timer.getElapsed() > 1) {
       recorder.stop();
-      showToast(elements.toastContainer, 'Silencio detectado — procesando...', 'info');
+      showToast(elements.toastContainer, t('toast.silence'), 'info');
     }
   });
 }
@@ -644,7 +691,7 @@ function wireTranscriptionPipeline(
 
     if (!result.text) {
       session.complete();
-      showToast(elements.toastContainer, 'No se detectó texto', 'warning');
+      showToast(elements.toastContainer, t('toast.noText'), 'warning');
       setStatus(elements, { message: 'No se detectó texto.', level: 'idle' });
       return;
     }
@@ -666,7 +713,7 @@ function wireTranscriptionPipeline(
 
     if (!text.trim()) {
       session.complete();
-      showToast(elements.toastContainer, 'No se detectó texto', 'warning');
+      showToast(elements.toastContainer, t('toast.noText'), 'warning');
       setStatus(elements, { message: 'No se detectó texto.', level: 'idle' });
       return;
     }
@@ -699,13 +746,13 @@ function wireTranscriptionPipeline(
       .then(() => refreshHistory())
       .catch((err: unknown) => {
         console.warn('[App] Failed to save grabación:', err);
-        showToast(elements.toastContainer, 'No se pudo guardar la grabación', 'error');
+        showToast(elements.toastContainer, t('toast.saveFail'), 'error');
         void refreshHistory();
       });
 
     const copied = await copyToClipboard(text);
     if (copied) {
-      showToast(elements.toastContainer, 'Transcripción copiada', 'success');
+      showToast(elements.toastContainer, t('toast.copied'), 'success');
       setStatus(elements, { message: 'Transcripción copiada.', level: 'success' });
     } else {
       setStatus(elements, { message: 'Listo.', level: 'idle' });
@@ -741,20 +788,20 @@ function wireHistoryEvents(
     elements.outputArea.value = entry.text;
     elements.outputArea.dispatchEvent(new Event('input'));
     navigate('dictation');
-    showToast(elements.toastContainer, 'Transcripción restaurada', 'success');
-    setStatus(elements, { message: 'Transcripción restaurada.', level: 'success' });
+    showToast(elements.toastContainer, t('toast.restored'), 'success');
+    setStatus(elements, { message: t('status.restored'), level: 'success' });
   });
 
   bus.on('history:delete', async (id) => {
     await store.removeGrabacion(id);
     void refreshHistory();
-    showToast(elements.toastContainer, 'Entrada eliminada', 'info');
+    showToast(elements.toastContainer, t('toast.deleted'), 'info');
   });
 
   bus.on('history:clear', async () => {
     await store.clearGrabaciones();
     void refreshHistory();
-    showToast(elements.toastContainer, 'Historial limpiado', 'info');
+    showToast(elements.toastContainer, t('toast.historyCleared'), 'info');
   });
 }
 
@@ -766,13 +813,13 @@ function wireOutputToolbar(elements: AppElements): void {
   elements.copyAllBtn.addEventListener('click', async () => {
     const text = elements.outputArea.value;
     if (!text) {
-      showToast(elements.toastContainer, 'No hay texto para copiar', 'warning');
+      showToast(elements.toastContainer, t('toast.nothingToCopy'), 'warning');
       return;
     }
     const ok = await copyToClipboard(text);
     showToast(
       elements.toastContainer,
-      ok ? 'Todo copiado' : 'No se pudo copiar',
+      ok ? t('toast.allCopied') : t('toast.copyFail'),
       ok ? 'success' : 'error',
     );
   });
@@ -781,13 +828,13 @@ function wireOutputToolbar(elements: AppElements): void {
     if (!elements.outputArea.value) return;
     elements.outputArea.value = '';
     elements.outputArea.dispatchEvent(new Event('input'));
-    showToast(elements.toastContainer, 'Texto limpiado', 'info');
+    showToast(elements.toastContainer, t('toast.textCleared'), 'info');
   });
 
   elements.downloadBtn.addEventListener('click', () => {
     const text = elements.outputArea.value;
     if (!text) {
-      showToast(elements.toastContainer, 'No hay texto para descargar', 'warning');
+      showToast(elements.toastContainer, t('toast.nothingToDownload'), 'warning');
       return;
     }
     const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
@@ -797,7 +844,7 @@ function wireOutputToolbar(elements: AppElements): void {
     a.download = `transcripcion-${new Date().toISOString().slice(0, 10)}.txt`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast(elements.toastContainer, 'Archivo descargado', 'success');
+    showToast(elements.toastContainer, t('toast.downloaded'), 'success');
   });
 }
 
@@ -824,7 +871,7 @@ function wireSummaryFeature(elements: AppElements, getApiKey: () => string): voi
       onDelete: async (historyId, summaryId) => {
         await store.removeSummary(historyId, summaryId);
         void renderForVisibleText();
-        showToast(elements.toastContainer, 'Resumen eliminado', 'info');
+        showToast(elements.toastContainer, t('toast.summaryDeleted'), 'info');
       },
     });
   };
@@ -873,7 +920,7 @@ function wireSummaryFeature(elements: AppElements, getApiKey: () => string): voi
         });
       })
       .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : 'No se pudo generar el resumen.';
+        const message = error instanceof Error ? error.message : t('toast.summaryFail');
         showToast(elements.toastContainer, message, 'error', 5000);
         setStatus(elements, { message: `Error: ${message}`, level: 'error' });
       })
