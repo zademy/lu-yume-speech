@@ -1493,7 +1493,124 @@ details[open] > .summary-card-heading::after {
   color: var(--color-text-primary, #1f2328);
 }
 
-/* ===== Milkdown Crepe overrides: compact toolbar + smaller icons ===== */
+/* ===== About view ===== */
+
+.about-view .about-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 640px;
+}
+
+.about-card {
+  border: 1px solid var(--color-border-subtle, #d8dee4);
+  border-radius: 12px;
+  padding: 1.25rem;
+  background: var(--color-surface, #ffffff);
+}
+
+.about-app-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.about-app-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.about-app-header h3 {
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: var(--color-text-primary, #1f2328);
+}
+
+.about-version {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted, #59636e);
+  background: var(--color-surface-muted, #f6f8fa);
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  border: 1px solid var(--color-border-subtle, #d8dee4);
+}
+
+.about-app-desc {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--color-text-secondary, #424a53);
+  margin-bottom: 0.75rem;
+}
+
+.about-tech-stack {
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #59636e);
+  font-style: italic;
+}
+
+.about-author-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.about-author-header h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text-primary, #1f2328);
+}
+
+.about-website-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--color-accent-emphasis, #0969da);
+  text-decoration: none;
+  transition: opacity 0.15s;
+}
+
+.about-website-link:hover {
+  opacity: 0.8;
+}
+
+.about-author-bio {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--color-text-secondary, #424a53);
+}
+
+.about-github-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-subtle, #d8dee4);
+  background: var(--color-surface, #ffffff);
+  color: var(--color-text-primary, #1f2328);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-decoration: none;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+}
+
+.about-github-link:hover {
+  background: var(--color-surface-muted, #f6f8fa);
+  border-color: var(--color-border, #8c959f);
+}
+
+.about-github-link svg {
+  flex-shrink: 0;
+}
 
 .milkdown {
   --crepe-base-font-size: 15px;

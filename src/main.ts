@@ -539,7 +539,7 @@ async function bootstrap(): Promise<void> {
 // Application shell
 // ===========================================================================
 
-type AppView = 'home' | 'dictation' | 'settings' | 'metrics' | 'pluma';
+type AppView = 'home' | 'dictation' | 'settings' | 'metrics' | 'pluma' | 'about';
 
 function wireNavigation(
   elements: AppElements,
@@ -554,6 +554,7 @@ function wireNavigation(
     settings: elements.settingsView,
     metrics: elements.metricsView,
     pluma: elements.plumaView,
+    about: elements.aboutView,
   };
   const buttons: Record<AppView, HTMLButtonElement> = {
     home: elements.homeNavButton,
@@ -561,6 +562,7 @@ function wireNavigation(
     settings: elements.settingsNavButton,
     metrics: elements.metricsNavButton,
     pluma: elements.plumaNavButton,
+    about: elements.aboutNavButton,
   };
   const titles: Record<AppView, string> = {
     home: 'home.title',
@@ -568,6 +570,7 @@ function wireNavigation(
     settings: 'settings.title',
     metrics: 'metrics.title',
     pluma: 'pluma.title',
+    about: 'about.title',
   };
 
   const closeNavigation = (): void => {
