@@ -129,6 +129,29 @@ pnpm build
 Runs lint + typecheck and outputs the optimized SPA to `dist/`. **Do not**
 deploy this publicly with a Groq key loaded — the key is stored client-side.
 
+### Production Container
+
+Build and start the production SPA at `http://localhost:8080`:
+
+```bash
+docker compose up --build -d
+```
+
+The container compiles the application with the pinned pnpm version and serves
+only `dist/` through unprivileged Nginx. It does not receive or embed the Groq
+API key; configure the key in the browser as usual.
+
+```bash
+# Check container health and status
+docker compose ps
+
+# Follow server logs
+docker compose logs -f app
+
+# Stop and remove the container
+docker compose down
+```
+
 ---
 
 ## Project Structure
