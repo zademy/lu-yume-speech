@@ -155,8 +155,14 @@ docker compose down
 
 ### GitHub Container Registry
 
-Successful pushes to `main`, `develop`, and SemVer tags publish multi-platform
-images to `ghcr.io/zademy/lu-yume-speech`:
+The container workflow follows the promotion path `develop` → `releases` →
+`main`:
+
+- Pull requests and `develop` run application quality checks only.
+- `releases` runs the same checks and builds the `linux/amd64` and
+  `linux/arm64` image without pushing it to a registry.
+- `main` rebuilds the promoted source and publishes its image to
+  `ghcr.io/zademy/lu-yume-speech`.
 
 ```bash
 docker pull ghcr.io/zademy/lu-yume-speech:latest
@@ -165,16 +171,17 @@ docker run --rm -p 127.0.0.1:8080:8080 ghcr.io/zademy/lu-yume-speech:latest
 
 Published tags follow this policy:
 
-| Git reference       | Container tags                                  |
-| ------------------- | ----------------------------------------------- |
-| `develop`           | `develop`, `sha-<commit>`                       |
-| `main`              | `main`, `sha-<commit>`                          |
-| `v1.2.3`            | `1.2.3`, `1.2`, `1`, `latest`, `sha-<commit>`   |
-| `v1.2.3-rc.1`       | `v1.2.3-rc.1`, `sha-<commit>`                   |
+| Git reference | Action                                                |
+| ------------- | ----------------------------------------------------- |
+| `develop`     | Quality checks only                                   |
+| `releases`    | Multi-platform container build, no registry push      |
+| `main`        | Publish `main`, `sha-<commit>`, and release image tags |
 
-Release tags must use complete Semantic Versioning with a leading `v`. Images
-support `linux/amd64` and `linux/arm64` and include SBOM and provenance
-attestations.
+Release Please creates complete Semantic Versioning tags with a leading `v` on
+`main`. Stable releases also publish `MAJOR.MINOR.PATCH`, `MAJOR.MINOR`,
+`MAJOR`, and `latest` image aliases. Images include SBOM and provenance
+metadata. GitHub artifact attestations are not generated because user-owned
+private repositories do not support that feature.
 
 ## Automated Releases
 
