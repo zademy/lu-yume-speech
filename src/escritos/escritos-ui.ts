@@ -25,6 +25,8 @@ export interface PlumaHandlers {
   onRename: (id: string, titulo: string) => void;
   /** Delete requested (already confirmed by the panel). */
   onRemove: (id: string) => void;
+  /** The writer asked to close the open note and exit the editor. */
+  onClose: () => void;
 }
 
 export interface PlumaPanel {
@@ -92,6 +94,21 @@ export function createPlumaPanel(handlers: PlumaHandlers, lang: AppLanguage): Pl
   const statusSpacer = document.createElement('span');
   statusSpacer.className = 'flex-1';
   statusBar.appendChild(statusSpacer);
+  // Close button — hidden until a document is opened; lets the writer exit
+  // the editor and go back to the empty preview state.
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'pluma-close-btn';
+  closeBtn.hidden = true;
+  closeBtn.addEventListener('click', () => {
+    selectedId = null;
+    for (const el of listScroll.querySelectorAll('.' + SELECTED)) el.classList.remove(SELECTED);
+    closeBtn.hidden = true;
+    previewBody.replaceChildren();
+    previewBody.appendChild(previewEmpty);
+    handlers.onClose();
+  });
+  statusBar.appendChild(closeBtn);
   const previewEmpty = document.createElement('p');
   previewEmpty.className = 'text-sm text-[var(--color-text-muted)]';
   const previewBody = document.createElement('div');
@@ -147,6 +164,7 @@ export function createPlumaPanel(handlers: PlumaHandlers, lang: AppLanguage): Pl
       selectedId = escrito.id;
       for (const el of listScroll.querySelectorAll('.' + SELECTED)) el.classList.remove(SELECTED);
       row.classList.add(SELECTED);
+      closeBtn.hidden = false;
       handlers.onSelect(escrito.id);
     });
     row.addEventListener('keydown', (event) => {
@@ -226,6 +244,8 @@ export function createPlumaPanel(handlers: PlumaHandlers, lang: AppLanguage): Pl
     emptyTitle.textContent = translate(currentLang, 'pluma.empty.title');
     emptyBody.textContent = translate(currentLang, 'pluma.empty.body');
     previewEmpty.textContent = translate(currentLang, 'pluma.preview.empty');
+    closeBtn.textContent = translate(currentLang, 'pluma.close.label');
+    closeBtn.setAttribute('aria-label', translate(currentLang, 'pluma.close.aria'));
     renderRows();
     // Refresh the open preview labels (cheap re-render).
     const open = escritos.find((e) => e.id === selectedId);

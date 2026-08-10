@@ -243,6 +243,14 @@ async function bootstrap(): Promise<void> {
         await escritos.removeEscrito(id);
         await refreshEscritos();
       },
+      onClose: () => {
+        if (editorHandle) {
+          void editorHandle.destroy();
+          editorHandle = null;
+        }
+        plumaHolder.panel?.editorMount.replaceChildren();
+        dictationController.setEnabled(false);
+      },
     },
     config.appLanguage,
   );

@@ -15,7 +15,7 @@ function mkEscrito(over: Partial<Escrito> = {}): Escrito {
   };
 }
 
-const noop = { onSelect: () => {}, onRename: () => {}, onRemove: () => {} };
+const noop = { onSelect: () => {}, onRename: () => {}, onRemove: () => {}, onClose: () => {} };
 
 describe('createPlumaPanel', () => {
   beforeEach(() => {
