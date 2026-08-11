@@ -487,6 +487,16 @@ async function bootstrap(): Promise<void> {
     ensureAudioReady,
     () => config.appLanguage,
     activeView,
+    (view) => {
+      // Leaving Pluma: disarm dictation so the routing target doesn't leak
+      // into the Dictate view (each screen owns its recording state).
+      if (view !== 'pluma') {
+        dictationController.setEnabled(false);
+      } else if (editorHandle) {
+        // Returning to Pluma with a document still open — re-enable the toggle.
+        dictationController.setEnabled(true);
+      }
+    },
   );
   wireApiKeySettings(elements, platform, getApiKey, (next) => {
     apiKey = next;
@@ -584,6 +594,7 @@ function wireNavigation(
   ensureAudioReady: () => Promise<boolean>,
   getLang: () => AppLanguage,
   holder: { view: AppView },
+  onNavigate?: (view: AppView) => void,
 ): (view: AppView) => void {
   const views: Record<AppView, HTMLElement> = {
     home: elements.homeView,
@@ -628,6 +639,7 @@ function wireNavigation(
       void ensureAudioReady();
     }
     document.querySelector<HTMLElement>('#mainContent')?.focus({ preventScroll: true });
+    onNavigate?.(view);
   };
 
   for (const [view, button] of Object.entries(buttons) as Array<[AppView, HTMLButtonElement]>) {
