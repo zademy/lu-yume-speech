@@ -49,6 +49,7 @@ import type { EditorHandle } from './escritos/editor';
 import { createDictationController } from './escritos/dictation';
 import { createImproveController } from './escritos/improve-ui';
 import { translate, translateTree } from './i18n/translations';
+import { APP_VERSION } from './version';
 import type { AppLanguage } from './types';
 import { computeMetrics } from './metrics/metrics';
 import { renderSummaryHistory, summaryToText } from './ui/summary-panel';
@@ -146,6 +147,9 @@ async function bootstrap(): Promise<void> {
 
   const elements = renderApp();
   translateTree(elements.root, config.appLanguage);
+
+  const versionEl = elements.root.querySelector('.about-version');
+  if (versionEl) versionEl.textContent = `v${APP_VERSION}`;
 
   // Inicio history panel
   const sidebar = createSidebar(

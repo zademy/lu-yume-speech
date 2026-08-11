@@ -16,6 +16,9 @@ COPY index.html tsconfig.json vite.config.ts eslint.config.js .prettierrc ./
 COPY public ./public
 COPY src ./src
 
+ARG APP_VERSION
+ENV VITE_APP_VERSION=$APP_VERSION
+
 RUN pnpm build
 
 FROM nginxinc/nginx-unprivileged:1.29-alpine AS runtime
