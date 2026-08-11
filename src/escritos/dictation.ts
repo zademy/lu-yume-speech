@@ -266,6 +266,10 @@ export function createDictationController(deps: DictationDeps): DictationControl
     apply(nextDictationState(state, { type: 'recording:stop' }, lang));
   });
   const offStatus = deps.bus.on('status:change', (update) => {
+    // Ignore pipeline status when dictation is disarmed — prevents a
+    // recording that was stopped by setEnabled(false) from leaking
+    // processing/success messages into the Pluma status bar.
+    if (!state.active && !pendingAppend) return;
     // Only surface processing/error/success messages — the global pipeline
     // also emits idle ones that are not relevant to Pluma.
     if (update.level === 'idle') return;
@@ -284,6 +288,12 @@ export function createDictationController(deps: DictationDeps): DictationControl
     root,
     toggle: onToggle,
     setEnabled: (enabled: boolean) => {
+      if (!enabled && state.active) {
+        if (deps.isRecording()) deps.stopRecorder();
+        pendingAppend = false;
+        apply(nextDictationState(state, { type: 'reset' }, lang));
+        deps.bus.emit('dictation:target', 'output');
+      }
       button.disabled = !enabled;
       root.classList.toggle('is-disabled', !enabled);
     },

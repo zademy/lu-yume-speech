@@ -568,7 +568,7 @@ function renderAboutView(githubIcon: string, arrowIcon: string): string {
             <span class="about-app-icon">🎤</span>
             <div>
               <h3 data-i18n="about.appName"></h3>
-              <span class="about-version" data-i18n="about.version"></span>
+              <span class="about-version"></span>
             </div>
           </div>
           <p class="about-app-desc" data-i18n="about.appDesc"></p>

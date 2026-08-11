@@ -135,7 +135,6 @@ const en: Dictionary = {
   'about.title': 'About this app',
   'about.description': 'Learn about the project and its author.',
   'about.appName': 'LU Yume — Speech',
-  'about.version': 'v1.0.0',
   'about.appDesc':
     'Real-time speech-to-text transcription powered by Groq Whisper. Capture, transcribe, and translate your voice with optional AI post-processing, noise reduction, and a long-form writing module fed by voice.',
   'about.techStack': 'Built with TypeScript, Vite, Tailwind CSS, Milkdown Crepe, and the Groq API.',
@@ -385,7 +384,6 @@ const es: Dictionary = {
   'about.title': 'Acerca de esta app',
   'about.description': 'Conoce el proyecto y su autor.',
   'about.appName': 'LU Yume — Speech',
-  'about.version': 'v1.0.0',
   'about.appDesc':
     'Transcripción de voz a texto en tiempo real potenciada por Groq Whisper. Captura, transcribe y traduce tu voz con post-procesamiento opcional con IA, reducción de ruido y un módulo de escritura long-form alimentado por voz.',
   'about.techStack':

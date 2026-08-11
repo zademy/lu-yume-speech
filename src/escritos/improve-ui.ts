@@ -122,12 +122,9 @@ export function createImproveController(deps: ImproveDeps): ImproveController {
       star.hidden = true;
       return;
     }
-    // Approximate the selection viewport position via the anchor's coords.
-    // The editor exposes logical ranges, not pixel rects; a coarse but stable
-    // placement above the editor's top-right keeps the star visible without a
-    // per-selection getBoundingClientRect walk.
-    const anchorRect = deps.anchor.getBoundingClientRect();
-    star.style.left = `${Math.max(8, anchorRect.width - 48)}px`;
+    // Star sits at the editor's top-left so it never overlaps the close button
+    // (top-right) or the Crepe toolbar.
+    star.style.left = '8px';
     star.style.top = '8px';
     star.hidden = false;
     star.setAttribute('aria-hidden', 'false');

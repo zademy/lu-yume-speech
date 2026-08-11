@@ -1351,7 +1351,7 @@ details[open] > .summary-card-heading::after {
 .pluma-improve-star {
   position: absolute;
   top: 8px;
-  right: 8px;
+  left: 8px;
   width: 28px;
   height: 28px;
   display: inline-flex;
@@ -1613,7 +1613,7 @@ details[open] > .summary-card-heading::after {
 }
 
 .milkdown {
-  --crepe-base-font-size: 15px;
+  --crepe-base-font-size: 12px;
 }
 
 .milkdown-top-bar {
@@ -1630,7 +1630,7 @@ details[open] > .summary-card-heading::after {
 
 .milkdown-top-bar .top-bar-heading-button {
   height: 28px !important;
-  font-size: 13px !important;
+  font-size: 12px !important;
   padding: 0 8px !important;
 }
 
@@ -1640,6 +1640,6 @@ details[open] > .summary-card-heading::after {
 }
 
 .milkdown .ProseMirror {
-  font-size: 15px;
+  font-size: 12px;
   line-height: 1.65;
 }
