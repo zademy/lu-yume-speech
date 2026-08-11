@@ -43,18 +43,32 @@ describe('createPlumaPanel', () => {
     expect(onSelect).toHaveBeenCalledWith('a');
   });
 
-  it('shows the title and markdown body in the preview pane', () => {
+  it('setOpenDoc(id) hides the empty placeholder and highlights the row', () => {
     const panel = createPlumaPanel(noop, 'es');
-    panel.preview(mkEscrito({ titulo: 'Mi doc', contenidoMD: '# Título\n\ncuerpo del texto' }));
-    expect(panel.root.querySelector('h3')?.textContent).toContain('Mi doc');
-    expect(panel.root.querySelector('article')?.textContent).toContain('cuerpo del texto');
+    panel.setEscritos([
+      mkEscrito({ id: 'a', titulo: 'Alpha' }),
+      mkEscrito({ id: 'b', titulo: 'Beta' }),
+    ]);
+    expect(panel.root.querySelector('.pluma-preview-empty')).not.toBeNull();
+
+    panel.setOpenDoc('a');
+    const rows = panel.root.querySelectorAll('.pluma-row');
+    expect(rows[0]?.classList.contains('is-selected')).toBe(true);
+    expect(rows[1]?.classList.contains('is-selected')).toBe(false);
+    expect(panel.root.querySelector<HTMLElement>('.pluma-preview-empty')?.style.display).toBe(
+      'none',
+    );
   });
 
-  it('clears the preview when passed undefined', () => {
+  it('setOpenDoc(null) shows the placeholder and clears the selection', () => {
     const panel = createPlumaPanel(noop, 'es');
-    panel.preview(mkEscrito());
-    panel.preview(undefined);
-    expect(panel.root.querySelector('article')).toBeNull();
+    panel.setEscritos([mkEscrito({ id: 'a' })]);
+    panel.setOpenDoc('a');
+    panel.setOpenDoc(null);
+    expect(panel.root.querySelector('.pluma-row')?.classList.contains('is-selected')).toBe(false);
+    expect(panel.root.querySelector<HTMLElement>('.pluma-preview-empty')?.style.display).not.toBe(
+      'none',
+    );
   });
 
   it('forwards a rename after prompting (trimmed) and ignores cancel', () => {

@@ -1,25 +1,28 @@
 /**
- * Pluma panel — document list + read-only preview for the Pluma writer's view.
+ * Pluma panel — document list + editor pane chrome for the Pluma writer's view.
  *
  * Pure DOM UI: receives an `Escrito[]` snapshot via `setEscritos()` and the
- * open document via `preview()`, and forwards user actions (select / rename /
- * remove) to callbacks from the composition root, which owns all persistence.
- * The "New escrito" affordance lives in the view heading (`#plumaNewButton`)
- * and is wired by `main.ts`.
+ * open-document id via `setOpenDoc()`, and forwards user actions
+ * (select / rename / remove / close) to callbacks from the composition root,
+ * which owns all persistence and the editor lifecycle. The "New escrito"
+ * affordance lives in the view heading (`#plumaNewButton`) and is wired by
+ * `main.ts`.
  *
- * T1 scope: list + create/open(rename)/delete + a plain read-only preview.
- * T2 will replace the preview pane with a Milkdown Markdown editor.
+ * Ownership split (no shared DOM node): the panel owns the editor pane's empty
+ * placeholder and the row selection highlight; `main.ts` owns mounting and
+ * clearing the Milkdown editor inside `editorMount`. The two concerns live in
+ * sibling nodes so a language toggle or close never clobbers a live editor.
  *
  * Language-aware: labels refresh through `setLanguage()`.
  *
- * SRP: this module only renders the Pluma UI and forwards user actions.
+ * SRP: this module only renders the Pluma UI shell and forwards user actions.
  */
 
 import type { AppLanguage, Escrito } from '../types';
 import { translate } from '../i18n/translations';
 
 export interface PlumaHandlers {
-  /** A row was clicked — composition root loads the escrito and calls `preview`. */
+  /** A row was clicked — composition root loads the escrito and mounts the editor. */
   onSelect: (id: string) => void;
   /** Inline rename committed by the user. */
   onRename: (id: string, titulo: string) => void;
@@ -33,13 +36,13 @@ export interface PlumaPanel {
   readonly root: HTMLElement;
   /** Right-hand section (permanent) — anchors floating affordances (T5 star). */
   readonly previewPane: HTMLElement;
-  /** Editor mount point inside the pane — replaced on every doc swap. */
+  /** Dedicated editor mount node — main.ts mounts/clears the editor here. */
   readonly editorMount: HTMLElement;
   /** Status bar above the editor — owns the dictation toggle (T4). */
   readonly statusBar: HTMLElement;
   setEscritos: (list: Escrito[]) => void;
-  /** Show one escrito in the preview pane (undefined clears it). */
-  preview: (escrito: Escrito | undefined) => void;
+  /** Open a document by id, or pass null to close (shows placeholder, clears selection). */
+  setOpenDoc: (id: string | null) => void;
   setLanguage: (lang: AppLanguage) => void;
 }
 
@@ -83,7 +86,7 @@ export function createPlumaPanel(handlers: PlumaHandlers, lang: AppLanguage): Pl
   listCol.appendChild(listHeader);
   listCol.appendChild(listScroll);
 
-  // --- Preview column ---
+  // --- Editor pane column ---
   const previewCol = document.createElement('section');
   previewCol.className =
     'rounded-xl border border-[var(--color-border-subtle)] bg-[var(--color-surface)] p-4 min-h-[40vh] flex flex-col gap-2';
@@ -100,20 +103,17 @@ export function createPlumaPanel(handlers: PlumaHandlers, lang: AppLanguage): Pl
   closeBtn.type = 'button';
   closeBtn.className = 'pluma-close-btn';
   closeBtn.hidden = true;
-  closeBtn.addEventListener('click', () => {
-    selectedId = null;
-    for (const el of listScroll.querySelectorAll('.' + SELECTED)) el.classList.remove(SELECTED);
-    closeBtn.hidden = true;
-    previewBody.replaceChildren();
-    previewBody.appendChild(previewEmpty);
-    handlers.onClose();
-  });
   statusBar.appendChild(closeBtn);
-  const previewEmpty = document.createElement('p');
-  previewEmpty.className = 'text-sm text-[var(--color-text-muted)]';
+
+  // The editor pane holds two siblings: a placeholder (panel-owned) and the
+  // editor mount (main.ts-owned). They never replace each other.
   const previewBody = document.createElement('div');
-  previewBody.className = 'pluma-preview-body flex-1';
-  previewBody.append(previewEmpty);
+  previewBody.className = 'pluma-preview-body flex-1 flex flex-col';
+  const previewEmpty = document.createElement('p');
+  previewEmpty.className = 'pluma-preview-empty text-sm text-[var(--color-text-muted)]';
+  const editorMount = document.createElement('div');
+  editorMount.className = 'pluma-editor-mount flex-1';
+  previewBody.append(previewEmpty, editorMount);
   previewCol.append(statusBar, previewBody);
 
   root.appendChild(listCol);
@@ -161,10 +161,7 @@ export function createPlumaPanel(handlers: PlumaHandlers, lang: AppLanguage): Pl
     row.addEventListener('click', (event) => {
       // Ignore clicks on the action buttons (they stop propagation).
       if ((event.target as HTMLElement).closest('button[data-action]')) return;
-      selectedId = escrito.id;
-      for (const el of listScroll.querySelectorAll('.' + SELECTED)) el.classList.remove(SELECTED);
-      row.classList.add(SELECTED);
-      closeBtn.hidden = false;
+      setOpenDoc(escrito.id);
       handlers.onSelect(escrito.id);
     });
     row.addEventListener('keydown', (event) => {
@@ -184,10 +181,7 @@ export function createPlumaPanel(handlers: PlumaHandlers, lang: AppLanguage): Pl
     function onDelete(): void {
       const ok = window.confirm(translate(currentLang, 'pluma.delete.confirm'));
       if (!ok) return;
-      if (selectedId === escrito.id) {
-        selectedId = null;
-        preview(undefined);
-      }
+      if (selectedId === escrito.id) setOpenDoc(null);
       handlers.onRemove(escrito.id);
     }
 
@@ -214,27 +208,27 @@ export function createPlumaPanel(handlers: PlumaHandlers, lang: AppLanguage): Pl
     return btn;
   }
 
+  closeBtn.addEventListener('click', () => {
+    setOpenDoc(null);
+    handlers.onClose();
+  });
+
   const setEscritos = (list: Escrito[]): void => {
     escritos = list;
     renderRows();
   };
 
-  const preview = (escrito: Escrito | undefined): void => {
-    previewBody.replaceChildren();
-    if (!escrito) {
-      previewBody.appendChild(previewEmpty);
-      return;
+  /** Transition the editor-pane state: selection highlight, placeholder, close button. */
+  const setOpenDoc = (id: string | null): void => {
+    selectedId = id;
+    for (const el of listScroll.querySelectorAll('.' + SELECTED)) el.classList.remove(SELECTED);
+    if (id) {
+      listScroll
+        .querySelector<HTMLElement>(`.${ROW_BASE}[data-id="${id}"]`)
+        ?.classList.add(SELECTED);
     }
-    const title = document.createElement('h3');
-    title.className = 'text-base font-semibold mb-2';
-    title.textContent = escrito.titulo.trim() || translate(currentLang, 'pluma.untitled');
-    const note = document.createElement('p');
-    note.className = 'text-[11px] text-[var(--color-text-muted)] mb-3';
-    note.textContent = translate(currentLang, 'pluma.preview.note');
-    const body = document.createElement('article');
-    body.className = 'text-sm whitespace-pre-wrap text-[var(--color-text-primary)]';
-    body.textContent = escrito.contenidoMD || translate(currentLang, 'pluma.preview.empty');
-    previewBody.append(title, note, body);
+    previewEmpty.style.display = id ? 'none' : '';
+    closeBtn.hidden = !id;
   };
 
   const setLanguage = (next: AppLanguage): void => {
@@ -247,9 +241,6 @@ export function createPlumaPanel(handlers: PlumaHandlers, lang: AppLanguage): Pl
     closeBtn.textContent = translate(currentLang, 'pluma.close.label');
     closeBtn.setAttribute('aria-label', translate(currentLang, 'pluma.close.aria'));
     renderRows();
-    // Refresh the open preview labels (cheap re-render).
-    const open = escritos.find((e) => e.id === selectedId);
-    preview(open);
   };
 
   // Initial labels.
@@ -258,10 +249,10 @@ export function createPlumaPanel(handlers: PlumaHandlers, lang: AppLanguage): Pl
   return {
     root,
     setEscritos,
-    preview,
+    setOpenDoc,
     setLanguage,
     previewPane: previewCol,
-    editorMount: previewBody,
+    editorMount,
     statusBar,
   };
 }

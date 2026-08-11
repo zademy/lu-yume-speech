@@ -219,35 +219,7 @@ async function bootstrap(): Promise<void> {
   plumaHolder.panel = createPlumaPanel(
     {
       onSelect: async (id) => {
-        const escrito = await escritos.getEscrito(id);
-        const panel = plumaHolder.panel;
-        if (!escrito || !panel) return;
-        // Lazy-load the editor (Crepe/ProseMirror) so it stays out of the
-        // initial bundle — only Pluma users pay for it, and only on first open.
-        const { mountEditor } = await import('./escritos/editor');
-        // Doc switch: tear down the previous editor, then mount a fresh one.
-        if (editorHandle) {
-          await editorHandle.destroy();
-          editorHandle = null;
-        }
-        panel.editorMount.replaceChildren();
-        let saveTimer: ReturnType<typeof setTimeout> | null = null;
-        editorHandle = await mountEditor(panel.editorMount, {
-          initialMD: escrito.contenidoMD,
-          escritoId: escrito.id,
-          images: imagesAdapter,
-          onChange: (md) => {
-            const docId = escrito.id;
-            if (saveTimer) clearTimeout(saveTimer);
-            saveTimer = setTimeout(() => {
-              void escritos.updateContent(docId, md).then(() => void refreshEscritos());
-            }, 800);
-          },
-        });
-        // The improve controller re-binds its selection subscription to the
-        // freshly mounted editor on every swap.
-        improveController.attach(editorHandle);
-        dictationController.setEnabled(true);
+        await openEscrito(id);
       },
       onRename: async (id, titulo) => {
         await escritos.renameEscrito(id, titulo);
@@ -258,6 +230,7 @@ async function bootstrap(): Promise<void> {
           await editorHandle.destroy();
           editorHandle = null;
         }
+        plumaHolder.panel?.editorMount.replaceChildren();
         dictationController.setEnabled(false);
         await escritos.removeEscrito(id);
         await refreshEscritos();
@@ -304,13 +277,47 @@ async function bootstrap(): Promise<void> {
     getLang: () => config.appLanguage,
   });
 
+  // Shared editor-open path used by row select and the "New escrito" button.
+  // Lazy-loads Crepe/ProseMirror so it stays out of the initial bundle — only
+  // Pluma users pay for it, and only on first open.
+  async function openEscrito(id: string): Promise<void> {
+    const escrito = await escritos.getEscrito(id);
+    const panel = plumaHolder.panel;
+    if (!escrito || !panel) return;
+    const { mountEditor } = await import('./escritos/editor');
+    // Doc switch: tear down the previous editor, then mount a fresh one.
+    if (editorHandle) {
+      await editorHandle.destroy();
+      editorHandle = null;
+    }
+    panel.editorMount.replaceChildren();
+    let saveTimer: ReturnType<typeof setTimeout> | null = null;
+    editorHandle = await mountEditor(panel.editorMount, {
+      initialMD: escrito.contenidoMD,
+      escritoId: escrito.id,
+      images: imagesAdapter,
+      onChange: (md) => {
+        const docId = escrito.id;
+        if (saveTimer) clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+          void escritos.updateContent(docId, md).then(() => void refreshEscritos());
+        }, 800);
+      },
+    });
+    // The improve controller re-binds its selection subscription to the
+    // freshly mounted editor on every swap.
+    improveController.attach(editorHandle);
+    dictationController.setEnabled(true);
+  }
+
   void refreshEscritos();
   elements.plumaView
     .querySelector<HTMLButtonElement>('#plumaNewButton')
     ?.addEventListener('click', async () => {
       const escrito = await escritos.createEscrito(t('pluma.untitled'));
       await refreshEscritos();
-      plumaPanel.preview(escrito);
+      plumaPanel.setOpenDoc(escrito.id);
+      await openEscrito(escrito.id);
     });
   elements.plumaNavButton.addEventListener('click', () => void refreshEscritos());
 
