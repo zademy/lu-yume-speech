@@ -181,4 +181,51 @@ describe('dictation controller', () => {
     expect(status?.getAttribute('data-level')).toBe('processing');
     controller.dispose();
   });
+
+  it('setEnabled(false) disarms active dictation, stops recorder, resets target', () => {
+    const editor = fakeEditor();
+    const deps = makeDeps(editor);
+    const targets: Array<'output' | 'pluma'> = [];
+    deps.bus.on('dictation:target', (t) => targets.push(t));
+    const controller = createDictationController(deps);
+
+    controller.toggle(); // arm → 'pluma'
+    expect(deps.isRecording()).toBe(true);
+
+    controller.setEnabled(false);
+    expect(deps.isRecording()).toBe(false);
+
+    const toggle = controller.root.querySelector<HTMLButtonElement>('.pluma-dictation-toggle');
+    expect(toggle?.getAttribute('aria-pressed')).toBe('false');
+    expect(toggle?.disabled).toBe(true);
+    expect(targets).toContain('output');
+
+    controller.dispose();
+  });
+
+  it('setEnabled(false) is a no-op when not active (no target emit)', () => {
+    const editor = fakeEditor();
+    const deps = makeDeps(editor);
+    const targets: Array<'output' | 'pluma'> = [];
+    deps.bus.on('dictation:target', (t) => targets.push(t));
+    const controller = createDictationController(deps);
+
+    controller.setEnabled(false);
+    expect(targets).toEqual([]);
+
+    controller.dispose();
+  });
+
+  it('ignores status:change when disarmed (prevents pipeline leak)', () => {
+    const editor = fakeEditor();
+    const deps = makeDeps(editor);
+    const controller = createDictationController(deps);
+
+    const before = controller.root.querySelector('.pluma-dictation-status')?.textContent;
+    deps.bus.emit('status:change', { message: 'Leaked!', level: 'processing' });
+    const after = controller.root.querySelector('.pluma-dictation-status')?.textContent;
+    expect(after).toBe(before);
+
+    controller.dispose();
+  });
 });

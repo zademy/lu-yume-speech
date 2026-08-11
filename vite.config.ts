@@ -11,6 +11,8 @@
 import { defineConfig } from 'vite';
 import tailwindcss from '@tailwindcss/vite';
 
+import pkg from './package.json' with { type: 'json' };
+
 export default defineConfig({
   plugins: [tailwindcss()],
   clearScreen: false,
@@ -21,6 +23,9 @@ export default defineConfig({
     __VUE_OPTIONS_API__: JSON.stringify(true),
     __VUE_PROD_DEVTOOLS__: JSON.stringify(false),
     __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: JSON.stringify(false),
+    // Build-time version from package.json (maintained by release-please).
+    // The container CI overrides this via VITE_APP_VERSION.
+    __APP_VERSION__: JSON.stringify(pkg.version),
   },
   server: {
     port: 1420,

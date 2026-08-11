@@ -63,7 +63,7 @@ export function createMetricsPanel(
     'metrics-tab relative pb-2 text-base font-semibold text-[var(--color-text-primary)] border-b-2 border-[var(--color-text-primary)]';
   tab.textContent = translate(currentLang, 'metrics.tab.usage');
   const actions = document.createElement('div');
-  actions.className = 'flex items-center gap-1';
+  actions.className = 'flex items-center gap-2 pb-2';
   const exportBtn = mkButton(translate(currentLang, 'metrics.action.export'), 'secondary');
   const purgeBtn = mkButton(translate(currentLang, 'metrics.action.purge'), 'danger');
   actions.appendChild(exportBtn);
@@ -71,7 +71,7 @@ export function createMetricsPanel(
   headRow.appendChild(tab);
   headRow.appendChild(actions);
   const divider = document.createElement('hr');
-  divider.className = 'border-0 border-t border-[var(--color-border-subtle)] -mt-2';
+  divider.className = 'border-0 border-t border-[var(--color-border-subtle)] mt-2';
   header.appendChild(headRow);
   header.appendChild(divider);
   root.appendChild(header);
