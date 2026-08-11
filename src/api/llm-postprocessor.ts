@@ -8,22 +8,19 @@
  * and language. Output is constrained to `{ "transcription": "..." }` via a
  * strict JSON schema so parsing is reliable.
  *
- * Fail-open by design: on any network error, non-JSON response, or empty result
- * the original text is returned untouched so transcription never depends on the
- * LLM succeeding. Zero-width characters some models inject are stripped.
+ * Delegates the HTTP envelope (URL, timeout, abort, retry-after, content
+ * extraction) to `groq-chat.ts`; this module owns only its domain pieces: the
+ * system prompt, the output schema, and the lenient parser.
  *
- * Architecture: the pure pieces (`stripInvisibleChars`, `buildSystemPrompt`,
- * `parseTranscriptionResponse`) are deterministic and fully unit-testable; only
- * the thin `postProcessWithLlm` wrapper touches the network.
+ * Fail-open by design: on any network error, non-2xx status, or empty result
+ * the original text is returned untouched so transcription never depends on the
+ * LLM succeeding. The single `catch` makes this policy explicit.
  *
  * SRP: this module only refines transcription text via an LLM — it does not do
  * speech-to-text, manage settings, or touch the DOM.
  */
 
-/** Groq chat-completions endpoint (OpenAI-compatible). Same origin as transcription. */
-const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions';
-/** Request timeout — LLM calls can be slow, but never block forever. */
-const TIMEOUT_MS = 30_000;
+import { chatCompletion, stripInvisibleChars } from './groq-chat';
 
 /** Options for an LLM post-processing run. */
 export interface LlmPostProcessOptions {
@@ -33,22 +30,6 @@ export interface LlmPostProcessOptions {
   instructions?: string;
   /** Optional abort signal for caller-initiated cancellation. */
   signal?: AbortSignal;
-}
-
-/**
- * Remove invisible / formatting Unicode characters that some chat models inject
- * (zero-width spaces, BOM, soft hyphen, bidi controls, interlinear annotation).
- * Visible text is untouched.
- */
-export function stripInvisibleChars(text: string): string {
-  // U+00AD soft hyphen, U+200B..U+200F zero-width + bidi marks,
-  // U+2028/U+2029 line/paragraph separators, U+202A..U+202E bidi embedding,
-  // U+2060..U+2064 + U+206A..U+206F format chars, U+FEFF BOM,
-  // U+FFF9..U+FFFB interlinear annotation.
-  return text.replace(
-    /[\u00ad\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060-\u2064\u206a-\u206f\ufeff\ufff9-\ufffb]/g,
-    '',
-  );
 }
 
 /** Built-in system prompt that constrains the model to clean, schema-bound output. */
@@ -108,7 +89,7 @@ export function parseTranscriptionResponse(raw: string): string {
  * Run the LLM post-processing pass on `text`.
  *
  * @returns The polished text, or the original `text` unchanged on any failure
- *          (network error, timeout, non-JSON response, empty result).
+ *          (network error, timeout, non-2xx status, empty result).
  */
 export async function postProcessWithLlm(
   text: string,
@@ -117,53 +98,19 @@ export async function postProcessWithLlm(
 ): Promise<string> {
   if (!text.trim() || !apiKey || !options.model) return text;
 
-  const ctrl = new AbortController();
-  const timeout = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-  if (options.signal) {
-    if (options.signal.aborted) ctrl.abort();
-    else options.signal.addEventListener('abort', () => ctrl.abort(), { once: true });
-  }
-
   try {
-    const body = {
+    const content = await chatCompletion({
+      apiKey,
       model: options.model,
-      messages: [
-        { role: 'system', content: buildSystemPrompt(options.instructions) },
-        { role: 'user', content: text },
-      ],
-      response_format: {
-        type: 'json_schema',
-        json_schema: {
-          name: 'transcription_output',
-          strict: true,
-          schema: TRANSCRIPTION_OUTPUT_SCHEMA,
-        },
-      },
-      temperature: 0,
-    };
-
-    const res = await fetch(GROQ_CHAT_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-      signal: ctrl.signal,
+      systemPrompt: buildSystemPrompt(options.instructions),
+      userContent: text,
+      schemaName: 'transcription_output',
+      schema: TRANSCRIPTION_OUTPUT_SCHEMA,
+      signal: options.signal,
     });
-    if (!res.ok) return text;
-
-    const data = (await res.json().catch(() => null)) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    } | null;
-    const content = data?.choices?.[0]?.message?.content;
-    if (!content) return text;
-
     const cleaned = parseTranscriptionResponse(content);
     return cleaned || text;
   } catch {
     return text; // network/abort/parse failure — fail open with the original
-  } finally {
-    clearTimeout(timeout);
   }
 }

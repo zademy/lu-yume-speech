@@ -5,22 +5,7 @@ import {
   buildSystemPrompt,
   parseTranscriptionResponse,
   postProcessWithLlm,
-  stripInvisibleChars,
 } from '../../src/api/llm-postprocessor';
-
-describe('stripInvisibleChars', () => {
-  it('leaves normal text untouched', () => {
-    expect(stripInvisibleChars('Hello, world!')).toBe('Hello, world!');
-  });
-
-  it('removes zero-width spaces and the BOM', () => {
-    expect(stripInvisibleChars('a\u200bb\ufeffc')).toBe('abc');
-  });
-
-  it('removes soft hyphens and bidi marks', () => {
-    expect(stripInvisibleChars('foo\u00adbar\u202e')).toBe('foobar');
-  });
-});
 
 describe('buildSystemPrompt', () => {
   it('returns the base prompt when no instructions are given', () => {

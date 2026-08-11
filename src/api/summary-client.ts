@@ -2,11 +2,15 @@
  * Groq transcription summarizer — creates a concise overview and key points
  * from already-transcribed text through schema-bound chat completions.
  *
+ * Delegates the HTTP envelope (URL, timeout, abort, retry-after, content
+ * extraction) to `groq-chat.ts`; this module owns only its domain pieces: the
+ * system prompt, the output schema, the lenient parser, and the user-facing
+ * error type/messages.
+ *
  * SRP: this module only converts transcription text into a structured summary.
  */
 
-const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const TIMEOUT_MS = 30_000;
+import { chatCompletion, formatRateLimitMessage, type GroqChatError } from './groq-chat';
 
 /** Fixed production model chosen for fast, economical text summarization. */
 export const SUMMARY_MODEL = 'openai/gpt-oss-20b';
@@ -52,13 +56,6 @@ export class SummaryGenerationError extends Error {
   }
 }
 
-/** Parses the `Retry-After` header (in seconds) into a non-negative number. */
-function parseRetryAfter(value: string | null): number | undefined {
-  if (value === null) return undefined;
-  const seconds = Number(value);
-  return Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined;
-}
-
 /** Leniently parses + validates the model's JSON payload; `undefined` if malformed. */
 function parseSummary(raw: string): SummaryResult | undefined {
   try {
@@ -85,65 +82,49 @@ function parseSummary(raw: string): SummaryResult | undefined {
   }
 }
 
+/** Map an envelope error to a user-facing `SummaryGenerationError`. */
+function toSummaryError(error: GroqChatError): SummaryGenerationError {
+  switch (error.kind) {
+    case 'rate-limit':
+      return new SummaryGenerationError(
+        formatRateLimitMessage(error.retryAfterSeconds),
+        error.status,
+        error.retryAfterSeconds,
+      );
+    case 'http':
+      return new SummaryGenerationError(
+        `No se pudo generar el resumen (HTTP ${error.status}).`,
+        error.status,
+      );
+    case 'timeout':
+      return new SummaryGenerationError('La generación del resumen agotó el tiempo de espera.');
+    case 'empty':
+      return new SummaryGenerationError('Groq devolvió un resumen inválido.');
+    case 'network':
+    default:
+      return new SummaryGenerationError('No se pudo conectar con Groq.');
+  }
+}
+
 /** Generate one summary from an exact snapshot of visible transcription text. */
 export async function generateSummary(text: string, apiKey: string): Promise<SummaryResult> {
   if (!text.trim()) throw new SummaryGenerationError('No hay texto para resumir.');
   if (!apiKey) throw new SummaryGenerationError('Falta la API key de Groq.');
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
   try {
-    const response = await fetch(GROQ_CHAT_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: SUMMARY_MODEL,
-        messages: [
-          { role: 'system', content: SUMMARY_SYSTEM_PROMPT },
-          { role: 'user', content: text },
-        ],
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            name: 'transcription_summary',
-            strict: true,
-            schema: SUMMARY_OUTPUT_SCHEMA,
-          },
-        },
-        temperature: 0,
-      }),
-      signal: controller.signal,
+    const content = await chatCompletion({
+      apiKey,
+      model: SUMMARY_MODEL,
+      systemPrompt: SUMMARY_SYSTEM_PROMPT,
+      userContent: text,
+      schemaName: 'transcription_summary',
+      schema: SUMMARY_OUTPUT_SCHEMA,
     });
-
-    if (!response.ok) {
-      const retryAfter = parseRetryAfter(response.headers.get('retry-after'));
-      const message =
-        response.status === 429
-          ? retryAfter === undefined
-            ? 'Límite de Groq alcanzado. Intenta de nuevo más tarde.'
-            : `Límite de Groq alcanzado. Reintenta en ${retryAfter} s.`
-          : `No se pudo generar el resumen (HTTP ${response.status}).`;
-      throw new SummaryGenerationError(message, response.status, retryAfter);
-    }
-
-    const payload = (await response.json().catch(() => null)) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    } | null;
-    const content = payload?.choices?.[0]?.message?.content;
-    const result = content ? parseSummary(content) : undefined;
+    const result = parseSummary(content);
     if (!result) throw new SummaryGenerationError('Groq devolvió un resumen inválido.');
     return result;
   } catch (error) {
     if (error instanceof SummaryGenerationError) throw error;
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new SummaryGenerationError('La generación del resumen agotó el tiempo de espera.');
-    }
-    throw new SummaryGenerationError('No se pudo conectar con Groq.');
-  } finally {
-    clearTimeout(timeout);
+    throw toSummaryError(error as GroqChatError);
   }
 }
