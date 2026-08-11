@@ -1,5 +1,38 @@
 # Changelog
 
+## [1.3.0](https://github.com/zademy/lu-yume-speech/compare/v1.2.0...v1.3.0) (2026-08-10)
+
+
+### Features
+
+* add About view with author info, version, and GitHub link ([49a9cac](https://github.com/zademy/lu-yume-speech/commit/49a9cac63b242866f652fe9eea04b801e374b97c))
+* **pluma:** add close button to exit editor and return to empty preview ([7228042](https://github.com/zademy/lu-yume-speech/commit/7228042f2ca220f72f557a0ea4ff0a0f2cc2eaec))
+* **pluma:** add dictation append and AI selection improve (T4, T5) ([806b848](https://github.com/zademy/lu-yume-speech/commit/806b8485242e0f396833f2d55e569bbece25bd94))
+* **pluma:** add dictation/improve CSS and fix status message ([621b5ae](https://github.com/zademy/lu-yume-speech/commit/621b5ae8d1b9f79a9e9b58ccf4ec815afa94a7ae))
+* **pluma:** add Pluma writer view shell + escritos store (T1) ([ce1dae0](https://github.com/zademy/lu-yume-speech/commit/ce1dae0857d4e4085517c9e62a53b3cdc7210383))
+* **pluma:** integrate Milkdown editor with lazy-loaded chunk (T2) ([4ac2bb7](https://github.com/zademy/lu-yume-speech/commit/4ac2bb79a961f1465388562ac0cd47b853c9ca2d))
+* **pluma:** persist pasted images offline as Dexie blobs (T3) ([43a12b9](https://github.com/zademy/lu-yume-speech/commit/43a12b9cf8fcbdc640a79e204f19a7d5a314aba7))
+* **pluma:** place caret at end of document on open ([fa454f7](https://github.com/zademy/lu-yume-speech/commit/fa454f7f96c6d4315e7f3fde7457c8e3dd767b0c))
+
+
+### Bug Fixes
+
+* **about:** align heading with standard view-heading pattern ([d57e238](https://github.com/zademy/lu-yume-speech/commit/d57e238e91a90e0abcd763e11ce0acf209704520))
+* **about:** move description out of flex view-heading to prevent overflow ([9a35826](https://github.com/zademy/lu-yume-speech/commit/9a3582691aaa0d4c66743f5766e017c9308feeaa))
+* **ci:** daily calendar versioning with robust GHCR check ([a287428](https://github.com/zademy/lu-yume-speech/commit/a287428e25d80a2ef59503d68d83aaf9df95c482))
+* **pluma:** disable dictation toggle when no document is open ([e954894](https://github.com/zademy/lu-yume-speech/commit/e954894879627f15856f2f5931e9ec55c659f417))
+* **pluma:** isolate dictation from Dictate view recorder effects ([2680519](https://github.com/zademy/lu-yume-speech/commit/2680519ac3baa8039e183553fe597b16e372b5d8))
+* **pluma:** keep dictation target on Pluma until transcription lands ([26a99c9](https://github.com/zademy/lu-yume-speech/commit/26a99c94edb8098d1f477a562e476f8ef15f12fb))
+* **pluma:** load crepe component styles (common/style.css) ([9de9ae3](https://github.com/zademy/lu-yume-speech/commit/9de9ae3b73bb2937745020b082668f237569b127))
+* **pluma:** load prosemirror base css and define vue feature flags ([d45112b](https://github.com/zademy/lu-yume-speech/commit/d45112b976de31d1a52063488877e58330378ea3))
+* **pluma:** remove blank line above dictated text in appendParagraph ([5207a3a](https://github.com/zademy/lu-yume-speech/commit/5207a3ab73479c86964e60d2ca73d3edbe42cc2f))
+* **pluma:** resolve editor stack overflow and improve star visibility ([12e240e](https://github.com/zademy/lu-yume-speech/commit/12e240ecf6f25efa8185ed28542c82d0cb370227))
+
+
+### Performance Improvements
+
+* **docker:** build SPA on native platform for multi-arch images ([d4fc45d](https://github.com/zademy/lu-yume-speech/commit/d4fc45d07bcd5f7084891b6000d2dab23e81ad4b))
+
 ## [1.2.0](https://github.com/zademy/lu-yume-speech/compare/v1.1.0...v1.2.0) (2026-08-10)
 
 
