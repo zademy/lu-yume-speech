@@ -18,6 +18,7 @@ import type { AppLanguage } from '../types';
 import { translate } from '../i18n/translations';
 import { improveSelection, ImproveError } from './improve';
 import type { EditorHandle, DocRange } from './editor';
+import { showToast } from '../ui/toast';
 
 export interface ImproveDeps {
   /** Returns the current editor handle (null when no doc is open). */
@@ -144,12 +145,12 @@ export function createImproveController(deps: ImproveDeps): ImproveController {
     const key = deps.getApiKey();
     if (!editor) return;
     if (!key) {
-      showToast(translate(lang, 'pluma.improve.error'), 'error');
+      showToast(deps.toastContainer, translate(lang, 'pluma.improve.error'), 'error');
       return;
     }
     const text = editor.getSelectionText();
     if (!text.trim()) {
-      showToast(translate(lang, 'pluma.improve.empty'), 'warning');
+      showToast(deps.toastContainer, translate(lang, 'pluma.improve.empty'), 'warning');
       return;
     }
     star.hidden = true;
@@ -178,7 +179,7 @@ export function createImproveController(deps: ImproveDeps): ImproveController {
         if (!pending) return; // aborted by Reject/close
         closePopover();
         const message = err instanceof Error ? err.message : translate(lang, 'pluma.improve.error');
-        showToast(message, 'error');
+        showToast(deps.toastContainer, message, 'error');
       });
   };
 
@@ -216,16 +217,6 @@ export function createImproveController(deps: ImproveDeps): ImproveController {
   // Best-effort: subscribe to whatever editor is current at construction time.
   const initial = deps.getEditor();
   if (initial) subscribe(initial);
-
-  // Tiny toast helper — avoids importing showToast (kept local to UI module).
-  function showToast(message: string, kind: 'error' | 'warning' | 'info'): void {
-    const el = document.createElement('div');
-    el.className = `toast toast-${kind}`;
-    el.setAttribute('role', 'status');
-    el.textContent = message;
-    deps.toastContainer.append(el);
-    window.setTimeout(() => el.remove(), 4000);
-  }
 
   return {
     root,

@@ -4,9 +4,9 @@
   <h1>LU YUME — Speech-to-Text</h1>
 
   <p>
-    Browser speech-to-text transcription powered by
+    Browser-based speech-to-text transcription powered by
     <strong>Groq Whisper</strong>. Record your voice, get instant text —
-    zero backend, cross-platform.
+    zero backend, fully client-side, cross-platform.
   </p>
 
   <p>
@@ -21,184 +21,246 @@
 
 ---
 
-## Table of Contents
+## Overview
 
-- [Features](#features)
-- [Architecture](#architecture)
-- [Tech Stack](#tech-stack)
-- [Getting Started](#getting-started)
-- [Project Structure](#project-structure)
-- [Keyboard Shortcuts](#keyboard-shortcuts)
-- [API Key Setup](#api-key-setup)
-- [Scripts](#scripts)
-- [Testing](#testing)
-- [Automated Releases](#automated-releases)
-- [License](#license)
+LU YUME is a **TypeScript SPA** (Vite + Tailwind 4) that captures microphone
+audio in the browser and transcribes it with the Groq Whisper API. It also
+offers translation, AI noise suppression, fuzzy post-correction, optional LLM
+polish, transcript summaries, a Pluma writing surface, and local metrics — all
+without a backend.
+
+> The Groq API key **never** ships in the JS bundle. Each user supplies it at
+> runtime and it is stored in their browser's `localStorage`. See
+> [SECURITY.md](SECURITY.md) for the full threat model.
+
+For the modular event-driven architecture, the `EventBus` coupling rule, and
+the platform-bridge pattern, see [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ---
 
 ## Features
 
-- **Real-time transcription** — Record audio from the microphone and send it to Groq Whisper for instant speech-to-text conversion.
-- **Translation mode** — Switch between transcription (same language) and translation (to English) with a single dropdown.
-- **Custom vocabulary** — Define domain terms, names, and acronyms; they're fed to Whisper as the initial prompt and fuzzy-corrected afterward.
-- **Fuzzy + filler correction** — Post-processing fixes near-matches against your vocabulary (Levenshtein + Soundex) and strips language-aware filler words and stutters.
-- **Silence trimming** — Leading/trailing silence is removed before transcription (fail-open) for lower latency and fewer hallucinations.
-- **LLM polish (optional)** — An optional Groq chat pass cleans up punctuation, capitalization, and disfluencies via a strict JSON schema.
-- **Transcript summaries** — Generate same-language summaries from the current editable text with `openai/gpt-oss-20b`; each exact text snapshot keeps up to 10 local generations.
-- **Noise suppression** — DSP filter chain or AI-backed RNNoise suppression on the captured audio.
-- **Waveform visualization** — Live audio waveform rendered on a `<canvas>` element during recording.
-- **Silence detection** — Automatically stops recording after a configurable silence threshold.
-- **Application workspace** — Responsive navigation separates Inicio, Dictar, and Ajustes for a focused, extensible workflow.
-- **Transcription history** — Inicio keeps up to 100 recent transcriptions with local word, transcription, and audio-minute metrics; copy, restore, delete, or clear entries directly.
-- **Metadata panel** — When using `verbose_json` format, displays detected language, confidence, segment timestamps, and duration.
-- **Output toolbar** — Copy to clipboard, clear text, or download as `.txt`.
-- **Dark / Light theme** — Toggle between themes with system preference detection. Choice persists across sessions.
-- **Keyboard shortcuts** — OS-aware shortcuts (Cmd on macOS, Ctrl elsewhere) for record start/stop.
-- **Local key storage** — Manage the API key from Ajustes; it is stored in the browser's `localStorage`, applied immediately, and never included in the JS bundle.
-- **Network resilience** — 30s timeout, automatic retry with exponential backoff on 429/503/504, typed error classification.
-- **Cross-platform** — Runs in any modern browser.
+- **Real-time transcription & translation** — record audio and send it to Groq Whisper; switch between transcribing (same language) and translating (to English) from the UI.
+- **Custom vocabulary & fuzzy correction** — define domain terms, names, and acronyms; they're passed to Whisper as a prompt and fuzzy-corrected afterward (Levenshtein + Soundex).
+- **Filler / stutter cleanup** — language-aware stripping of filler words and repeated syllables after transcription.
+- **Silence trimming** — leading/trailing silence is removed before transcription (fail-open) for lower latency and fewer hallucinations.
+- **Noise suppression** — DSP filter chain or AI-backed RNNoise suppression on captured audio.
+- **LLM polish (optional)** — a Groq chat pass cleans punctuation, capitalization, and disfluencies via a strict JSON schema.
+- **Transcript summaries** — generate same-language summaries from the current text with `openai/gpt-oss-20b`; each exact text snapshot keeps up to 10 local generations.
+- **Pluma writer** — a persistent Markdown surface (Milkdown editor) with dictation append and AI selection refine, stored in its own IndexedDB database.
+- **History & metrics** — up to 100 recent transcriptions with local word, transcription, and audio-minute metrics, plus an Inicio dashboard.
+- **Quality-of-life** — live waveform, silence detection, dark/light theme with system detection, OS-aware keyboard shortcuts, and toast notifications.
+- **Network resilience** — 30s timeout, automatic retry with exponential backoff on 429 / 503 / 504, and typed error classification.
 
 ---
 
-## Architecture
+## Quick Start
 
-LU YUME is a **TypeScript SPA** (Vite + Tailwind 4) that handles all UI and audio logic in the browser.
+### 1. Prerequisites
 
-The SPA follows a **modular event-driven architecture** built around a typed `EventBus`. No module imports another module directly — they communicate exclusively through events, adhering to the **Dependency Inversion Principle**.
+| Tool                | Version | Notes                                             |
+| ------------------- | ------- | ------------------------------------------------- |
+| Node.js             | ≥ 20    | LTS recommended                                   |
+| pnpm                | ≥ 9     | `npm install -g pnpm` or via [corepack][corepack] |
+| Docker _(optional)_ | ≥ 24    | Only for the containerized deployment             |
 
-A dedicated **platform bridge** (`src/platform/`) abstracts credential and settings storage behind a `Platform` interface, making it testable in isolation.
+### 2. Get a Groq API key
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for the full diagram, module map, and dependency inversion rule.
+1. Open [**console.groq.com/keys**](https://console.groq.com/keys).
+2. Sign in and create a new API key. It always starts with `gsk_` and is at
+   least 44 characters long.
+3. Copy the key — you will paste it into the app on first launch.
 
----
+> The key is **free tier–eligible** and rate-limited by Groq, not by this app.
+> Network egress is `https://api.groq.com` only.
 
-## Tech Stack
+### 3. Run the app
 
-| Layer            | Technology                        | Purpose                                        |
-| ---------------- | --------------------------------- | ---------------------------------------------- |
-| Language         | TypeScript 6.x                    | Type-safe development (strict mode)            |
-| Build tool       | Vite 8.x                          | Fast dev server and optimized production build |
-| Styling          | Tailwind CSS 4.x                  | Utility-first CSS with design system tokens    |
-| Testing          | Vitest 4.x + MSW 2.x              | Unit tests + HTTP mocking                      |
-| Linting          | ESLint 10 + typescript-eslint 8   | Static analysis with type-aware rules          |
-| Formatting       | Prettier                          | Consistent code style                          |
-| Pre-commit hooks | Husky + lint-staged (configured¹) | Lint/format on staged files — see note below   |
-| API              | Groq Whisper API                  | Speech-to-text / translation                   |
-| Credential store | localStorage                      | Browser-side API key storage                   |
-| Audio            | MediaRecorder + Web Audio         | Microphone capture and real-time analysis      |
+Pick **one** of the three paths below.
 
-> ¹ `lint-staged` is configured in `package.json`, but **no `.husky/pre-commit`
-> hook is committed**, so it never runs automatically. Run the gate manually
-> before considering work done: `pnpm lint && pnpm format:check && pnpm typecheck && pnpm test`.
-
----
-
-## Getting Started
-
-### Prerequisites
-
-- **Node.js** ≥ 20
-- **pnpm** ≥ 9 (`npm install -g pnpm` or via [corepack][corepack])
-- A **Groq API key** — get one at [console.groq.com](https://console.groq.com)
-
-### Installation
+#### A. Local development (Vite)
 
 ```bash
-# Clone the repository
-git clone https://github.com/<your-username>/speech-to-text.git
-cd speech-to-text
-
-# Install dependencies
+git clone https://github.com/zademy/lu-yume-speech.git
+cd lu-yume-speech
 pnpm install
-```
-
-### Development
-
-```bash
 pnpm dev
 ```
 
-Opens the SPA at `http://localhost:1420`. Add your API key from **Ajustes** when
-you want to use Dictar; microphone permission is then requested on first use.
-The `WebBridge` stores the key in `localStorage`, while Inicio remains available
-without a configured key.
+The dev server opens at **http://localhost:1420**. On first use, the app
+prompts for the Groq key; microphone permission is requested the first time
+you record. Inicio is available without a key; Dictar requires one.
 
-### Production Build
-
-```bash
-pnpm build
-```
-
-Runs lint + typecheck and outputs the optimized SPA to `dist/`. **Do not**
-deploy this publicly with a Groq key loaded — the key is stored client-side.
-
-### Production Container
-
-Build and start the production SPA at `http://localhost:8080`:
-
-```bash
-docker compose up --build -d
-```
-
-The container compiles the application with the pinned pnpm version and serves
-only `dist/` through unprivileged Nginx. It does not receive or embed the Groq
-API key; configure the key in the browser as usual.
-
-```bash
-# Check container health and status
-docker compose ps
-
-# Follow server logs
-docker compose logs -f app
-
-# Stop and remove the container
-docker compose down
-```
-
-### GitHub Container Registry
-
-The container workflow follows the promotion path `develop` → `releases` →
-`main`:
-
-- Pull requests and `develop` run application quality checks only.
-- `releases` runs the same checks and builds the `linux/amd64` and
-  `linux/arm64` image without pushing it to a registry.
-- `main` rebuilds the promoted source and publishes its image to
-  `ghcr.io/zademy/lu-yume-speech`.
+#### B. Pre-built image from GHCR (no build required)
 
 ```bash
 docker pull ghcr.io/zademy/lu-yume-speech:latest
 docker run --rm -p 127.0.0.1:8080:8080 ghcr.io/zademy/lu-yume-speech:latest
 ```
 
-Published tags follow this policy:
+Open **http://localhost:8080**. The image is multi-platform
+(`linux/amd64` + `linux/arm64`) and serves only static files through
+unprivileged Nginx. No Groq key is baked in — configure it in the browser.
 
-| Git reference | Action                                           |
-| ------------- | ------------------------------------------------ |
-| `develop`     | Quality checks only                              |
-| `releases`    | Multi-platform container build, no registry push |
-| `main`        | Publish `YYYY.MM.DD.N` and update `latest`       |
+#### C. Build the container locally
 
-Release Please creates complete Semantic Versioning tags with a leading `v` on
-`main` for GitHub Releases. Container tags use the UTC build date plus the
-GitHub Actions run number, for example `2026.08.09.42`; `latest` always points
-to the newest successful build. Docker tags do not permit `+`, so the run
-number uses a period separator. Published images omit SBOM and provenance
-attestations to avoid additional untagged attestation manifests in GHCR.
+```bash
+git clone https://github.com/zademy/lu-yume-speech.git
+cd lu-yume-speech
+docker compose up --build -d
+```
 
-The image remains multi-platform (`linux/amd64` and `linux/arm64`). GHCR may
-show internal `sha256:*` child manifests for those architectures; these are
-content digests required by the multi-platform image, not pullable version
-tags. Docker Hub commonly hides these implementation details in its UI.
+Open **http://localhost:8080**. Useful when you want to test local changes
+inside the production runtime.
 
-## Automated Releases
+```bash
+docker compose ps        # status + health
+docker compose logs -f app   # follow logs
+docker compose down      # stop and remove
+```
 
-Pushes to `main` use Release Please to maintain a release pull request from
-Conventional Commits. Merging that pull request automatically creates the
-GitHub Release, its `vMAJOR.MINOR.PATCH` tag, and the generated changelog. The
-same workflow publishes the calendar-versioned GHCR image and updates
-`latest`.
+---
+
+## Deployment
+
+### Production build (no Docker)
+
+```bash
+pnpm build    # runs ESLint → Prettier check → tsc → vite build
+```
+
+Output lands in `dist/` — a static SPA suitable for any static host (Nginx,
+Caddy, S3 + CloudFront, Vercel, Netlify, GitHub Pages, etc.). Serve `index.html`
+as the SPA fallback and set long-lived `Cache-Control` on `/assets/` (the
+filenames are content-hashed). The bundled `nginx.conf` is a ready-to-use
+reference: it pins the security headers (`X-Content-Type-Options`, `X-Frame-Options`,
+`Referrer-Policy`, `Permissions-Policy`), enables gzip, exposes `/healthz`,
+and applies immutable caching to hashed assets.
+
+> **Do not deploy this publicly with a Groq key loaded into the bundle.** The
+> key is client-side by design; each end user must paste their own.
+
+### Container image hardening
+
+The provided `compose.yaml` runs the image with:
+
+- `read_only: true` root filesystem
+- `cap_drop: ALL` and `security_opt: no-new-privileges:true`
+- `tmpfs` mounts for `/tmp` and `/var/cache/nginx`
+- Port bound to `127.0.0.1:8080` (loopback only) — change to `0.0.0.0:8080` or
+  put behind a reverse proxy if you need remote access
+- Built-in `healthcheck` against `http://127.0.0.1:8080/healthz`
+
+### Pre-built image tags
+
+| Git reference | Action                                 | Tag(s) produced               |
+| ------------- | -------------------------------------- | ----------------------------- |
+| `develop`     | Quality checks only                    | —                             |
+| `releases`    | Multi-platform build, no registry push | —                             |
+| `main`        | Publish + promote                      | `YYYY.MM.DD.N`, then `latest` |
+
+- `latest` always points to the newest successful build on `main`.
+- `YYYY.MM.DD.N` uses the UTC build date plus the GitHub Actions run number
+  (e.g. `2026.08.09.42`). Docker tags do not allow `+`, so the run number uses
+  a period separator.
+- Reruns keep their original date/tag — they never overwrite an existing tag.
+- Promotion to `latest` is serialized.
+- Release Please also emits a Semantic Versioning tag (`vMAJOR.MINOR.PATCH`)
+  for GitHub Releases on `main`. The SemVer tag is **not** published as a
+  Docker tag.
+- Published images omit SBOM and provenance attestations to avoid untagged
+  attestation manifests in GHCR. GHCR may still show internal `sha256:*` child
+  manifests for `linux/amd64` and `linux/arm64`; these are content digests
+  required by the multi-platform image, not pullable version tags.
+
+---
+
+## API Key
+
+| Topic                | Detail                                                 |
+| -------------------- | ------------------------------------------------------ |
+| Where to get one     | [console.groq.com/keys](https://console.groq.com/keys) |
+| Format               | starts with `gsk_`, ≥ 44 characters                    |
+| Where it's stored    | `localStorage` under `stt_groq_api_key`                |
+| Where it's validated | `src/platform/api-key.schema.ts` (Zod)                 |
+| Network egress       | `https://api.groq.com` only                            |
+| Bundled in JS?       | **No.** Each user supplies it at runtime.              |
+
+On first launch the app shows a modal prompting for the key. You can also set
+or rotate it from **Ajustes → API key**, or programmatically from the devtools
+console:
+
+```javascript
+await import('./src/platform/web-bridge').then((b) =>
+  new b.WebBridge().setApiKey('gsk_your_key_here'),
+);
+```
+
+See [SECURITY.md](SECURITY.md) before touching anything credential-, secret-,
+or network-related.
+
+---
+
+## Scripts
+
+| Command              | Description                                                           |
+| -------------------- | --------------------------------------------------------------------- |
+| `pnpm dev`           | Start the Vite dev server.                                            |
+| `pnpm build`         | Lint + format check + typecheck + Vite production build into `dist/`. |
+| `pnpm preview`       | Preview the production build locally.                                 |
+| `pnpm lint`          | Run ESLint (type-aware rules).                                        |
+| `pnpm lint:fix`      | Run ESLint with auto-fix.                                             |
+| `pnpm typecheck`     | Run `tsc --noEmit` (strict mode).                                     |
+| `pnpm test`          | Run Vitest unit tests once.                                           |
+| `pnpm test:watch`    | Run Vitest in watch mode.                                             |
+| `pnpm test:coverage` | Run tests with V8 coverage report.                                    |
+| `pnpm format`        | Format all files with Prettier.                                       |
+| `pnpm format:check`  | Verify formatting without writing.                                    |
+| `pnpm audit`         | Check production dependencies for known vulnerabilities.              |
+
+> **No pre-commit hook is committed** (`.husky/pre-commit` is absent), so
+> `lint-staged` never runs automatically. Run the gate yourself before
+> declaring work done: `pnpm lint && pnpm format:check && pnpm typecheck && pnpm test`.
+
+---
+
+## Keyboard Shortcuts
+
+| Action                 | macOS           | Linux / Windows  |
+| ---------------------- | --------------- | ---------------- |
+| Start / stop recording | `Cmd` + `R`     | `Ctrl` + `R`     |
+| Push-to-talk _(hold)_  | `Cmd` + `Space` | `Ctrl` + `Space` |
+
+Shortcuts adapt to the selected recording mode:
+
+- **Toggle mode** — shortcut starts recording; press again to stop.
+- **Push-to-talk mode** — hold the shortcut to record; release to stop.
+
+---
+
+## Testing
+
+The project uses **Vitest** with **jsdom** for DOM APIs and **MSW** for HTTP
+mocking. Coverage thresholds: **90%** lines/statements/functions and **80%**
+branches.
+
+```bash
+pnpm test           # run all unit tests
+pnpm test:coverage  # run with V8 coverage report
+```
+
+See [CONTRIBUTING.adoc](CONTRIBUTING.adoc) for the test layout, MSW handler
+patterns, and the localStorage / IndexedDB polyfill conventions.
+
+---
+
+## Releases
+
+Pushes to `main` use **Release Please** to maintain a release pull request
+assembled from [Conventional Commits](https://www.conventionalcommits.org/).
+Merging that PR creates the GitHub Release, its `vMAJOR.MINOR.PATCH` tag, and
+the generated changelog; the same workflow publishes the calendar-versioned
+GHCR image and updates `latest`.
 
 Write commit subjects in this form and use the body for additional context:
 
@@ -214,10 +276,8 @@ Explain the user-visible behavior, motivation, or migration notes here.
 - `docs:`, `refactor:`, `test:`, `build:`, `ci:`, and `chore:` stay hidden
   unless they declare a breaking change.
 
-Release Please uses the commit subject as the changelog entry. The commit body
-can document extra context and supports Conventional Commit footers. To replace
-the generated notes for a squash-merged pull request, add this block to its
-description:
+To override the auto-generated changelog entry for a squash-merged PR, add this
+block to its description:
 
 ```text
 BEGIN_COMMIT_OVERRIDE
@@ -226,145 +286,16 @@ END_COMMIT_OVERRIDE
 ```
 
 The repository must allow GitHub Actions to create pull requests under
-**Settings > Actions > General > Workflow permissions**.
-
-Because the workflow uses the built-in `GITHUB_TOKEN`, GitHub does not start a
-second CI run for the bot-created release pull request. Quality checks still
-run on `main` before the release is created; repositories that require checks
-on every PR should use a GitHub App or PAT instead.
-
----
-
-## Project Structure
-
-```
-speech-to-text/
-├── public/
-│   ├── favicon.svg                # LU YUME brand icon
-│   └── icons.svg                  # Shared SVG sprite
-├── src/
-│   ├── api/
-│   │   ├── groq-client.ts         # Groq Whisper API client (timeout, retry, Zod)
-│   │   ├── llm-postprocessor.ts   # Optional LLM polish pass (Groq chat, JSON schema)
-│   │   └── summary-client.ts       # Transcript summary client (Groq chat, JSON schema)
-│   ├── audio/
-│   │   ├── audio-analyzer.ts      # Web Audio API real-time analyzer
-│   │   ├── audio-processor.ts     # DSP filter chain + RNNoise suppression
-│   │   ├── audio-store.ts         # IndexedDB audio-clip store
-│   │   ├── recorder.ts            # MediaRecorder wrapper + guard
-│   │   ├── recording-timer.ts     # Elapsed time tracker (with dispose)
-│   │   ├── silence-trimmer.ts     # Strips leading/trailing silence (decode→trim→WAV)
-│   │   └── waveform-visualizer.ts # Canvas waveform renderer
-│   ├── core/
-│   │   ├── event-bus.ts           # Typed pub/sub event system
-│   │   └── transcription-session.ts # Pipeline lifecycle state machine
-│   ├── platform/                  # Credential + settings storage abstraction
-│   │   ├── api-key-schema.ts      # Zod validation for gsk_ keys
-│   │   ├── platform.ts            # Platform interface + detectPlatform() factory
-│   │   └── web-bridge.ts          # Browser impl (localStorage)
-│   ├── ui/
-│   │   ├── history-card.ts        # Single history entry renderer
-│   │   ├── metadata-panel.ts      # Verbose JSON metadata display
-│   │   ├── renderer.ts            # Full app DOM layout builder
-│   │   ├── sidebar.ts             # Inicio history list controller
-│   │   ├── summary-panel.ts        # Summary generation history renderer
-│   │   └── toast.ts               # Non-blocking notification toasts
-│   ├── utils/
-│   │   ├── clipboard.ts           # Clipboard API wrapper
-│   │   ├── history-repo.ts        # CRUD over storage history
-│   │   ├── history-stats.ts       # Local activity metric calculator
-│   │   ├── keyboard.ts            # Global shortcut manager
-│   │   ├── os-detect.ts           # Platform detection (macOS vs other)
-│   │   ├── settings.ts            # Reads UI state into typed config
-│   │   ├── storage.ts             # Type-safe storage wrapper (stt_ prefix)
-│   │   ├── summary-repo.ts        # Summary histories keyed by exact source text
-│   │   ├── string-distance.ts     # Levenshtein + Soundex (fuzzy matching)
-│   │   ├── text-postprocess.ts    # Custom-word correction + filler/stutter cleanup
-│   │   ├── theme.ts               # Light/dark theme manager
-│   │   ├── time-ago.ts            # Relative time formatter (Spanish)
-│   │   └── transcription-config.ts # Prompt assembly + post-process config slicing
-│   ├── main.ts                    # Composition root / entry point
-│   ├── style.css                  # Design system tokens + Tailwind
-│   └── types.ts                   # Shared type definitions
-├── tests/
-│   ├── helpers/
-│   │   ├── setup.ts               # jsdom polyfills (localStorage)
-│   │   └── msw-handlers.ts        # Default MSW handlers for Groq API
-│   └── unit/
-│       ├── *.test.ts              # 100+ unit tests
-├── index.html                     # SPA shell
-├── vite.config.ts                 # Vite config
-├── vitest.config.ts               # Vitest config + coverage thresholds
-├── eslint.config.js               # ESLint flat config (type-aware)
-├── package.json
-└── tsconfig.json                  # strict: true
-```
-
----
-
-## Keyboard Shortcuts
-
-| Action          | macOS       | Linux / Windows |
-| --------------- | ----------- | --------------- |
-| Start recording | `Cmd` + `R` | `Ctrl` + `R`    |
-| Stop recording  | `Cmd` + `R` | `Ctrl` + `R`    |
-
-Shortcuts adapt to the selected recording mode:
-
-- **Toggle mode** — Shortcut starts recording; press again to stop.
-- **Push-to-talk mode** — Hold `Cmd`/`Ctrl` + `Space` to record; release to stop.
-
----
-
-## API Key Setup
-
-On first launch the app shows a modal prompting you to paste your Groq API
-key. The key is validated (`gsk_` prefix, ≥ 44 characters) and stored in the
-browser's `localStorage`. You can also set it from the devtools console:
-
-```javascript
-await import('./src/platform/web-bridge').then((b) =>
-  new b.WebBridge().setApiKey('gsk_your_key_here'),
-);
-```
-
-Get a key at [console.groq.com](https://console.groq.com/keys).
-
----
-
-## Scripts
-
-| Command              | Description                                        |
-| -------------------- | -------------------------------------------------- |
-| `pnpm dev`           | Start the Vite dev server.                         |
-| `pnpm build`         | Lint + typecheck + build the web SPA into `dist/`. |
-| `pnpm lint`          | Run ESLint (type-aware rules).                     |
-| `pnpm lint:fix`      | Run ESLint with auto-fix.                          |
-| `pnpm typecheck`     | Run `tsc --noEmit` (strict mode).                  |
-| `pnpm test`          | Run Vitest unit tests once.                        |
-| `pnpm test:watch`    | Run Vitest in watch mode.                          |
-| `pnpm test:coverage` | Run tests with V8 coverage report.                 |
-| `pnpm format`        | Format all files with Prettier.                    |
-| `pnpm audit`         | Check for known dependency vulnerabilities.        |
-
----
-
-## Testing
-
-The project uses **Vitest** with **jsdom** for DOM APIs and **MSW** for HTTP
-mocking. Coverage thresholds: 90% lines/statements/functions, 80% branches.
-
-```bash
-pnpm test           # run all tests
-pnpm test:coverage  # run with coverage report
-```
-
-See [CONTRIBUTING.adoc](CONTRIBUTING.adoc) for how to add new tests.
+**Settings → Actions → General → Workflow permissions**. Because the workflow
+uses the built-in `GITHUB_TOKEN`, GitHub does not start a second CI run for
+the bot-created release PR; quality checks still run on `main` before the
+release is created.
 
 ---
 
 ## License
 
-This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the **MIT License**. See the [LICENSE](LICENSE)
+file for details.
 
 [corepack]: https://nodejs.org/api/corepack.html

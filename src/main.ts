@@ -70,6 +70,11 @@ import { detectPlatform } from './platform/platform';
 import type { Platform } from './platform/platform';
 import { apiKeySchema } from './platform/api-key.schema';
 
+/**
+ * Query-selector helper that asserts the matched element is of the expected
+ * subtype. Throws at boot if the template drifts so a broken shell surfaces
+ * here, not as a `null` later in an unrelated module.
+ */
 function getRequiredElement<T extends Element>(
   root: ParentNode,
   selector: string,
@@ -88,10 +93,15 @@ function getRequiredElement<T extends Element>(
 
 let activeLang: AppLanguage = DEFAULT_SETTINGS.appLanguage;
 
+/** Short-lived alias bound to the active UI language. Re-bound on language change. */
 function t(key: string, params?: Record<string, string | number>): string {
   return translate(activeLang, key, params);
 }
 
+/**
+ * App entry point. Catches fatal boot errors and renders a user-visible
+ * banner with the i18n `fatal.message` text instead of a blank page.
+ */
 async function main(): Promise<void> {
   try {
     await bootstrap();
@@ -106,6 +116,15 @@ async function main(): Promise<void> {
   }
 }
 
+/**
+ * Composition root — wires every module through the EventBus.
+ *
+ * Order matters: platform/storage first → render shell → mount panels →
+ * construct services → wire event handlers → register shortcuts →
+ * register lifecycle cleanup on `unload`. The closures below capture shared
+ * mutable holders (`apiKey`, `config`, `editorHandle`, `dictationTarget`)
+ * so platform and pipeline reads always see the latest value.
+ */
 async function bootstrap(): Promise<void> {
   const bus = new EventBus<EventMap>();
 
@@ -200,35 +219,7 @@ async function bootstrap(): Promise<void> {
   plumaHolder.panel = createPlumaPanel(
     {
       onSelect: async (id) => {
-        const escrito = await escritos.getEscrito(id);
-        const panel = plumaHolder.panel;
-        if (!escrito || !panel) return;
-        // Lazy-load the editor (Crepe/ProseMirror) so it stays out of the
-        // initial bundle — only Pluma users pay for it, and only on first open.
-        const { mountEditor } = await import('./escritos/editor');
-        // Doc switch: tear down the previous editor, then mount a fresh one.
-        if (editorHandle) {
-          await editorHandle.destroy();
-          editorHandle = null;
-        }
-        panel.editorMount.replaceChildren();
-        let saveTimer: ReturnType<typeof setTimeout> | null = null;
-        editorHandle = await mountEditor(panel.editorMount, {
-          initialMD: escrito.contenidoMD,
-          escritoId: escrito.id,
-          images: imagesAdapter,
-          onChange: (md) => {
-            const docId = escrito.id;
-            if (saveTimer) clearTimeout(saveTimer);
-            saveTimer = setTimeout(() => {
-              void escritos.updateContent(docId, md).then(() => void refreshEscritos());
-            }, 800);
-          },
-        });
-        // The improve controller re-binds its selection subscription to the
-        // freshly mounted editor on every swap.
-        improveController.attach(editorHandle);
-        dictationController.setEnabled(true);
+        await openEscrito(id);
       },
       onRename: async (id, titulo) => {
         await escritos.renameEscrito(id, titulo);
@@ -239,6 +230,7 @@ async function bootstrap(): Promise<void> {
           await editorHandle.destroy();
           editorHandle = null;
         }
+        plumaHolder.panel?.editorMount.replaceChildren();
         dictationController.setEnabled(false);
         await escritos.removeEscrito(id);
         await refreshEscritos();
@@ -285,13 +277,47 @@ async function bootstrap(): Promise<void> {
     getLang: () => config.appLanguage,
   });
 
+  // Shared editor-open path used by row select and the "New escrito" button.
+  // Lazy-loads Crepe/ProseMirror so it stays out of the initial bundle — only
+  // Pluma users pay for it, and only on first open.
+  async function openEscrito(id: string): Promise<void> {
+    const escrito = await escritos.getEscrito(id);
+    const panel = plumaHolder.panel;
+    if (!escrito || !panel) return;
+    const { mountEditor } = await import('./escritos/editor');
+    // Doc switch: tear down the previous editor, then mount a fresh one.
+    if (editorHandle) {
+      await editorHandle.destroy();
+      editorHandle = null;
+    }
+    panel.editorMount.replaceChildren();
+    let saveTimer: ReturnType<typeof setTimeout> | null = null;
+    editorHandle = await mountEditor(panel.editorMount, {
+      initialMD: escrito.contenidoMD,
+      escritoId: escrito.id,
+      images: imagesAdapter,
+      onChange: (md) => {
+        const docId = escrito.id;
+        if (saveTimer) clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+          void escritos.updateContent(docId, md).then(() => void refreshEscritos());
+        }, 800);
+      },
+    });
+    // The improve controller re-binds its selection subscription to the
+    // freshly mounted editor on every swap.
+    improveController.attach(editorHandle);
+    dictationController.setEnabled(true);
+  }
+
   void refreshEscritos();
   elements.plumaView
     .querySelector<HTMLButtonElement>('#plumaNewButton')
     ?.addEventListener('click', async () => {
       const escrito = await escritos.createEscrito(t('pluma.untitled'));
       await refreshEscritos();
-      plumaPanel.preview(escrito);
+      plumaPanel.setOpenDoc(escrito.id);
+      await openEscrito(escrito.id);
     });
   elements.plumaNavButton.addEventListener('click', () => void refreshEscritos());
 
@@ -541,6 +567,13 @@ async function bootstrap(): Promise<void> {
 
 type AppView = 'home' | 'dictation' | 'settings' | 'metrics' | 'pluma' | 'about';
 
+/**
+ * View-switch controller for the sidebar + mobile drawer.
+ *
+ * `navigate(target)` toggles the single visible `<section>`, syncs the
+ * active button's `aria-current`, updates the mobile page title, and lazily
+ * primes microphone access only when entering Dictar with a configured key.
+ */
 function wireNavigation(
   elements: AppElements,
   getApiKey: () => string,
@@ -622,6 +655,7 @@ function wireNavigation(
   return navigate;
 }
 
+/** Wires the show/hide toggle, save (Zod-validated), and delete for the Groq key. */
 function wireApiKeySettings(
   elements: AppElements,
   platform: Platform,
@@ -677,6 +711,7 @@ function wireApiKeySettings(
   });
 }
 
+/** Reflects the current key state in the status badge, save button, and Dictar gate visibility. */
 function updateApiKeyState(elements: AppElements, apiKey: string): void {
   const configured = apiKey.length > 0;
   elements.apiKeyStatus.textContent = configured ? 'Configurada' : 'Sin configurar';
@@ -686,6 +721,7 @@ function updateApiKeyState(elements: AppElements, apiKey: string): void {
   elements.dictationWorkspace.hidden = !configured;
 }
 
+/** Renders the Inicio stat badges (words, transcriptions, audio minutes) from history. */
 function renderHistoryStats(elements: AppElements, entries: HistoryEntry[]): void {
   const stats = calculateHistoryStats(entries);
   elements.wordsMetric.textContent = stats.words.toLocaleString('es-MX');
@@ -703,6 +739,7 @@ function renderHistoryStats(elements: AppElements, entries: HistoryEntry[]): voi
 // Live controls
 // ===========================================================================
 
+/** Wire non-persisting UI state: temperature readout, verbose-format toggle, word counter. */
 function wireLiveControls(elements: AppElements): void {
   elements.temperatureSlider.addEventListener('input', () => {
     elements.temperatureValue.textContent = elements.temperatureSlider.value;
@@ -771,6 +808,11 @@ function wireQualitySettings(
 // Recording handlers
 // ===========================================================================
 
+/**
+ * Subscribes the visualizer, analyzer, timer, and status bar to
+ * `recording:*` events. Skipped when the dictation target is Pluma —
+ * that view has its own controller and must not pulse the Dictar UI.
+ */
 function wireRecordingHandlers(
   bus: EventBus<EventMap>,
   elements: AppElements,
@@ -817,6 +859,14 @@ function wireRecordingHandlers(
 // Transcription pipeline
 // ===========================================================================
 
+/**
+ * End-to-end transcription pipeline.
+ *
+ * Flow: `audio:blob-ready` → optional silence trim → Whisper call →
+ * `transcription:success` → text post-process → optional LLM polish →
+ * route (Pluma append OR output-area append + history + clipboard) →
+ * `transcription:error` for failures. State machine: {@link TranscriptionSession}.
+ */
 function wireTranscriptionPipeline(
   bus: EventBus<EventMap>,
   client: GroqClient,
@@ -960,6 +1010,7 @@ function wireTranscriptionPipeline(
 // History events
 // ===========================================================================
 
+/** Restore / delete / clear handlers for the Inicio history list. */
 function wireHistoryEvents(
   bus: EventBus<EventMap>,
   elements: AppElements,
@@ -994,6 +1045,7 @@ function wireHistoryEvents(
 // Output toolbar
 // ===========================================================================
 
+/** Output-area toolbar: copy all, clear, download as `.txt`. */
 function wireOutputToolbar(elements: AppElements): void {
   elements.copyAllBtn.addEventListener('click', async () => {
     const text = elements.outputArea.value;
@@ -1037,6 +1089,13 @@ function wireOutputToolbar(elements: AppElements): void {
 // Transcript summaries
 // ===========================================================================
 
+/**
+ * Summary feature: generate, persist (max 10 per source text), copy, delete.
+ *
+ * The source-of-truth key is the exact text in the output area at generation
+ * time; if the user edits it before the request returns, the result is still
+ * saved but the panel only re-renders when the original text is visible again.
+ */
 function wireSummaryFeature(elements: AppElements, getApiKey: () => string): void {
   let generating = false;
 
@@ -1123,6 +1182,7 @@ function wireSummaryFeature(elements: AppElements, getApiKey: () => string): voi
 // Helpers
 // ===========================================================================
 
+/** Reads the design-token colors used by the waveform (theme-aware). */
 function resolveWaveformStyle(canvas: HTMLCanvasElement): WaveformStyle {
   const styles = getComputedStyle(canvas);
   const read = (name: string, fallback: string): string =>
@@ -1156,6 +1216,7 @@ const STATUS_DOT: Record<StatusUpdate['level'], string> = {
   warning: 'bg-[var(--color-text-muted)]',
 };
 
+/** Replaces the status bar (dot + halo + message) with a fresh {@link StatusUpdate}. */
 function setStatus(elements: AppElements, update: StatusUpdate): void {
   elements.statusDiv.replaceChildren();
   elements.statusDiv.className = `flex items-center justify-center gap-2 text-center text-[15px] font-medium mb-4 min-h-[2em] transition-colors duration-[var(--transition-fast)] ${STATUS_STYLES[update.level]}`;
@@ -1179,12 +1240,14 @@ function setStatus(elements: AppElements, update: StatusUpdate): void {
   elements.statusDiv.appendChild(label);
 }
 
+/** Recomputes the word count badge from the output textarea. */
 function updateWordCount(elements: AppElements): void {
   const text = elements.outputArea.value.trim();
   const count = text ? text.split(/\s+/).length : 0;
   elements.wordCount.textContent = String(count);
 }
 
+/** Formats an elapsed-seconds counter as `MM:SS` for the timer badge. */
 function formatDuration(totalSeconds: number): string {
   const mins = Math.floor(totalSeconds / 60);
   const secs = Math.floor(totalSeconds % 60);

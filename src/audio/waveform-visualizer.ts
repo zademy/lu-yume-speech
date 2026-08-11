@@ -306,6 +306,7 @@ export class WaveformVisualizer {
     this.resetContextEffects();
   }
 
+  /** Builds (and memoizes) the aura / ribbon / core gradients for the current size + theme. */
   private getGradients(centerX: number, centerY: number, radius: number): OrbGradients {
     if (this.cachedGradients) return this.cachedGradients;
 
@@ -344,6 +345,7 @@ export class WaveformVisualizer {
     return this.cachedGradients;
   }
 
+  /** Outer breathing aura — soft glow whose radius pulses with overall energy. */
   private drawAura(
     centerX: number,
     centerY: number,
@@ -368,6 +370,7 @@ export class WaveformVisualizer {
     this.ctx.restore();
   }
 
+  /** One rotating ribbon layer — a `layer.lobes`-pointed star driven by its band. */
   private drawRibbon(
     centerX: number,
     centerY: number,
@@ -406,6 +409,7 @@ export class WaveformVisualizer {
     this.ctx.restore();
   }
 
+  /** Solid center sphere with a small breath and a strong energy-driven shadow. */
   private drawCore(
     centerX: number,
     centerY: number,
@@ -434,6 +438,7 @@ export class WaveformVisualizer {
     this.ctx.restore();
   }
 
+  /** Outer dashed rings + a treble-reactive progress arc, slowly rotating. */
   private drawActivityRing(centerX: number, centerY: number, radius: number): void {
     this.ctx.save();
     this.ctx.translate(centerX, centerY);
@@ -463,6 +468,7 @@ export class WaveformVisualizer {
     this.ctx.restore();
   }
 
+  /** Reduced-motion variant: static orb (no ribbon rotation, no phase advance). */
   private drawStableOrb(
     centerX: number,
     centerY: number,
@@ -482,6 +488,7 @@ export class WaveformVisualizer {
     this.resetContextEffects();
   }
 
+  /** Two faint concentric rings painted behind the idle orb. */
   private drawAmbientRings(centerX: number, centerY: number, radius: number): void {
     this.ctx.strokeStyle = this.style.idleColor;
     this.ctx.lineWidth = 1;
@@ -497,6 +504,7 @@ export class WaveformVisualizer {
     this.ctx.globalAlpha = 1;
   }
 
+  /** Overall RMS energy of the time-domain data, normalized to `[0, 1]`. */
   private computeEnergy(data: Uint8Array): number {
     if (data.length === 0) return 0;
     let sumSquares = 0;
@@ -507,6 +515,13 @@ export class WaveformVisualizer {
     return Math.min(1, Math.sqrt(sumSquares / data.length) * 3.5);
   }
 
+  /**
+   * Splits the signal into energy + bass / mid / treble bands.
+   *
+   * Uses the analyser's frequency data when available; otherwise falls back
+   * to a small DFT over a downsampled time-domain slice so the visualizer
+   * still reacts when only `getByteTimeDomainData` is wired.
+   */
   private analyzeMotion(data: Uint8Array, frequencyData: Uint8Array | null): AudioMotion {
     const energy = this.computeEnergy(data);
     if (frequencyData && frequencyData.length > 0) {
@@ -553,6 +568,7 @@ export class WaveformVisualizer {
     };
   }
 
+  /** Average of a numeric sub-range — used by the fallback DFT path. */
   private average(values: readonly number[], start: number, end: number): number {
     const sliceEnd = Math.min(values.length, end);
     if (start >= sliceEnd) return 0;
@@ -561,6 +577,7 @@ export class WaveformVisualizer {
     return sum / (sliceEnd - start);
   }
 
+  /** Average of a byte sub-range normalized to `[0, 1]` — used by the frequency path. */
   private averageBytes(values: Uint8Array, start: number, end: number): number {
     const sliceEnd = Math.min(values.length, end);
     if (start >= sliceEnd) return 0;
@@ -569,10 +586,12 @@ export class WaveformVisualizer {
     return sum / (sliceEnd - start) / 255;
   }
 
+  /** Reads the latest frequency-bin magnitudes into {@link target}. */
   private readFrequencyData(analyser: AnalyserNode, target: Uint8Array): void {
     analyser.getByteFrequencyData(target as AnalyserByteData);
   }
 
+  /** Frame-rate-independent exponential smoothing toward a target. */
   private damp(
     current: number,
     target: number,
@@ -584,6 +603,7 @@ export class WaveformVisualizer {
     return current + (target - current) * (1 - Math.exp(-rate * deltaSeconds));
   }
 
+  /** Honors the OS-level "reduce motion" accessibility preference. */
   private prefersReducedMotion(): boolean {
     return (
       typeof window.matchMedia === 'function' &&
@@ -591,10 +611,12 @@ export class WaveformVisualizer {
     );
   }
 
+  /** Base orb radius — the smaller of two viewport fractions, clamped to `[18, 42]`. */
   private getBaseRadius(width: number, height: number): number {
     return Math.max(18, Math.min(height * 0.22, width * 0.16, 42));
   }
 
+  /** Resets shadow + alpha so they don't bleed into the next draw call. */
   private resetContextEffects(): void {
     this.ctx.shadowBlur = 0;
     this.ctx.globalAlpha = 1;

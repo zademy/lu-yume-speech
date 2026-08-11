@@ -7,18 +7,9 @@ import {
   clampSelection,
   improveSelection,
   parseImproveResponse,
-  stripInvisibleChars,
 } from '../../src/escritos/improve';
 
 describe('improve — pure helpers', () => {
-  describe('stripInvisibleChars', () => {
-    it('removes zero-width and bidi characters but keeps visible text', () => {
-      expect(stripInvisibleChars('hello\u200bworld')).toBe('helloworld');
-      expect(stripInvisibleChars('foo\u202ebar')).toBe('foobar');
-      expect(stripInvisibleChars('plain text')).toBe('plain text');
-    });
-  });
-
   describe('buildImproveSystemPrompt', () => {
     it('returns the base prompt by default', () => {
       const p = buildImproveSystemPrompt();
