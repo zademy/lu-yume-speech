@@ -23,11 +23,13 @@ export function summaryToText(summary: GeneratedSummary): string {
   return `${summary.summary}\n\nPuntos clave:\n${summary.keyPoints.map((point) => `- ${point}`).join('\n')}`;
 }
 
+/** Parses an SVG markup string and appends it as the button's only child. */
 function renderIcon(button: HTMLButtonElement, svg: string): void {
   const fragment = document.createRange().createContextualFragment(svg);
   button.appendChild(fragment);
 }
 
+/** Builds the copy/delete icon button used in each summary card footer. */
 function createActionButton(
   action: 'copy' | 'delete',
   label: string,
@@ -44,6 +46,7 @@ function createActionButton(
   return button;
 }
 
+/** Builds a collapsible (`<details>`) card for a single generated summary. */
 function createSummaryCard(
   history: SummaryHistory,
   generated: GeneratedSummary,

@@ -235,6 +235,7 @@ export function createHistoryCard(
 // Helpers
 // -----------------------------------------------------------------------
 
+/** Builds a small colored badge (language, model, mode, duration) for the meta row. */
 function createBadge(text: string, variant: 'primary' | 'muted' | 'accent'): HTMLElement {
   const badge = document.createElement('span');
 
@@ -258,6 +259,7 @@ function createBadge(text: string, variant: 'primary' | 'muted' | 'accent'): HTM
 const actionButtonClass =
   'p-2 rounded-md text-[var(--color-text-muted)] hover:text-[var(--color-text-primary)] hover:bg-[var(--color-surface-muted)] active:scale-95 transition-[color,background-color,transform] duration-[var(--transition-fast)] cursor-pointer';
 
+/** Formats an audio duration in seconds as `M:SS`. */
 function formatDuration(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const remaining = Math.floor(seconds % 60);
@@ -320,6 +322,7 @@ function createLoadingIcon(): SVGElement {
 
 // --- SVG helpers ---
 
+/** Base 24×24 stroked SVG shell used by every action icon below. */
 function createSvg(): SVGElement {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('width', '12');
@@ -333,6 +336,7 @@ function createSvg(): SVGElement {
   return svg;
 }
 
+/** Creates an SVG child element with the given attributes (numbers coerced to strings). */
 function svgEl(tag: string, attrs: Record<string, string | number>): SVGElement {
   const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
   for (const [key, val] of Object.entries(attrs)) {

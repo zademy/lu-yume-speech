@@ -475,6 +475,7 @@ interface CardHead {
   readonly label: HTMLSpanElement;
 }
 
+/** Builds a small labeled card header; `label` is exposed for re-translation. */
 function mkCardHead(lang: AppLanguage, labelKey: string): CardHead {
   const el = document.createElement('div');
   el.className = 'flex items-center justify-between';
@@ -512,6 +513,7 @@ function semicircleGauge(_fraction: number): SVGSVGElement {
   return svg;
 }
 
+/** Updates the gauge's value arc as a fraction in `[0, 1]`. */
 function setGauge(svg: SVGSVGElement, fraction: number): void {
   const value = svg.querySelectorAll('path')[1];
   if (!value) return;
@@ -519,6 +521,7 @@ function setGauge(svg: SVGSVGElement, fraction: number): void {
   value.setAttribute('stroke-dasharray', `${(fraction * len).toFixed(2)} ${len}`);
 }
 
+/** Horizontal bar row used in the Grabaciones card (mode breakdown). */
 function modeRow(
   lang: AppLanguage,
   nameKey: string,
@@ -548,10 +551,12 @@ function modeRow(
   return row;
 }
 
+/** Category-card bar (soft color) for mode rows. */
 function catRow(lang: AppLanguage, nameKey: string, count: number, total: number): HTMLElement {
   return modeRow(lang, nameKey, count, total, false);
 }
 
+/** Category-card bar (soft color) for top source languages. */
 function catRowLang(lang: string, count: number, total: number): HTMLElement {
   const pct = total > 0 ? Math.round((count / total) * 100) : 0;
   const row = document.createElement('div');
@@ -575,6 +580,7 @@ function catRowLang(lang: string, count: number, total: number): HTMLElement {
   return row;
 }
 
+/** Small button used for Export / Purge / dialog actions. */
 function mkButton(label: string, variant: 'secondary' | 'danger'): HTMLButtonElement {
   const btn = document.createElement('button');
   btn.type = 'button';
@@ -593,6 +599,7 @@ function mkButton(label: string, variant: 'secondary' | 'danger'): HTMLButtonEle
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Returns the heatmap color for a given day count relative to the window max. */
 function heatColor(count: number, max: number): string {
   if (count === 0 || max === 0) return 'var(--color-surface-muted)';
   const ratio = count / max;
@@ -601,24 +608,29 @@ function heatColor(count: number, max: number): string {
   return ACCENT;
 }
 
+/** Returns `v` clamped to `[lo, hi]`. */
 function clamp(v: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, v));
 }
 
+/** Adds (or subtracts) a number of days using UTC ops to avoid DST drift. */
 function addDays(d: Date, days: number): Date {
   const n = new Date(d);
   n.setUTCDate(n.getUTCDate() + days);
   return n;
 }
 
+/** Returns the day-of-week (0=Sun) of a UTC-normalized date. */
 function weekDayUtc(d: Date): number {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())).getUTCDay();
 }
 
+/** Returns the `YYYY-MM-DD` key used to look up a day in `MetricsResult.porDia`. */
 function dayKey(ts: number): string {
   return new Date(ts).toISOString().slice(0, 10);
 }
 
+/** Formats an audio-minutes count for display; 1-decimal precision under 10. */
 function formatMinutes(minutos: number, lang: AppLanguage): string {
   if (minutos <= 0) return '0';
   const locale = lang === 'es' ? 'es-MX' : 'en-US';

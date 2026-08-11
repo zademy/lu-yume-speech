@@ -52,12 +52,14 @@ export class SummaryGenerationError extends Error {
   }
 }
 
+/** Parses the `Retry-After` header (in seconds) into a non-negative number. */
 function parseRetryAfter(value: string | null): number | undefined {
   if (value === null) return undefined;
   const seconds = Number(value);
   return Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined;
 }
 
+/** Leniently parses + validates the model's JSON payload; `undefined` if malformed. */
 function parseSummary(raw: string): SummaryResult | undefined {
   try {
     const parsed = JSON.parse(raw) as unknown;
