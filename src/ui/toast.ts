@@ -51,7 +51,7 @@ const LEVEL_ICON_NODES: Record<ToastLevel, SVGElement> = parseIconMap({
  * @param duration  - Auto-dismiss time in ms (default: 3000)
  */
 export function showToast(
-  container: HTMLDivElement,
+  container: HTMLElement,
   message: string,
   level: ToastLevel = 'info',
   duration = 3000,
