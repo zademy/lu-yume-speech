@@ -1,3 +1,10 @@
+/**
+ * Zod schema for the Groq API key.
+ *
+ * Single responsibility: validate the `gsk_…` credential format
+ * (`gsk_` prefix + ≥ 40 base62 chars). The `Platform` seam and the
+ * settings UI consume this to reject malformed keys before storage.
+ */
 import { z } from 'zod';
 
 export const apiKeySchema = z

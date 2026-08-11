@@ -9,36 +9,26 @@
  * context. The system prompt forbids following instructions found inside the
  * selection.
  *
- * Architecture mirrors `summary-client.ts` / `llm-postprocessor.ts`: pure
- * helpers (`buildImproveSystemPrompt`, `parseImproveResponse`,
- * `stripInvisibleChars`) are deterministic and unit-tested; only the thin
- * `improveSelection` wrapper touches the network.
+ * Delegates the HTTP envelope (URL, timeout, abort, retry-after, content
+ * extraction) to `groq-chat.ts`; this module owns only its domain pieces: the
+ * system prompt, the output schema, the lenient parser, the selection clamp,
+ * and the user-facing error type/messages.
  *
  * SRP: this module only refines a text selection via an LLM.
  */
 
-/** Groq chat-completions endpoint (OpenAI-compatible). Same origin as transcription. */
-const GROQ_CHAT_URL = 'https://api.groq.com/openai/v1/chat/completions';
-/** Request timeout — LLM calls can be slow, but never block forever. */
-const TIMEOUT_MS = 30_000;
+import {
+  chatCompletion,
+  formatRateLimitMessage,
+  stripInvisibleChars,
+  type GroqChatError,
+} from '../api/groq-chat';
 
 /** Fixed production model for fast, economical text improvement. */
 export const IMPROVE_MODEL = 'openai/gpt-oss-20b';
 
 /** Maximum selection length we will send (chars). Protects prompt budget. */
 export const IMPROVE_MAX_CHARS = 4000;
-
-/**
- * Remove invisible / formatting Unicode characters that some chat models inject
- * (zero-width spaces, BOM, soft hyphen, bidi controls, interlinear annotation).
- * Visible text is untouched.
- */
-export function stripInvisibleChars(text: string): string {
-  return text.replace(
-    /[\u00ad\u200b-\u200f\u2028\u2029\u202a-\u202e\u2060-\u2064\u206a-\u206f\ufeff\ufff9-\ufffb]/g,
-    '',
-  );
-}
 
 /** Built-in system prompt that constrains the model to clean, schema-bound output. */
 const BASE_IMPROVE_SYSTEM_PROMPT = [
@@ -114,10 +104,28 @@ export class ImproveError extends Error {
   }
 }
 
-function parseRetryAfter(value: string | null): number | undefined {
-  if (value === null) return undefined;
-  const seconds = Number(value);
-  return Number.isFinite(seconds) && seconds >= 0 ? seconds : undefined;
+/** Map an envelope error to a user-facing `ImproveError`. */
+function toImproveError(error: GroqChatError): ImproveError {
+  switch (error.kind) {
+    case 'empty':
+      return new ImproveError('Groq devolvió una respuesta vacía.');
+    case 'rate-limit':
+      return new ImproveError(
+        formatRateLimitMessage(error.retryAfterSeconds),
+        error.status,
+        error.retryAfterSeconds,
+      );
+    case 'http':
+      return new ImproveError(
+        `No se pudo mejorar la selección (HTTP ${error.status}).`,
+        error.status,
+      );
+    case 'timeout':
+      return new ImproveError('La mejora agotó el tiempo de espera.');
+    case 'network':
+    default:
+      return new ImproveError('No se pudo conectar con Groq.');
+  }
 }
 
 /** Options for an improve run. */
@@ -144,65 +152,21 @@ export async function improveSelection(
   if (!source) throw new ImproveError('No hay texto seleccionado para mejorar.');
   if (!apiKey) throw new ImproveError('Falta la API key de Groq.');
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  if (options.signal) {
-    if (options.signal.aborted) controller.abort();
-    else options.signal.addEventListener('abort', () => controller.abort(), { once: true });
-  }
-
   try {
-    const response = await fetch(GROQ_CHAT_URL, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: IMPROVE_MODEL,
-        messages: [
-          { role: 'system', content: buildImproveSystemPrompt(options.instructions) },
-          { role: 'user', content: source },
-        ],
-        response_format: {
-          type: 'json_schema',
-          json_schema: {
-            name: 'improve_output',
-            strict: true,
-            schema: IMPROVE_OUTPUT_SCHEMA,
-          },
-        },
-        temperature: 0,
-      }),
-      signal: controller.signal,
+    const content = await chatCompletion({
+      apiKey,
+      model: IMPROVE_MODEL,
+      systemPrompt: buildImproveSystemPrompt(options.instructions),
+      userContent: source,
+      schemaName: 'improve_output',
+      schema: IMPROVE_OUTPUT_SCHEMA,
+      signal: options.signal,
     });
-
-    if (!response.ok) {
-      const retryAfter = parseRetryAfter(response.headers.get('retry-after'));
-      const message =
-        response.status === 429
-          ? retryAfter === undefined
-            ? 'Límite de Groq alcanzado. Intenta de nuevo más tarde.'
-            : `Límite de Groq alcanzado. Reintenta en ${retryAfter} s.`
-          : `No se pudo mejorar la selección (HTTP ${response.status}).`;
-      throw new ImproveError(message, response.status, retryAfter);
-    }
-
-    const payload = (await response.json().catch(() => null)) as {
-      choices?: Array<{ message?: { content?: string } }>;
-    } | null;
-    const content = payload?.choices?.[0]?.message?.content;
-    if (!content) throw new ImproveError('Groq devolvió una respuesta vacía.');
     const improved = parseImproveResponse(content);
     if (!improved) throw new ImproveError('Groq devolvió una respuesta inválida.');
     return improved;
   } catch (error) {
     if (error instanceof ImproveError) throw error;
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new ImproveError('La mejora agotó el tiempo de espera.');
-    }
-    throw new ImproveError('No se pudo conectar con Groq.');
-  } finally {
-    clearTimeout(timeout);
+    throw toImproveError(error as GroqChatError);
   }
 }

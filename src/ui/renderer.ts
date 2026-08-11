@@ -19,12 +19,27 @@ import {
   WHISPER_MODELS,
 } from '../types';
 
+/**
+ * Replaces the children of {@link el} with nodes parsed from {@link html}.
+ *
+ * Uses `Range.createContextualFragment` so the template string is treated as
+ * markup (not text), matching `Element.innerHTML` semantics without the
+ * reflow churn of assigning `innerHTML` directly on the host element.
+ */
 function setTrustedHTML(el: HTMLElement, html: string): void {
   const range = document.createRange();
   const fragment = range.createContextualFragment(html);
   el.replaceChildren(fragment);
 }
 
+/**
+ * Looks up an element by {@link selector} and asserts it is of the expected
+ * {@link elementType}.
+ *
+ * Throws synchronously if the selector misses or matches the wrong tag, so a
+ * broken template surfaces at boot rather than as a `null` runtime error in
+ * an unrelated module.
+ */
 function getRequiredElement<T extends Element>(
   root: ParentNode,
   selector: string,
@@ -37,6 +52,14 @@ function getRequiredElement<T extends Element>(
   return element;
 }
 
+/**
+ * Strongly-typed handles to every interactive element in the product shell.
+ *
+ * `main.ts` consumes this map to wire EventBus listeners and platform
+ * adapters; the narrow element types (e.g. `HTMLSelectElement` vs.
+ * `HTMLInputElement`) are what let those bindings compile under strict mode
+ * without runtime casts.
+ */
 export interface AppElements {
   root: HTMLDivElement;
   navigation: HTMLElement;
@@ -108,6 +131,15 @@ export interface AppElements {
   llmInstructionsInput: HTMLTextAreaElement;
 }
 
+/**
+ * Builds the entire application DOM in one pass and returns typed handles.
+ *
+ * The shell is assembled from the `render*` helpers below (each returns an
+ * HTML fragment string), injected through `setTrustedHTML`, and then resolved
+ * to concrete elements via `getRequiredElement`. Keeping this synchronous and
+ * single-shot means the rest of the app can assume the DOM exists by the time
+ * `main.ts` runs.
+ */
 export function renderApp(): AppElements {
   const root = document.createElement('div');
   root.id = 'app-shell';
@@ -213,6 +245,11 @@ export function renderApp(): AppElements {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Navigation & mobile shell
+// ---------------------------------------------------------------------------
+
+/** Desktop sidebar + footer nav (Settings / About pinned at the bottom). */
 function renderNavigation(): string {
   return `
     <aside id="primaryNavigation" class="app-sidebar" aria-label="Navegación principal" data-open="false">
@@ -237,6 +274,7 @@ function renderNavigation(): string {
     </aside>`;
 }
 
+/** Single nav entry: icon + i18n label, with `is-active` styling when active. */
 function renderNavButton(
   id: string,
   view: string,
@@ -247,6 +285,7 @@ function renderNavButton(
   return `<button id="${id}" type="button" class="nav-item${active ? ' is-active' : ''}" data-view="${view}" aria-current="${active ? 'page' : 'false'}">${icon}<span data-i18n="${i18nKey}"></span></button>`;
 }
 
+/** Sticky top header shown only on mobile — hamburger, page title, spacer. */
 function renderMobileHeader(): string {
   return `
     <header class="mobile-header">
@@ -256,6 +295,11 @@ function renderMobileHeader(): string {
     </header>`;
 }
 
+// ---------------------------------------------------------------------------
+// Top-level views (one per sidebar entry)
+// ---------------------------------------------------------------------------
+
+/** Home view: history list on the left, accumulated stats aside. */
 function renderHomeView(): string {
   return `
     <section id="homeView" class="view-panel" aria-labelledby="homeTitle">
@@ -304,6 +348,7 @@ function renderHomeView(): string {
     </section>`;
 }
 
+/** Stat row: localized label + hint + numeric value badge. */
 function renderMetric(id: string, labelKey: string, hintKey: string, value: string): string {
   return `
     <div class="metric-row">
@@ -312,6 +357,13 @@ function renderMetric(id: string, labelKey: string, hintKey: string, value: stri
     </div>`;
 }
 
+/**
+ * Dictate view: credential gate + workspace (status bar, visualizer, output).
+ *
+ * `modifierLabel` is the OS-aware shortcut token (`⌘` on macOS, `Ctrl` elsewhere)
+ * surfaced in the status hint. The workspace stays `hidden` until a Groq key
+ * is configured (see the `dictationKeyGate` section).
+ */
 function renderDictationView(modifierLabel: string): string {
   return `
     <section id="dictationView" class="view-panel" aria-labelledby="dictationTitle" hidden>
@@ -340,6 +392,7 @@ function renderDictationView(modifierLabel: string): string {
     </section>`;
 }
 
+/** Metrics view shell. Charts are mounted into `#metricsView` at runtime. */
 function renderMetricsView(): string {
   return `
     <section id="metricsView" class="view-panel" aria-labelledby="metricsTitle" hidden>
@@ -353,6 +406,7 @@ function renderMetricsView(): string {
     </section>`;
 }
 
+/** Pluma view shell — document list + editor are mounted at runtime. */
 function renderPlumaView(): string {
   return `
     <section id="plumaView" class="view-panel" aria-labelledby="plumaTitle" hidden>
@@ -368,6 +422,11 @@ function renderPlumaView(): string {
     </section>`;
 }
 
+/**
+ * Settings view: stack of cards — Interface language, API key, Transcription,
+ * Quality, Rate limits. The cards are independent sections; each renders its
+ * own field primitives below.
+ */
 function renderSettingsView(): string {
   return `
     <section id="settingsView" class="view-panel" aria-labelledby="settingsTitle" hidden>
@@ -441,6 +500,11 @@ function renderSettingsView(): string {
     </section>`;
 }
 
+// ---------------------------------------------------------------------------
+// Settings cards
+// ---------------------------------------------------------------------------
+
+/** Interface-language selector (English default, Spanish available). */
 function renderInterfaceSection(): string {
   return `
     <section class="settings-card" aria-labelledby="interfaceSettingsTitle">
@@ -462,6 +526,7 @@ function renderInterfaceSection(): string {
     </section>`;
 }
 
+/** API-key form: password input with show/hide toggle, save, and delete. */
 function renderApiKeySection(): string {
   return `
     <section class="settings-card" aria-labelledby="apiKeyTitle">
@@ -486,6 +551,7 @@ function renderApiKeySection(): string {
     </section>`;
 }
 
+/** About view: app card, author card, GitHub link. Content is fully i18n'd. */
 function renderAboutView(githubIcon: string, arrowIcon: string): string {
   return `
     <section id="aboutView" class="view-panel about-view" aria-labelledby="aboutTitle" hidden>
@@ -528,6 +594,11 @@ function renderAboutView(githubIcon: string, arrowIcon: string): string {
     </section>`;
 }
 
+// ---------------------------------------------------------------------------
+// Dictation workspace sub-sections
+// ---------------------------------------------------------------------------
+
+/** Status bar above the visualizer — shows the OS-aware push-to-talk hint. */
 function renderStatusBar(modifierLabel: string): string {
   return `
     <div id="status" class="mb-4 flex min-h-[2em] items-center justify-center gap-2 text-center text-[15px] font-medium text-[var(--color-text-secondary)]">
@@ -535,6 +606,7 @@ function renderStatusBar(modifierLabel: string): string {
     </div>`;
 }
 
+/** Visualizer container: canvas + REC indicator + elapsed-time badge. */
 function renderVisualizerArea(): string {
   return `
     <div id="waveformContainer" class="waveform-container relative mb-4 min-h-40 overflow-hidden rounded-2xl border border-[var(--color-border)] shadow-[var(--shadow-card)]">
@@ -544,6 +616,7 @@ function renderVisualizerArea(): string {
     </div>`;
 }
 
+/** Output area: word count, copy/download/clear toolbar, textarea, metadata, summary. */
 function renderOutputSection(): string {
   return `
     <div class="space-y-2">
@@ -568,10 +641,16 @@ function renderOutputSection(): string {
     </div>`;
 }
 
+/** Footnote with shortcut + processor info, shown below the output. */
 function renderDictationFooter(): string {
   return `<div class="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border-subtle)] pt-4 text-[10.5px] text-[var(--color-text-muted)]"><span data-i18n="dictation.footer.shortcut"></span><span data-i18n="dictation.footer.processor"></span></div>`;
 }
 
+// ---------------------------------------------------------------------------
+// Reusable field primitives (used by Settings cards)
+// ---------------------------------------------------------------------------
+
+/** Generic `<select>` row with localized label and pre-selected option. */
 function renderSelectField(
   id: string,
   labelKey: string,
@@ -586,6 +665,7 @@ function renderSelectField(
   return `<div><label for="${id}" class="field-label" data-i18n="${labelKey}"></label><select id="${id}" class="form-control">${renderedOptions}</select></div>`;
 }
 
+/** Noise-reduction selector — options are i18n-keyed (off / DSP / RNNoise). */
 function renderNoiseReductionField(): string {
   const options = [
     { value: 'off', label: '', labelKey: 'noise.off', selected: false },
@@ -601,6 +681,7 @@ function renderNoiseReductionField(): string {
   return `<div><label for="noiseReductionSelect" class="field-label" data-i18n="field.noiseReduction"></label><select id="noiseReductionSelect" class="form-control">${renderedOptions}</select></div>`;
 }
 
+/** Multi-row textarea with localized label + placeholder. */
 function renderTextareaField(
   id: string,
   labelKey: string,
@@ -610,14 +691,17 @@ function renderTextareaField(
   return `<div><label for="${id}" class="field-label" data-i18n="${labelKey}"></label><textarea id="${id}" rows="${rows}" class="form-control resize-none" data-i18n-placeholder="${placeholderKey}"></textarea></div>`;
 }
 
+/** Single-line text input with localized label + placeholder. */
 function renderTextField(id: string, labelKey: string, placeholderKey: string): string {
   return `<div><label for="${id}" class="field-label" data-i18n="${labelKey}"></label><input id="${id}" type="text" class="form-control" data-i18n-placeholder="${placeholderKey}" /></div>`;
 }
 
+/** Whisper temperature slider with a live numeric readout next to the label. */
 function renderTemperatureControl(): string {
   return `<div><div class="flex items-center justify-between"><label for="temperatureSlider" class="field-label" data-i18n="field.temperature"></label><span id="temperatureValue" class="range-value">${DEFAULT_SETTINGS.temperature}</span></div><input id="temperatureSlider" type="range" min="0" max="1" step="0.1" value="${DEFAULT_SETTINGS.temperature}" class="range-control" /></div>`;
 }
 
+/** Response-format selector with optional timestamps toggle. */
 function renderResponseFormatControl(): string {
   const options = RESPONSE_FORMATS.map(
     (format) =>
@@ -626,6 +710,7 @@ function renderResponseFormatControl(): string {
   return `<div><label for="responseFormatSelect" class="field-label" data-i18n="field.format"></label><select id="responseFormatSelect" class="form-control">${options}</select><label class="mt-2 flex min-h-10 items-center gap-2 text-xs text-[var(--color-text-muted)]"><input id="timestampToggle" type="checkbox" class="accent-[var(--color-control-emphasis)]" /> <span data-i18n="field.timestamps"></span></label></div>`;
 }
 
+/** Quality card body: vocabulary, correction threshold, filler words, silence trim, LLM polish. */
 function renderQualitySection(): string {
   return `
     <div class="settings-grid">
@@ -639,6 +724,7 @@ function renderQualitySection(): string {
     </div>`;
 }
 
+/** Generic range slider with a live numeric readout next to the label. */
 function renderRangeField(
   id: string,
   valueId: string,
@@ -651,6 +737,7 @@ function renderRangeField(
   return `<div><div class="flex items-center justify-between"><label for="${id}" class="field-label" data-i18n="${labelKey}"></label><span id="${valueId}" class="range-value">${value}</span></div><input id="${id}" type="range" min="${min}" max="${max}" step="${step}" value="${value}" class="range-control" /></div>`;
 }
 
+/** Checkbox toggle row with a strong label + small hint below it. */
 function renderToggleField(
   id: string,
   labelKey: string,
@@ -660,18 +747,28 @@ function renderToggleField(
   return `<label for="${id}" class="toggle-field"><input id="${id}" type="checkbox" ${checked ? 'checked' : ''} class="mt-1 accent-[var(--color-control-emphasis)]" /><span><strong data-i18n="${labelKey}"></strong><small data-i18n="${hintKey}"></small></span></label>`;
 }
 
+/** Compact rate-limits card — Groq free-tier reference + link to settings. */
 function renderRateLimits(): string {
   return `<section class="settings-card compact-card" aria-labelledby="limitsTitle"><div><p class="eyebrow" data-i18n="limits.eyebrow"></p><h3 id="limitsTitle" data-i18n="limits.title"></h3></div><div class="limits-grid"><span>20 req/min</span><span>2,000 req/día</span><span>~8 hrs/día</span></div><a href="https://console.groq.com/settings/limits" target="_blank" rel="noopener noreferrer" class="text-sm font-semibold"><span data-i18n="limits.link"></span> ${icons.arrowUpRight}</a></section>`;
 }
 
+/** Icon-only toolbar button (copy, download, clear) with i18n aria-label + title. */
 function renderToolbarButton(id: string, icon: string, labelKey: string): string {
   return `<button id="${id}" type="button" class="icon-button compact" data-i18n-aria-label="${labelKey}" data-i18n-title="${labelKey}">${icon}</button>`;
 }
 
+/** Fixed bottom-right container where `toast.ts` mounts non-blocking notifications. */
 function renderToastContainer(): string {
   return `<div id="toastContainer" class="pointer-events-none fixed bottom-4 right-4 z-50 flex flex-col gap-2"></div>`;
 }
 
+/**
+ * Inline SVG icon set.
+ *
+ * Each value is a complete `<svg>` markup string (no external sprite sheet),
+ * `aria-hidden`, and consumed by the render helpers above. Kept at module
+ * scope so the strings are interned once.
+ */
 const icons = {
   home: '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg>',
   mic: '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="6" height="11" x="9" y="2" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>',
