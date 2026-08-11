@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.4.0](https://github.com/zademy/lu-yume-speech/compare/v1.3.0...v1.4.0) (2026-08-11)
+
+
+### Features
+
+* **build:** sync app version from package.json and container CI ([56d9fb9](https://github.com/zademy/lu-yume-speech/commit/56d9fb9e0a501a8e5a612a0bc74f2c245384788c))
+
+
+### Bug Fixes
+
+* **pluma:** isolate dictation state from Dictate view on navigation ([0788b15](https://github.com/zademy/lu-yume-speech/commit/0788b159d6e91eee5186fad9670d647eceb7678b))
+* **pluma:** move improve star to left, reduce editor font to 12px, fix metrics button spacing ([799d5c7](https://github.com/zademy/lu-yume-speech/commit/799d5c7e233f91909b5b6f10bb0c7045d1e120ff))
+
 ## [1.3.0](https://github.com/zademy/lu-yume-speech/compare/v1.2.0...v1.3.0) (2026-08-10)
 
 
