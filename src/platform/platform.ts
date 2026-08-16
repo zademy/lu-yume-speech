@@ -1,6 +1,3 @@
-import type { AppSettings } from '../types';
-import { WebBridge } from './web-bridge';
-
 /**
  * Platform abstraction layer.
  *
@@ -12,11 +9,17 @@ import { WebBridge } from './web-bridge';
  * This boundary enforces Dependency Inversion — the app talks to the
  * abstraction, never to a concrete storage implementation.
  */
+import type { AppSettings } from '../types';
+import { WebBridge } from './web-bridge';
+
+/** Named credentials managed through the Platform seam. */
+export type CredentialName = 'groq' | 'worker';
+
 export interface Platform {
-  hasApiKey(): Promise<boolean>;
-  getApiKey(): Promise<string | null>;
-  setApiKey(key: string): Promise<void>;
-  deleteApiKey(): Promise<void>;
+  hasCredential(name: CredentialName): Promise<boolean>;
+  getCredential(name: CredentialName): Promise<string | null>;
+  setCredential(name: CredentialName, value: string): Promise<void>;
+  deleteCredential(name: CredentialName): Promise<void>;
   loadSettings(): Promise<AppSettings | null>;
   saveSettings(settings: AppSettings): Promise<void>;
 }

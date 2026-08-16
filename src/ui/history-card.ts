@@ -74,6 +74,11 @@ export function createHistoryCard(
   const modelLabel = entry.model === 'whisper-large-v3-turbo' ? 'turbo' : 'v3';
   meta.appendChild(createBadge(modelLabel, 'muted'));
 
+  // Provider badge — only non-default providers are surfaced (Groq stays implicit)
+  if (entry.provider === 'cloudflare-whisper') {
+    meta.appendChild(createBadge('Cloudflare', 'accent'));
+  }
+
   // Operation mode badge
   if (entry.operationMode === 'translate') {
     meta.appendChild(createBadge('TR', 'accent'));
