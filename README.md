@@ -24,13 +24,14 @@
 ## Overview
 
 LU YUME is a **TypeScript SPA** (Vite + Tailwind 4) that captures microphone
-audio in the browser and transcribes it with the Groq Whisper API. It also
+audio in the browser and transcribes it through a swappable provider layer —
+Groq Whisper by default, or your own Cloudflare Whisper worker. It also
 offers translation, AI noise suppression, fuzzy post-correction, optional LLM
 polish, transcript summaries, a Pluma writing surface, and local metrics — all
 without a backend.
 
-> The Groq API key **never** ships in the JS bundle. Each user supplies it at
-> runtime and it is stored in their browser's `localStorage`. See
+> Credentials **never** ship in the JS bundle. Each user supplies them at
+> runtime and they are stored in their browser's `localStorage`. See
 > [SECURITY.md](SECURITY.md) for the full threat model.
 
 For the modular event-driven architecture, the `EventBus` coupling rule, and
@@ -41,6 +42,7 @@ the platform-bridge pattern, see [ARCHITECTURE.md](ARCHITECTURE.md).
 ## Features
 
 - **Real-time transcription & translation** — record audio and send it to Groq Whisper; switch between transcribing (same language) and translating (to English) from the UI.
+- **Swappable transcription providers** — pick between the Groq API and your own Cloudflare Whisper worker (adapter pattern); activation is manual from Settings and each credential lives in the browser.
 - **Custom vocabulary & fuzzy correction** — define domain terms, names, and acronyms; they're passed to Whisper as a prompt and fuzzy-corrected afterward (Levenshtein + Soundex).
 - **Filler / stutter cleanup** — language-aware stripping of filler words and repeated syllables after transcription.
 - **Silence trimming** — leading/trailing silence is removed before transcription (fail-open) for lower latency and fewer hallucinations.
@@ -175,7 +177,7 @@ The provided `compose.yaml` runs the image with:
 
 ---
 
-## API Key
+## API Key (Groq)
 
 | Topic                | Detail                                                 |
 | -------------------- | ------------------------------------------------------ |
@@ -187,17 +189,68 @@ The provided `compose.yaml` runs the image with:
 | Bundled in JS?       | **No.** Each user supplies it at runtime.              |
 
 On first launch the app shows a modal prompting for the key. You can also set
-or rotate it from **Ajustes → API key**, or programmatically from the devtools
-console:
+or rotate it from **Ajustes → Groq connection**, or programmatically from the
+devtools console:
 
 ```javascript
 await import('./src/platform/web-bridge').then((b) =>
-  new b.WebBridge().setApiKey('gsk_your_key_here'),
+  new b.WebBridge().setCredential('groq', 'gsk_your_key_here'),
 );
 ```
 
+The Groq key also powers the AI-over-text features (LLM polish, summaries,
+selection refine) regardless of the active transcription provider.
+
 See [SECURITY.md](SECURITY.md) before touching anything credential-, secret-,
 or network-related.
+
+---
+
+## Transcription providers
+
+The app speaks to transcription backends through a shared
+`TranscriptionProvider` seam (`src/api/transcription-provider.ts`, adapter
+pattern). Two clients ship today — adding a third means one class plus one
+entry in the registry in `src/main.ts`; see
+[ADR 0002](docs/adr/0002-adapter-proveedores-transcripcion.md). You pick the
+active one from **Ajustes → Transcription → Provider**; an option without its
+credential is disabled, and deleting the active credential auto-switches to
+the other provider when available.
+
+| Provider             | Credential             | Storage key         | Notes                                             |
+| -------------------- | ---------------------- | ------------------- | ------------------------------------------------- |
+| Groq API (default)   | Groq API key           | `stt_groq_api_key`  | transcription, translation, all tuning knobs      |
+| Cloudflare Whisper   | Worker bearer token    | `stt_worker_token`  | transcription only; fixed model `whisper-large-v3-turbo` |
+
+### Cloudflare Whisper (bring your own worker)
+
+Cloudflare's free tier lets you run Whisper (`@cf/openai/whisper-large-v3-turbo`)
+on Workers AI behind your own Worker. Rolling out your own instance gives you
+a personal URL + token, and the app never shares quota with anyone else.
+
+1. **Create the worker** — follow the
+   [Cloudflare Workers get-started guide](https://developers.cloudflare.com/workers/get-started/guide/)
+   and the [Workers AI Whisper model reference](https://developers.cloudflare.com/workers-ai/models/whisper-large-v3-turbo/)
+   to expose a `POST /transcribe` endpoint that forwards raw audio to the
+   model and returns plain text. The full HTTP contract this app expects
+   (auth, `?lang=`, formats, errors, limits) is documented in
+   [API.md](API.md).
+2. **Set the worker token** — `npx wrangler secret put AUTH_TOKEN`. Pick any
+   opaque value (≥ 8 characters); the worker checks it as a Bearer token.
+3. **Configure the app** — **Ajustes → Cloudflare Whisper**: paste the token,
+   adjust the base URL if your worker lives on a custom domain (must be
+   `https:`), then activate the provider in the Transcription card.
+
+> **CORS**: the worker must answer `OPTIONS` preflights with
+> `Access-Control-Allow-Origin` (the browser sends one because of the
+> `Authorization` header) and include CORS headers on every response,
+> including errors. Your app origin (e.g. `http://localhost:1420`) must be
+> allowed.
+
+While Cloudflare Whisper is active, translation and the Groq-only knobs
+(model, prompt, temperature, response format, timestamps) are disabled in the
+UI; the language selector keeps every option and `auto` simply lets the worker
+apply its server-side default.
 
 ---
 

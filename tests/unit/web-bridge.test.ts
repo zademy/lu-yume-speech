@@ -17,30 +17,54 @@ describe('WebBridge', () => {
     expect(detectPlatform()).toBe(platform);
   });
 
-  it('hasApiKey returns false when no key stored', async () => {
-    expect(await bridge.hasApiKey()).toBe(false);
+  describe('groq credential', () => {
+    it('hasCredential returns false when no key stored', async () => {
+      expect(await bridge.hasCredential('groq')).toBe(false);
+    });
+
+    it('hasCredential returns true after setCredential', async () => {
+      await bridge.setCredential('groq', 'gsk_' + 'a'.repeat(40));
+      expect(await bridge.hasCredential('groq')).toBe(true);
+    });
+
+    it('getCredential returns null when nothing stored', async () => {
+      expect(await bridge.getCredential('groq')).toBeNull();
+    });
+
+    it('getCredential returns key after setCredential', async () => {
+      const key = 'gsk_' + 'b'.repeat(40);
+      await bridge.setCredential('groq', key);
+      expect(await bridge.getCredential('groq')).toBe(key);
+    });
+
+    it('deleteCredential removes the key', async () => {
+      await bridge.setCredential('groq', 'gsk_' + 'c'.repeat(40));
+      expect(await bridge.hasCredential('groq')).toBe(true);
+      await bridge.deleteCredential('groq');
+      expect(await bridge.hasCredential('groq')).toBe(false);
+    });
+
+    it('keeps the historical stt_groq_api_key storage key (no migration)', async () => {
+      await bridge.setCredential('groq', 'legacy-value');
+      expect(localStorage.getItem('stt_groq_api_key')).toBe(JSON.stringify('legacy-value'));
+      localStorage.setItem('stt_groq_api_key', JSON.stringify('pre-existing'));
+      expect(await bridge.getCredential('groq')).toBe('pre-existing');
+    });
   });
 
-  it('hasApiKey returns true after setApiKey', async () => {
-    await bridge.setApiKey('gsk_' + 'a'.repeat(40));
-    expect(await bridge.hasApiKey()).toBe(true);
-  });
+  describe('worker credential', () => {
+    it('roundtrips set/get/has/delete independently of groq', async () => {
+      await bridge.setCredential('groq', 'gsk_' + 'd'.repeat(40));
+      await bridge.setCredential('worker', 'worker-secret-token');
 
-  it('getApiKey returns null when nothing stored', async () => {
-    expect(await bridge.getApiKey()).toBeNull();
-  });
+      expect(await bridge.getCredential('worker')).toBe('worker-secret-token');
+      expect(await bridge.hasCredential('worker')).toBe(true);
+      expect(localStorage.getItem('stt_worker_token')).toBe(JSON.stringify('worker-secret-token'));
 
-  it('getApiKey returns key after setApiKey', async () => {
-    const key = 'gsk_' + 'b'.repeat(40);
-    await bridge.setApiKey(key);
-    expect(await bridge.getApiKey()).toBe(key);
-  });
-
-  it('deleteApiKey removes the key', async () => {
-    await bridge.setApiKey('gsk_' + 'c'.repeat(40));
-    expect(await bridge.hasApiKey()).toBe(true);
-    await bridge.deleteApiKey();
-    expect(await bridge.hasApiKey()).toBe(false);
+      await bridge.deleteCredential('worker');
+      expect(await bridge.hasCredential('worker')).toBe(false);
+      expect(await bridge.hasCredential('groq')).toBe(true);
+    });
   });
 
   it('loadSettings returns null when nothing saved', async () => {

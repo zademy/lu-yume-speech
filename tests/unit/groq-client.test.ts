@@ -4,9 +4,10 @@ import { setupServer } from 'msw/node';
 import { http, HttpResponse } from 'msw';
 import { handlers } from '../helpers/msw-handlers';
 import { GroqClient } from '../../src/api/groq-client';
-import { GroqApiError } from '../../src/types';
+import { TranscriptionApiError } from '../../src/types';
 import { EventBus } from '../../src/core/event-bus';
-import type { EventMap, TranscriptionOptions } from '../../src/types';
+import type { EventMap } from '../../src/types';
+import type { TranscriptionRequest } from '../../src/api/transcription-provider';
 
 const server = setupServer(...handlers);
 beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
@@ -18,7 +19,8 @@ function createClient(apiKey: string): GroqClient {
   return new GroqClient(bus, () => apiKey);
 }
 
-const opts: TranscriptionOptions = {
+const opts: TranscriptionRequest = {
+  mode: 'transcribe',
   model: 'whisper-large-v3-turbo',
   language: 'es',
   temperature: 0,
@@ -34,14 +36,14 @@ describe('GroqClient', () => {
     expect(result.text).toBe('hello world');
   });
 
-  it('throws GroqApiError kind=auth on 401', async () => {
+  it('throws TranscriptionApiError kind=auth on 401', async () => {
     const client = createClient('invalid');
     await expect(client.transcribe(blob(), opts)).rejects.toMatchObject({
       detail: { kind: 'auth' },
     });
   });
 
-  it('throws GroqApiError kind=network when no API key', async () => {
+  it('throws TranscriptionApiError kind=auth when no API key', async () => {
     const client = createClient('');
     await expect(client.transcribe(blob(), opts)).rejects.toMatchObject({
       detail: { kind: 'auth' },
@@ -59,7 +61,7 @@ describe('GroqClient', () => {
     const client = createClient('gsk_test-key');
     setTimeout(() => ctrl.abort(), 50);
     await expect(
-      client.transcribe(blob(), opts, 'transcriptions', ctrl.signal),
+      client.transcribe(blob(), opts, ctrl.signal),
     ).rejects.toMatchObject({
       detail: { kind: 'network' },
     });
@@ -143,7 +145,7 @@ describe('GroqClient', () => {
     bus.on('transcription:error', (e: Error) => errors.push(e));
     await expect(client.transcribe(blob(), opts)).rejects.toThrow();
     expect(errors).toHaveLength(1);
-    expect(errors[0]).toBeInstanceOf(GroqApiError);
+    expect(errors[0]).toBeInstanceOf(TranscriptionApiError);
   });
 
   it('emits transcription:start and transcription:success on happy path', async () => {
@@ -169,7 +171,8 @@ describe('GroqClient', () => {
       }),
     );
     const client = createClient('gsk_test-key');
-    const verboseOpts: TranscriptionOptions = {
+    const verboseOpts: TranscriptionRequest = {
+  mode: 'transcribe',
       model: 'whisper-large-v3-turbo',
       temperature: 0,
       responseFormat: 'verbose_json',

@@ -16,6 +16,7 @@ import {
   OPERATION_MODES,
   RECORD_MODES,
   RESPONSE_FORMATS,
+  TRANSCRIPTION_PROVIDERS,
   WHISPER_MODELS,
 } from '../types';
 
@@ -96,6 +97,15 @@ export interface AppElements {
   apiKeyDeleteButton: HTMLButtonElement;
   apiKeyError: HTMLParagraphElement;
   apiKeyStatus: HTMLSpanElement;
+  providerSelect: HTMLSelectElement;
+  workerTokenForm: HTMLFormElement;
+  workerTokenInput: HTMLInputElement;
+  workerTokenToggle: HTMLButtonElement;
+  workerTokenSaveButton: HTMLButtonElement;
+  workerTokenDeleteButton: HTMLButtonElement;
+  workerTokenError: HTMLParagraphElement;
+  workerTokenStatus: HTMLSpanElement;
+  workerBaseUrlInput: HTMLInputElement;
   modelSelect: HTMLSelectElement;
   operationModeSelect: HTMLSelectElement;
   recordModeSelect: HTMLSelectElement;
@@ -201,6 +211,19 @@ export function renderApp(): AppElements {
     apiKeyDeleteButton: getRequiredElement(root, '#apiKeyDeleteButton', HTMLButtonElement),
     apiKeyError: getRequiredElement(root, '#apiKeyError', HTMLParagraphElement),
     apiKeyStatus: getRequiredElement(root, '#apiKeyStatus', HTMLSpanElement),
+    providerSelect: getRequiredElement(root, '#providerSelect', HTMLSelectElement),
+    workerTokenForm: getRequiredElement(root, '#workerTokenForm', HTMLFormElement),
+    workerTokenInput: getRequiredElement(root, '#workerTokenInput', HTMLInputElement),
+    workerTokenToggle: getRequiredElement(root, '#workerTokenToggle', HTMLButtonElement),
+    workerTokenSaveButton: getRequiredElement(root, '#workerTokenSaveButton', HTMLButtonElement),
+    workerTokenDeleteButton: getRequiredElement(
+      root,
+      '#workerTokenDeleteButton',
+      HTMLButtonElement,
+    ),
+    workerTokenError: getRequiredElement(root, '#workerTokenError', HTMLParagraphElement),
+    workerTokenStatus: getRequiredElement(root, '#workerTokenStatus', HTMLSpanElement),
+    workerBaseUrlInput: getRequiredElement(root, '#workerBaseUrlInput', HTMLInputElement),
     modelSelect: getRequiredElement(root, '#modelSelect', HTMLSelectElement),
     operationModeSelect: getRequiredElement(root, '#operationModeSelect', HTMLSelectElement),
     recordModeSelect: getRequiredElement(root, '#recordModeSelect', HTMLSelectElement),
@@ -440,12 +463,22 @@ function renderSettingsView(): string {
       <div class="settings-stack">
         ${renderInterfaceSection()}
         ${renderApiKeySection()}
+        ${renderWorkerTokenSection()}
         <section class="settings-card" aria-labelledby="transcriptionSettingsTitle">
           <div class="settings-card-heading">
             <span class="settings-icon">${icons.sliders}</span>
             <div><h3 id="transcriptionSettingsTitle" data-i18n="settings.transcription.title">Transcription</h3><p data-i18n="settings.transcription.description"></p></div>
           </div>
           <div class="settings-grid">
+            ${renderSelectField(
+              'providerSelect',
+              'field.provider',
+              TRANSCRIPTION_PROVIDERS.map((provider) => ({
+                value: provider.value,
+                label: provider.label,
+                selected: provider.value === DEFAULT_SETTINGS.transcriptionProvider,
+              })),
+            )}
             ${renderSelectField(
               'modelSelect',
               'field.model',
@@ -546,6 +579,39 @@ function renderApiKeySection(): string {
         <div class="flex flex-wrap justify-end gap-2 pt-2">
           <button id="apiKeyDeleteButton" type="button" class="secondary-action"><span data-i18n="settings.api.delete"></span></button>
           <button id="apiKeySaveButton" type="submit" class="primary-action"><span data-i18n="settings.api.save"></span></button>
+        </div>
+      </form>
+    </section>`;
+}
+
+/**
+ * Worker-token form (Cloudflare Whisper): password input with show/hide
+ * toggle, save, delete, and a configurable base URL.
+ */
+function renderWorkerTokenSection(): string {
+  return `
+    <section class="settings-card" aria-labelledby="workerTokenTitle">
+      <div class="settings-card-heading">
+        <span class="settings-icon">${icons.globe}</span>
+        <div class="flex-1"><h3 id="workerTokenTitle" data-i18n="settings.worker.title">Cloudflare Whisper</h3><p data-i18n="settings.worker.subtitle"></p></div>
+        <span id="workerTokenStatus" class="status-badge" data-i18n="settings.api.statusUnset">Not set</span>
+      </div>
+      <form id="workerTokenForm" novalidate>
+        <label for="workerTokenInput" class="field-label" data-i18n="settings.worker.label">Worker token</label>
+        <div class="password-field">
+          <input id="workerTokenInput" type="password" class="form-control font-mono" data-i18n-placeholder="settings.worker.placeholder" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="workerTokenHelp workerTokenError" />
+          <button id="workerTokenToggle" type="button" class="password-toggle" data-i18n-aria-label="settings.worker.toggleAria" aria-pressed="false">${icons.eye}</button>
+        </div>
+        <p id="workerTokenHelp" class="field-help" data-i18n="settings.worker.help"></p>
+        <p id="workerTokenError" class="field-error" aria-live="polite"></p>
+        <div>
+          <label for="workerBaseUrlInput" class="field-label" data-i18n="settings.worker.baseUrlLabel">Worker base URL</label>
+          <input id="workerBaseUrlInput" type="url" class="form-control font-mono" value="${DEFAULT_SETTINGS.workerBaseUrl}" autocapitalize="none" spellcheck="false" aria-describedby="workerBaseUrlHelp" />
+          <p id="workerBaseUrlHelp" class="field-help" data-i18n="settings.worker.baseUrlHelp"></p>
+        </div>
+        <div class="flex flex-wrap justify-end gap-2 pt-2">
+          <button id="workerTokenDeleteButton" type="button" class="secondary-action"><span data-i18n="settings.api.delete"></span></button>
+          <button id="workerTokenSaveButton" type="submit" class="primary-action"><span data-i18n="settings.worker.save"></span></button>
         </div>
       </form>
     </section>`;

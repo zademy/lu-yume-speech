@@ -1,8 +1,12 @@
-import type { Platform } from './platform';
+import type { CredentialName, Platform } from './platform';
 import type { AppSettings } from '../types';
 import { save, load, remove } from '../utils/storage';
 
-const KEY = 'groq_api_key';
+/** Storage key per credential. `groq` keeps its historical key — no migration. */
+const CREDENTIAL_KEYS: Record<CredentialName, string> = {
+  groq: 'groq_api_key',
+  worker: 'worker_token',
+};
 
 /* eslint-disable @typescript-eslint/require-await -- Methods are async to satisfy the Platform interface; storage ops are synchronous. */
 
@@ -13,20 +17,20 @@ const KEY = 'groq_api_key';
  * consistently use the `stt_` prefix.
  */
 export class WebBridge implements Platform {
-  async hasApiKey(): Promise<boolean> {
-    return Boolean(load<string | null>(KEY, null));
+  async hasCredential(name: CredentialName): Promise<boolean> {
+    return Boolean(load<string | null>(CREDENTIAL_KEYS[name], null));
   }
 
-  async getApiKey(): Promise<string | null> {
-    return load<string | null>(KEY, null);
+  async getCredential(name: CredentialName): Promise<string | null> {
+    return load<string | null>(CREDENTIAL_KEYS[name], null);
   }
 
-  async setApiKey(key: string): Promise<void> {
-    save(KEY, key);
+  async setCredential(name: CredentialName, value: string): Promise<void> {
+    save(CREDENTIAL_KEYS[name], value);
   }
 
-  async deleteApiKey(): Promise<void> {
-    remove(KEY);
+  async deleteCredential(name: CredentialName): Promise<void> {
+    remove(CREDENTIAL_KEYS[name]);
   }
 
   async loadSettings(): Promise<AppSettings | null> {

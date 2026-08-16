@@ -25,6 +25,7 @@ import type {
   HistoryEntry,
   OperationMode,
   SummaryHistory,
+  TranscriptionProviderId,
   WhisperModel,
 } from '../types';
 import { SUMMARY_HISTORY_MAX_ENTRIES } from '../types';
@@ -42,6 +43,8 @@ export interface GrabacionMeta {
   text: string;
   language?: string;
   model: WhisperModel;
+  /** Provider that produced this grabación (omitted = Groq). */
+  provider?: TranscriptionProviderId;
   duration?: number;
   createdAt: number;
   operationMode: OperationMode;
@@ -98,6 +101,7 @@ export async function saveGrabacion(
     text: entry.text,
     language: entry.language,
     model: entry.model,
+    provider: entry.provider,
     duration: entry.duration,
     createdAt: entry.createdAt,
     operationMode: entry.operationMode,
@@ -312,6 +316,7 @@ function metaToEntry(m: GrabacionMeta): HistoryEntry {
     text: m.text,
     language: m.language,
     model: m.model,
+    provider: m.provider,
     duration: m.duration,
     createdAt: m.createdAt,
     operationMode: m.operationMode,

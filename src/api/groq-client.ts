@@ -1,15 +1,15 @@
 /**
- * Groq Whisper API client.
+ * Groq Whisper API client — implements the {@link TranscriptionProvider} seam.
  *
  * Handles all HTTP communication with the Groq speech-to-text API.
  * Supports both transcription (same language) and translation (to English).
  *
- * Features:
+ * Features (shared with other providers via transcription-provider.ts):
  * - 30s request timeout via AbortController
  * - Automatic retry on 429 / 503 / 504 (max 3, exponential backoff + jitter)
  * - External AbortSignal support for user-initiated cancellation
  * - Zod schema validation of the API response
- * - Typed error union (`GroqError`) surfaced via `GroqApiError`
+ * - Typed error union (`TranscriptionError`) surfaced via `TranscriptionApiError`
  *
  * Responsibilities (SRP — one reason to change: Groq API contract):
  * - Build and send multipart form requests
@@ -22,21 +22,17 @@
 
 import { z } from 'zod';
 import type { EventBus } from '../core/event-bus';
-import type { EventMap, GroqError, TranscriptionOptions, TranscriptionResult } from '../types';
-import { GroqApiError } from '../types';
+import type { EventMap, TranscriptionOptions, TranscriptionResult } from '../types';
+import {
+  fail as sharedFail,
+  runTranscriptionFetch,
+  type TranscriptionProvider,
+  type TranscriptionRequest,
+} from './transcription-provider';
+import type { TranscriptionError } from '../types';
 
 /** Groq API base URL (OpenAI-compatible). */
 const GROQ_BASE_URL = 'https://api.groq.com/openai/v1';
-
-/** Audio endpoints supported by Groq. */
-type AudioEndpoint = 'transcriptions' | 'translations';
-
-/** Request timeout in milliseconds. */
-const TIMEOUT_MS = 30_000;
-/** Maximum retry attempts for transient failures. */
-const MAX_RETRIES = 3;
-/** HTTP status codes eligible for retry. */
-const RETRYABLE = new Set([429, 503, 504]);
 
 /** Zod schema for the Groq transcription response. */
 const TRANSCRIPTION_SCHEMA = z
@@ -49,7 +45,9 @@ const TRANSCRIPTION_SCHEMA = z
   })
   .loose();
 
-export class GroqClient {
+export class GroqClient implements TranscriptionProvider {
+  readonly id = 'groq' as const;
+
   private readonly bus: EventBus<EventMap>;
   private readonly getApiKey: () => string;
 
@@ -65,12 +63,11 @@ export class GroqClient {
    * or `transcription:error` through the event bus.
    *
    * @returns The parsed transcription result.
-   * @throws {GroqApiError} on any failure (auth, rate-limit, network, parse, server).
+   * @throws {TranscriptionApiError} on any failure (auth, rate-limit, network, parse, server).
    */
   async transcribe(
     blob: Blob,
-    options: TranscriptionOptions,
-    endpoint: AudioEndpoint = 'transcriptions',
+    request: TranscriptionRequest,
     externalSignal?: AbortSignal,
   ): Promise<TranscriptionResult> {
     const apiKey = this.getApiKey();
@@ -81,106 +78,44 @@ export class GroqClient {
       });
     }
 
+    const endpoint = request.mode === 'translate' ? 'translations' : 'transcriptions';
     const url = `${GROQ_BASE_URL}/audio/${endpoint}`;
-    this.bus.emit('transcription:start', options.model);
+    this.bus.emit('transcription:start', request.model);
     this.bus.emit('status:change', {
-      message: `Procesando con ${options.model}...`,
+      message: `Procesando con ${request.model}...`,
       level: 'processing',
     });
 
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-      const ctrl = new AbortController();
-      const timeout = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
-      if (externalSignal) {
-        if (externalSignal.aborted) ctrl.abort();
-        else externalSignal.addEventListener('abort', () => ctrl.abort(), { once: true });
-      }
-
-      try {
-        const res = await fetch(url, {
+    const res = await runTranscriptionFetch(
+      this.bus,
+      (signal) =>
+        fetch(url, {
           method: 'POST',
           headers: { Authorization: `Bearer ${apiKey}` },
-          body: this.buildFormData(blob, options, endpoint),
-          signal: ctrl.signal,
-        });
+          body: this.buildFormData(blob, request, endpoint),
+          signal,
+        }),
+      externalSignal,
+    );
 
-        if (res.ok) {
-          const rawData: unknown = await res.json().catch(() => ({}));
-          const parsed = TRANSCRIPTION_SCHEMA.safeParse(rawData);
-          if (!parsed.success) {
-            throw this.fail({
-              kind: 'parse',
-              message: 'Respuesta inesperada del servidor.',
-              cause: parsed.error,
-            });
-          }
-          const result: TranscriptionResult = {
-            text: parsed.data.text,
-            language: parsed.data.language,
-            duration: parsed.data.duration,
-            segments: parsed.data.segments,
-            words: parsed.data.words,
-          };
-          this.bus.emit('transcription:success', result);
-          return result;
-        }
-
-        const status = res.status;
-        const body: unknown = await res.json().catch(() => ({}));
-        const apiMsg =
-          typeof body === 'object' &&
-          body !== null &&
-          'error' in body &&
-          typeof (body as { error?: { message?: unknown } }).error?.message === 'string'
-            ? (body as { error: { message: string } }).error.message
-            : undefined;
-        const msg = apiMsg ?? `HTTP ${status}`;
-
-        if (RETRYABLE.has(status) && attempt < MAX_RETRIES) {
-          const retryAfterHeader = res.headers.get('Retry-After');
-          const retryAfter = retryAfterHeader ? Number(retryAfterHeader) : 0;
-          const backoff = (retryAfter || 2 ** attempt) * 1000;
-          const jitter = Math.random() * 250;
-          await new Promise((r) => setTimeout(r, backoff + jitter));
-          continue;
-        }
-
-        const kind: GroqError['kind'] =
-          status === 401 || status === 403
-            ? 'auth'
-            : status === 429
-              ? 'rate-limit'
-              : status >= 500
-                ? 'server'
-                : 'network';
-        const err: GroqError =
-          kind === 'rate-limit'
-            ? {
-                kind,
-                message: msg,
-                retryAfterMs: Number(res.headers.get('Retry-After') ?? 0) * 1000,
-              }
-            : kind === 'server'
-              ? { kind, message: msg, status }
-              : { kind, message: msg };
-        throw this.fail(err);
-      } catch (e) {
-        if (e instanceof GroqApiError) throw e;
-        if (e instanceof DOMException && e.name === 'AbortError') {
-          if (externalSignal?.aborted) {
-            throw this.fail({ kind: 'network', message: 'Transcripción cancelada.', cause: e });
-          }
-          if (attempt < MAX_RETRIES) continue;
-          throw this.fail({ kind: 'network', message: 'Tiempo de espera agotado.', cause: e });
-        }
-        throw this.fail({ kind: 'network', message: 'Error de red.', cause: e });
-      } finally {
-        clearTimeout(timeout);
-      }
+    const rawData: unknown = await res.json().catch(() => ({}));
+    const parsed = TRANSCRIPTION_SCHEMA.safeParse(rawData);
+    if (!parsed.success) {
+      throw this.fail({
+        kind: 'parse',
+        message: 'Respuesta inesperada del servidor.',
+        cause: parsed.error,
+      });
     }
-
-    // Unreachable — loop either returns or throws
-    throw this.fail({ kind: 'network', message: 'Reintentos agotados.' });
+    const result: TranscriptionResult = {
+      text: parsed.data.text,
+      language: parsed.data.language,
+      duration: parsed.data.duration,
+      segments: parsed.data.segments,
+      words: parsed.data.words,
+    };
+    this.bus.emit('transcription:success', result);
+    return result;
   }
 
   // -----------------------------------------------------------------------
@@ -194,7 +129,7 @@ export class GroqClient {
   private buildFormData(
     blob: Blob,
     options: TranscriptionOptions,
-    endpoint: AudioEndpoint,
+    endpoint: 'transcriptions' | 'translations',
   ): FormData {
     const form = new FormData();
     form.append('file', blob, 'audio.webm');
@@ -218,11 +153,9 @@ export class GroqClient {
   }
 
   /**
-   * Emit the error on the bus and return a `GroqApiError` for the caller to throw.
+   * Emit the error on the bus and return a `TranscriptionApiError` for the caller to throw.
    */
-  private fail(detail: GroqError): GroqApiError {
-    const error = new GroqApiError(detail);
-    this.bus.emit('transcription:error', error);
-    return error;
+  private fail(detail: TranscriptionError) {
+    return sharedFail(this.bus, detail);
   }
 }
