@@ -24,8 +24,9 @@ import type {
   StatusUpdate,
   HistoryEntry,
   AppSettings,
+  TranscriptionProviderId,
 } from './types';
-import { DEFAULT_SETTINGS } from './types';
+import { CLOUDFLARE_WHISPER_MODEL, DEFAULT_SETTINGS } from './types';
 
 import { Recorder } from './audio/recorder';
 import { AudioAnalyzer } from './audio/audio-analyzer';
@@ -36,6 +37,8 @@ import type { NoiseReductionMode } from './audio/audio-processor';
 import { trimSilence } from './audio/silence-trimmer';
 import * as store from './db/recordings-db';
 import { GroqClient } from './api/groq-client';
+import { CloudflareWhisperClient } from './api/cloudflare-whisper-client';
+import type { TranscriptionProvider } from './api/transcription-provider';
 import { postProcessWithLlm } from './api/llm-postprocessor';
 import { generateSummary, SUMMARY_MODEL } from './api/summary-client';
 import { renderApp } from './ui/renderer';
@@ -70,6 +73,7 @@ import { copyToClipboard } from './utils/clipboard';
 import { detectPlatform } from './platform/platform';
 import type { Platform } from './platform/platform';
 import { apiKeySchema } from './platform/api-key.schema';
+import { workerTokenSchema } from './platform/worker-token.schema';
 
 /**
  * Query-selector helper that asserts the matched element is of the expected
@@ -131,11 +135,25 @@ async function bootstrap(): Promise<void> {
 
   // Platform bridge — browser storage (localStorage)
   const platform = detectPlatform();
-  let apiKey = (await platform.getApiKey()) ?? '';
+  let apiKey = (await platform.getCredential('groq')) ?? '';
+  let workerToken = (await platform.getCredential('worker')) ?? '';
   const getApiKey = (): string => apiKey;
+  const getWorkerToken = (): string => workerToken;
 
   // Live configuration: loaded once, refreshed on settings:change.
   let config: AppSettings = { ...DEFAULT_SETTINGS, ...((await platform.loadSettings()) ?? {}) };
+  // Effective provider: the configured one when its credential exists,
+  // otherwise the alternative when configured. Keeps the gate honest at boot.
+  if (config.transcriptionProvider === 'cloudflare-whisper' && !workerToken && apiKey) {
+    config.transcriptionProvider = 'groq';
+  } else if (config.transcriptionProvider === 'groq' && !apiKey && workerToken) {
+    config.transcriptionProvider = 'cloudflare-whisper';
+  }
+  /** True when the ACTIVE provider has its credential configured. */
+  const canDictate = (): boolean =>
+    config.transcriptionProvider === 'cloudflare-whisper'
+      ? workerToken.length > 0
+      : apiKey.length > 0;
   const getConfig = (): AppSettings => config;
   const setConfig = (next: AppSettings): void => {
     config = next;
@@ -146,6 +164,8 @@ async function bootstrap(): Promise<void> {
   activeLang = config.appLanguage;
 
   const elements = renderApp();
+  elements.providerSelect.value = config.transcriptionProvider;
+  elements.workerBaseUrlInput.value = config.workerBaseUrl;
   translateTree(elements.root, config.appLanguage);
 
   const versionEl = elements.root.querySelector('.about-version');
@@ -417,7 +437,18 @@ async function bootstrap(): Promise<void> {
   const recorder = new Recorder(bus);
   const analyzer = new AudioAnalyzer(bus);
   const timer = new RecordingTimer(bus);
-  const client = new GroqClient(bus, getApiKey);
+  const groqClient = new GroqClient(bus, getApiKey);
+  const workerClient = new CloudflareWhisperClient(bus, getWorkerToken, () => {
+    const url = config.workerBaseUrl.trim();
+    return url || DEFAULT_SETTINGS.workerBaseUrl;
+  });
+  /** Provider registry — adding a backend means one class + one entry here. */
+  const transcriptionClients: Record<TranscriptionProviderId, TranscriptionProvider> = {
+    groq: groqClient,
+    'cloudflare-whisper': workerClient,
+  };
+  const getActiveTranscriptionClient = (): TranscriptionProvider =>
+    transcriptionClients[config.transcriptionProvider];
   const visualizer = new WaveformVisualizer(
     elements.waveformCanvas,
     resolveWaveformStyle(elements.waveformCanvas),
@@ -483,7 +514,7 @@ async function bootstrap(): Promise<void> {
   });
   const navigate = wireNavigation(
     elements,
-    () => getApiKey(),
+    () => (canDictate() ? 'active' : ''),
     ensureAudioReady,
     () => config.appLanguage,
     activeView,
@@ -498,15 +529,58 @@ async function bootstrap(): Promise<void> {
       }
     },
   );
-  wireApiKeySettings(elements, platform, getApiKey, (next) => {
-    apiKey = next;
-    updateApiKeyState(elements, next);
-  });
-  updateApiKeyState(elements, apiKey);
+  // Credential + provider wiring: badges, gates, and the provider selector.
+  const refreshCredentialUi = (): void => {
+    updateApiKeyState(elements, apiKey, canDictate());
+    updateWorkerTokenState(elements, workerToken);
+    applyProviderConstraints(elements, config.transcriptionProvider, workerToken.length > 0);
+  };
+  /** Switch the active transcription provider and persist the choice. */
+  const switchProvider = (provider: TranscriptionProviderId): void => {
+    const patch: Partial<AppSettings> = { transcriptionProvider: provider };
+    const next: AppSettings = { ...getConfig(), ...patch };
+    setConfig(next);
+    void platform.saveSettings(next);
+    bus.emit('settings:change', patch);
+    refreshCredentialUi();
+  };
+  wireProviderSelect(elements, () => config.transcriptionProvider, switchProvider);
+  wireApiKeySettings(
+    elements,
+    platform,
+    () => apiKey,
+    (next) => {
+      apiKey = next;
+      // Deleting the active Groq key with a worker token available: auto-switch.
+      if (!next && config.transcriptionProvider === 'groq' && workerToken) {
+        switchProvider('cloudflare-whisper');
+        return;
+      }
+      refreshCredentialUi();
+    },
+  );
+  wireWorkerTokenSettings(
+    elements,
+    platform,
+    bus,
+    getConfig,
+    setConfig,
+    () => workerToken,
+    (next) => {
+      workerToken = next;
+      // Deleting the active worker token with a Groq key available: auto-switch.
+      if (!next && config.transcriptionProvider === 'cloudflare-whisper' && apiKey) {
+        switchProvider('groq');
+        return;
+      }
+      refreshCredentialUi();
+    },
+  );
+  refreshCredentialUi();
 
   wireTranscriptionPipeline(
     bus,
-    client,
+    getActiveTranscriptionClient,
     elements,
     getConfig,
     getApiKey,
@@ -546,9 +620,17 @@ async function bootstrap(): Promise<void> {
   // Keyboard shortcuts
   const cleanup = registerKeyboardShortcuts({
     onRecordStart: () => {
-      if (!getApiKey()) {
+      if (!canDictate()) {
         navigate('settings');
-        showToast(elements.toastContainer, t('toast.needApiKey'), 'warning');
+        showToast(
+          elements.toastContainer,
+          t(
+            config.transcriptionProvider === 'cloudflare-whisper'
+              ? 'toast.needWorkerToken'
+              : 'toast.needApiKey',
+          ),
+          'warning',
+        );
         return;
       }
       navigate('dictation');
@@ -702,7 +784,7 @@ function wireApiKeySettings(
     elements.apiKeySaveButton.disabled = true;
     elements.apiKeySaveButton.textContent = 'Guardando...';
     void platform
-      .setApiKey(key)
+      .setCredential('groq', key)
       .then(() => {
         setApiKey(key);
         elements.apiKeyInput.value = '';
@@ -718,7 +800,7 @@ function wireApiKeySettings(
 
   elements.apiKeyDeleteButton.addEventListener('click', () => {
     if (!getApiKey()) return;
-    void platform.deleteApiKey().then(() => {
+    void platform.deleteCredential('groq').then(() => {
       setApiKey('');
       elements.apiKeyInput.value = '';
       elements.apiKeyError.textContent = '';
@@ -727,14 +809,147 @@ function wireApiKeySettings(
   });
 }
 
+/**
+ * Wires the worker-token form (toggle, Zod-validated save, delete) and the
+ * base-URL field (https-validated, persisted on change).
+ */
+function wireWorkerTokenSettings(
+  elements: AppElements,
+  platform: Platform,
+  bus: EventBus<EventMap>,
+  getConfig: () => AppSettings,
+  setConfig: (next: AppSettings) => void,
+  getWorkerToken: () => string,
+  setWorkerToken: (next: string) => void,
+): void {
+  elements.workerTokenToggle.addEventListener('click', () => {
+    const visible = elements.workerTokenInput.type === 'text';
+    elements.workerTokenInput.type = visible ? 'password' : 'text';
+    elements.workerTokenToggle.setAttribute('aria-pressed', String(!visible));
+    elements.workerTokenToggle.setAttribute(
+      'aria-label',
+      visible ? 'Mostrar token del worker' : 'Ocultar token del worker',
+    );
+  });
+
+  elements.workerTokenForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const token = elements.workerTokenInput.value.trim();
+    const result = workerTokenSchema.safeParse(token);
+    if (!result.success) {
+      elements.workerTokenError.textContent = result.error.issues[0]?.message ?? 'Token inválido.';
+      elements.workerTokenInput.setAttribute('aria-invalid', 'true');
+      elements.workerTokenInput.focus();
+      return;
+    }
+    elements.workerTokenSaveButton.disabled = true;
+    elements.workerTokenSaveButton.textContent = 'Guardando...';
+    void platform
+      .setCredential('worker', token)
+      .then(() => {
+        setWorkerToken(token);
+        elements.workerTokenInput.value = '';
+        elements.workerTokenError.textContent = '';
+        elements.workerTokenInput.removeAttribute('aria-invalid');
+        showToast(elements.toastContainer, t('toast.workerTokenSaved'), 'success');
+      })
+      .finally(() => {
+        elements.workerTokenSaveButton.disabled = false;
+        elements.workerTokenSaveButton.textContent = t('settings.worker.save');
+      });
+  });
+
+  elements.workerTokenDeleteButton.addEventListener('click', () => {
+    if (!getWorkerToken()) return;
+    void platform.deleteCredential('worker').then(() => {
+      setWorkerToken('');
+      elements.workerTokenInput.value = '';
+      elements.workerTokenError.textContent = '';
+      showToast(elements.toastContainer, t('toast.workerTokenDeleted'), 'info');
+    });
+  });
+
+  elements.workerBaseUrlInput.addEventListener('change', () => {
+    const raw = elements.workerBaseUrlInput.value.trim();
+    let valid = false;
+    try {
+      valid = new URL(raw).protocol === 'https:';
+    } catch {
+      // invalid URL — keep valid = false
+    }
+    if (!valid) {
+      elements.workerBaseUrlInput.value = getConfig().workerBaseUrl;
+      showToast(elements.toastContainer, t('settings.worker.baseUrlHelp'), 'warning');
+      return;
+    }
+    const patch: Partial<AppSettings> = { workerBaseUrl: raw };
+    const next: AppSettings = { ...getConfig(), ...patch };
+    setConfig(next);
+    void platform.saveSettings(next);
+    bus.emit('settings:change', patch);
+  });
+}
+
+/** Wires the provider `<select>`: manual activation of the active backend. */
+function wireProviderSelect(
+  elements: AppElements,
+  getProvider: () => TranscriptionProviderId,
+  onChange: (provider: TranscriptionProviderId) => void,
+): void {
+  elements.providerSelect.addEventListener('change', () => {
+    const next = elements.providerSelect.value as TranscriptionProviderId;
+    if (next !== getProvider()) onChange(next);
+  });
+}
+
+/**
+ * Reflects the active provider in the transcription controls.
+ *
+ * While Cloudflare Whisper is active the worker's fixed model applies and the
+ * Groq-only knobs (model, translation, prompt, temperature, response format,
+ * timestamps) are disabled. The language selector keeps every option
+ * including 'auto' ('auto' omits `lang` — the worker then uses its default).
+ */
+function applyProviderConstraints(
+  elements: AppElements,
+  provider: TranscriptionProviderId,
+  hasWorkerToken: boolean,
+): void {
+  const isWorker = provider === 'cloudflare-whisper';
+  elements.providerSelect.value = provider;
+  const workerOption = elements.providerSelect.querySelector<HTMLOptionElement>(
+    'option[value="cloudflare-whisper"]',
+  );
+  if (workerOption) workerOption.disabled = !hasWorkerToken;
+  elements.modelSelect.disabled = isWorker;
+  const translateOption = elements.operationModeSelect.querySelector<HTMLOptionElement>(
+    'option[value="translate"]',
+  );
+  if (translateOption) translateOption.disabled = isWorker;
+  if (isWorker) elements.operationModeSelect.value = 'transcribe';
+  elements.promptInput.disabled = isWorker;
+  elements.temperatureSlider.disabled = isWorker;
+  elements.responseFormatSelect.disabled = isWorker;
+  elements.timestampToggle.disabled =
+    isWorker || elements.responseFormatSelect.value !== 'verbose_json';
+}
+
 /** Reflects the current key state in the status badge, save button, and Dictar gate visibility. */
-function updateApiKeyState(elements: AppElements, apiKey: string): void {
+function updateApiKeyState(elements: AppElements, apiKey: string, canDictate: boolean): void {
   const configured = apiKey.length > 0;
   elements.apiKeyStatus.textContent = configured ? 'Configurada' : 'Sin configurar';
   elements.apiKeyStatus.classList.toggle('is-configured', configured);
   elements.apiKeyDeleteButton.disabled = !configured;
-  elements.dictationKeyGate.hidden = configured;
-  elements.dictationWorkspace.hidden = !configured;
+  elements.dictationKeyGate.hidden = canDictate;
+  elements.dictationWorkspace.hidden = !canDictate;
+}
+
+/** Mirrors {@link updateApiKeyState} for the worker token badge. */
+function updateWorkerTokenState(elements: AppElements, workerToken: string): void {
+  const configured = workerToken.length > 0;
+  elements.workerTokenStatus.textContent = configured ? 'Configurada' : 'Sin configurar';
+  elements.workerTokenStatus.classList.toggle('is-configured', configured);
+  elements.workerTokenDeleteButton.disabled = !configured;
 }
 
 /** Renders the Inicio stat badges (words, transcriptions, audio minutes) from history. */
@@ -885,7 +1100,7 @@ function wireRecordingHandlers(
  */
 function wireTranscriptionPipeline(
   bus: EventBus<EventMap>,
-  client: GroqClient,
+  getClient: () => TranscriptionProvider,
   elements: AppElements,
   getConfig: () => AppSettings,
   getApiKey: () => string,
@@ -920,11 +1135,17 @@ function wireTranscriptionPipeline(
         : { ...base, prompt: buildPrompt(config.customWords, base.prompt) };
 
     const mode = readOperationMode(elements);
-    const endpoint = mode === 'translate' ? 'translations' : 'transcriptions';
-    void client.transcribe(audio, options, endpoint).catch(() => {
+    const request = { ...options, mode };
+    const client = getClient();
+    void client.transcribe(audio, request).catch(() => {
       // Error already emitted on the bus via transcription:error
     });
-    setStatus(elements, { message: `Procesando con ${options.model}...`, level: 'processing' });
+    setStatus(
+      elements,
+      config.transcriptionProvider === 'cloudflare-whisper'
+        ? { message: 'Procesando con Cloudflare Whisper…', level: 'processing' }
+        : { message: `Procesando con ${options.model}...`, level: 'processing' },
+    );
   });
 
   bus.on('transcription:success', async (result) => {
@@ -979,11 +1200,14 @@ function wireTranscriptionPipeline(
     // Save to history
     const options = readTranscriptionOptions(elements);
     const mode = readOperationMode(elements);
+    const isWorker = config.transcriptionProvider === 'cloudflare-whisper';
     const entry: HistoryEntry = {
       id: crypto.randomUUID(),
       text,
       language: result.language,
-      model: options.model,
+      model: isWorker ? CLOUDFLARE_WHISPER_MODEL : options.model,
+      // Provider is only stamped for non-default backends (Groq stays implicit).
+      provider: isWorker ? 'cloudflare-whisper' : undefined,
       duration: result.duration,
       createdAt: Date.now(),
       operationMode: mode,

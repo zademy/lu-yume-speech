@@ -84,6 +84,25 @@ export type WhisperModel = 'whisper-large-v3' | 'whisper-large-v3-turbo';
 export const WHISPER_MODELS: WhisperModel[] = ['whisper-large-v3', 'whisper-large-v3-turbo'];
 
 // ---------------------------------------------------------------------------
+// Transcription providers
+// ---------------------------------------------------------------------------
+
+/** Identifier of an installed transcription provider. */
+export type TranscriptionProviderId = 'groq' | 'cloudflare-whisper';
+
+/** Providers available for the UI selector. */
+export const TRANSCRIPTION_PROVIDERS: readonly {
+  value: TranscriptionProviderId;
+  label: string;
+}[] = [
+  { value: 'groq', label: 'Groq API' },
+  { value: 'cloudflare-whisper', label: 'Cloudflare Whisper' },
+] as const;
+
+/** Model reported by the Cloudflare Whisper worker (fixed server-side). */
+export const CLOUDFLARE_WHISPER_MODEL: WhisperModel = 'whisper-large-v3-turbo';
+
+// ---------------------------------------------------------------------------
 // Operation mode
 // ---------------------------------------------------------------------------
 
@@ -150,6 +169,10 @@ export const APP_LANGUAGES: readonly { value: AppLanguage; label: string }[] = [
 export interface AppSettings {
   /** Interface language (English by default). */
   appLanguage: AppLanguage;
+  /** Active transcription provider (manual selection; only one active). */
+  transcriptionProvider: TranscriptionProviderId;
+  /** Base URL of the Cloudflare Whisper worker. */
+  workerBaseUrl: string;
   model: WhisperModel;
   operationMode: OperationMode;
   language: string;
@@ -182,6 +205,8 @@ export interface AppSettings {
 /** Sensible defaults so the app works without any stored preferences. */
 export const DEFAULT_SETTINGS: Readonly<AppSettings> = {
   appLanguage: 'en',
+  transcriptionProvider: 'groq',
+  workerBaseUrl: 'https://worker-ia-whisper.zadot911218.workers.dev',
   model: 'whisper-large-v3-turbo',
   operationMode: 'transcribe',
   language: 'auto',
@@ -325,6 +350,8 @@ export interface HistoryEntry {
   language?: string;
   /** Whisper model used */
   model: WhisperModel;
+  /** Provider that produced this entry (omitted = Groq). */
+  provider?: TranscriptionProviderId;
   /** Audio duration in seconds */
   duration?: number;
   /** Unix timestamp in milliseconds */
@@ -433,8 +460,8 @@ export class MicNotSupportedError extends Error {
 // Groq API errors
 // ---------------------------------------------------------------------------
 
-/** Discriminated union of all Groq API failure modes. */
-export type GroqError =
+/** Discriminated union of all transcription API failure modes. */
+export type TranscriptionError =
   | ({ kind: 'auth' } & ErrorPayload)
   | ({ kind: 'rate-limit'; retryAfterMs?: number } & ErrorPayload)
   | ({ kind: 'network' } & ErrorPayload)
@@ -447,15 +474,15 @@ interface ErrorPayload {
 }
 
 /**
- * Typed error thrown by `GroqClient.transcribe()`.
+ * Typed error thrown by every `TranscriptionProvider.transcribe()`.
  * Also emitted on the event bus as `transcription:error`
  * (satisfies `EventMap['transcription:error']: Error`).
  */
-export class GroqApiError extends Error {
-  readonly detail: GroqError;
-  constructor(detail: GroqError) {
+export class TranscriptionApiError extends Error {
+  readonly detail: TranscriptionError;
+  constructor(detail: TranscriptionError) {
     super(detail.message);
-    this.name = 'GroqApiError';
+    this.name = 'TranscriptionApiError';
     this.detail = detail;
     if (detail.cause !== undefined) this.cause = detail.cause;
   }
