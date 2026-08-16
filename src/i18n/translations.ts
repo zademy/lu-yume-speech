@@ -111,6 +111,7 @@ const en: Dictionary = {
   'gate.setup.confirmLabel': 'Confirm access phrase',
   'gate.setup.submit': 'Set phrase',
   'gate.error.incorrect': 'Incorrect phrase.',
+  'gate.error.empty': 'Enter the access phrase.',
   'gate.error.mismatch': 'The phrases do not match.',
   'gate.error.short': 'The phrase must be at least 4 characters long.',
   'gate.error.corrupt': 'The stored phrase is damaged. Clear the site data to reset the gate.',
@@ -392,6 +393,7 @@ const es: Dictionary = {
   'gate.setup.confirmLabel': 'Confirma la frase de acceso',
   'gate.setup.submit': 'Establecer frase',
   'gate.error.incorrect': 'Frase incorrecta.',
+  'gate.error.empty': 'Escribe la frase de acceso.',
   'gate.error.mismatch': 'Las frases no coinciden.',
   'gate.error.short': 'La frase debe tener al menos 4 caracteres.',
   'gate.error.corrupt':

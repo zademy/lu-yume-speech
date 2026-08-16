@@ -75,7 +75,7 @@ import type { Platform } from './platform/platform';
 import { apiKeySchema } from './platform/api-key.schema';
 import { workerTokenSchema } from './platform/worker-token.schema';
 import { GateService } from './gate/gate-service';
-import type { GateState } from './types';
+import type { GateError, GateState } from './types';
 
 /**
  * Query-selector helper that asserts the matched element is of the expected
@@ -581,7 +581,7 @@ async function bootstrap(): Promise<void> {
   refreshCredentialUi();
 
   wireGate(elements, platform, bus);
-  wireGatePhraseSettings(elements, platform, bus);
+  wireGatePhraseSettings(elements, platform);
 
   wireTranscriptionPipeline(
     bus,
@@ -926,12 +926,7 @@ function wireGate(elements: AppElements, platform: Platform, bus: EventBus<Event
 
   bus.on('gate:change', applyState);
 
-  const gateErrorMessage: Record<string, string> = {
-    'frase-vacia': t('gate.error.mismatch'),
-    'frase-corta': t('gate.error.short'),
-    'frase-incorrecta': t('gate.error.incorrect'),
-    'credencial-invalida': t('gate.error.corrupt'),
-  };
+  const messages = gateErrorMessages();
 
   elements.gateLockedForm.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -941,8 +936,7 @@ function wireGate(elements: AppElements, platform: Platform, bus: EventBus<Event
         bus.emit('gate:change', 'open');
         return;
       }
-      elements.gateLockedError.textContent =
-        gateErrorMessage[result.error] ?? t('gate.error.incorrect');
+      elements.gateLockedError.textContent = messages[result.error] ?? t('gate.error.incorrect');
       elements.gateLockedInput.value = '';
       elements.gateLockedInput.focus();
     });
@@ -962,8 +956,7 @@ function wireGate(elements: AppElements, platform: Platform, bus: EventBus<Event
         bus.emit('gate:change', 'open');
         return;
       }
-      elements.gateSetupError.textContent =
-        gateErrorMessage[result.error] ?? t('gate.error.incorrect');
+      elements.gateSetupError.textContent = messages[result.error] ?? t('gate.error.incorrect');
       elements.gateSetupInput.focus();
     });
   });
@@ -979,18 +972,9 @@ function wireGate(elements: AppElements, platform: Platform, bus: EventBus<Event
  * Wires the Frase de acceso section in Settings: change the phrase after
  * confirming the current one. Inline errors; success clears the form.
  */
-function wireGatePhraseSettings(
-  elements: AppElements,
-  platform: Platform,
-  bus: EventBus<EventMap>,
-): void {
+function wireGatePhraseSettings(elements: AppElements, platform: Platform): void {
   const gate = new GateService(platform);
-  const errorMessage: Record<string, string> = {
-    'frase-vacia': t('gate.error.mismatch'),
-    'frase-corta': t('gate.error.short'),
-    'frase-incorrecta': t('gate.error.incorrect'),
-    'credencial-invalida': t('gate.error.corrupt'),
-  };
+  const messages = gateErrorMessages();
 
   elements.gatePhraseForm.addEventListener('submit', (event) => {
     event.preventDefault();
@@ -1011,14 +995,20 @@ function wireGatePhraseSettings(
         showToast(elements.toastContainer, t('toast.gatePhraseChanged'), 'success');
         return;
       }
-      elements.gatePhraseError.textContent =
-        errorMessage[result.error] ?? t('gate.error.incorrect');
+      elements.gatePhraseError.textContent = messages[result.error] ?? t('gate.error.incorrect');
       elements.gatePhraseCurrentInput.focus();
     });
   });
-  // Silence unused-param lint: bus kept in signature for symmetry with the
-  // other settings wirings (future modules may listen for phrase changes).
-  void bus;
+}
+
+/** Shared i18n mapping of GateService error codes to user-facing messages. */
+function gateErrorMessages(): Partial<Record<GateError, string>> {
+  return {
+    'frase-vacia': t('gate.error.empty'),
+    'frase-corta': t('gate.error.short'),
+    'frase-incorrecta': t('gate.error.incorrect'),
+    'credencial-invalida': t('gate.error.corrupt'),
+  };
 }
 
 /** Wires the provider `<select>`: manual activation of the active backend. */

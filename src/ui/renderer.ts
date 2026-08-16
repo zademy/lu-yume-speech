@@ -672,7 +672,7 @@ function renderGateOverlay(): string {
           <label for="gateSetupInput" class="field-label" data-i18n="gate.setup.label"></label>
           <input id="gateSetupInput" type="password" class="form-control" data-i18n-placeholder="gate.placeholder" autocomplete="new-password" aria-describedby="gateSetupError" />
           <label for="gateSetupConfirmInput" class="field-label" data-i18n="gate.setup.confirmLabel"></label>
-          <input id="gateSetupConfirmInput" type="password" class="form-control" data-i18n-placeholder="gate.placeholder" autocomplete="new-password" />
+          <input id="gateSetupConfirmInput" type="password" class="form-control" data-i18n-placeholder="gate.placeholder" autocomplete="new-password" aria-describedby="gateSetupError" />
           <p id="gateSetupError" class="field-error" aria-live="polite"></p>
           <button id="gateSetupSubmit" type="submit" class="primary-action"><span data-i18n="gate.setup.submit"></span></button>
         </form>
