@@ -43,6 +43,22 @@ describe('renderApp application shell', () => {
     expect(elements.apiKeyInput.getAttribute('aria-describedby')).toBe('apiKeyHelp apiKeyError');
     expect(elements.apiKeyToggle.getAttribute('aria-pressed')).toBe('false');
     expect(elements.settingsView.contains(elements.apiKeyInput)).toBe(true);
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(elements.settingsView.contains(elements.gatePhraseForm)).toBe(true);
+  });
+
+  it('renders the Puerta de acceso visible with the shell inert by default', () => {
+    const elements = renderApp();
+    document.body.appendChild(elements.root);
+
+    expect(elements.gateOverlay.hidden).toBe(false);
+    expect(elements.gateOverlay.getAttribute('role')).toBe('dialog');
+    expect(elements.gateOverlay.getAttribute('aria-modal')).toBe('true');
+    expect(elements.gateOverlay.dataset.mode).toBe('locked');
+    expect(elements.navigation.hasAttribute('inert')).toBe(true);
+    expect(elements.navBackdrop.hasAttribute('inert')).toBe(true);
+    expect(elements.appWorkspace.hasAttribute('inert')).toBe(true);
+    expect(elements.gateLockedInput.type).toBe('password');
+    expect(elements.gateSetupInput.type).toBe('password');
+    expect(elements.gateSetupConfirmInput.type).toBe('password');
   });
 });

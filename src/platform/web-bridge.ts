@@ -6,6 +6,7 @@ import { save, load, remove } from '../utils/storage';
 const CREDENTIAL_KEYS: Record<CredentialName, string> = {
   groq: 'groq_api_key',
   worker: 'worker_token',
+  gate: 'gate_credential',
 };
 
 /* eslint-disable @typescript-eslint/require-await -- Methods are async to satisfy the Platform interface; storage ops are synchronous. */

@@ -74,6 +74,8 @@ import { detectPlatform } from './platform/platform';
 import type { Platform } from './platform/platform';
 import { apiKeySchema } from './platform/api-key.schema';
 import { workerTokenSchema } from './platform/worker-token.schema';
+import { GateService } from './gate/gate-service';
+import type { GateState } from './types';
 
 /**
  * Query-selector helper that asserts the matched element is of the expected
@@ -578,6 +580,9 @@ async function bootstrap(): Promise<void> {
   );
   refreshCredentialUi();
 
+  wireGate(elements, platform, bus);
+  wireGatePhraseSettings(elements, platform, bus);
+
   wireTranscriptionPipeline(
     bus,
     getActiveTranscriptionClient,
@@ -888,6 +893,132 @@ function wireWorkerTokenSettings(
     void platform.saveSettings(next);
     bus.emit('settings:change', patch);
   });
+}
+
+/**
+ * Wires the Puerta de acceso.
+ *
+ * Owns the GateService, applies its state to the DOM via `gate:change`
+ * events, and handles the overlay forms (locked unlock + first-run setup).
+ * The shell ships `inert` in the template; only `open` removes it, so no
+ * content is reachable before the Puerta opens.
+ */
+function wireGate(elements: AppElements, platform: Platform, bus: EventBus<EventMap>): void {
+  const gate = new GateService(platform);
+
+  const applyState = (state: GateState): void => {
+    if (state === 'open') {
+      elements.gateOverlay.hidden = true;
+      elements.navigation.removeAttribute('inert');
+      elements.navBackdrop.removeAttribute('inert');
+      elements.appWorkspace.removeAttribute('inert');
+      elements.navigation.removeAttribute('aria-hidden');
+      elements.appWorkspace.removeAttribute('aria-hidden');
+      elements.homeNavButton.focus();
+      return;
+    }
+    elements.gateOverlay.hidden = false;
+    elements.gateOverlay.dataset.mode = state === 'setup' ? 'setup' : 'locked';
+    elements.gateLockedError.textContent = '';
+    elements.gateSetupError.textContent = '';
+    (state === 'setup' ? elements.gateSetupInput : elements.gateLockedInput).focus();
+  };
+
+  bus.on('gate:change', applyState);
+
+  const gateErrorMessage: Record<string, string> = {
+    'frase-vacia': t('gate.error.mismatch'),
+    'frase-corta': t('gate.error.short'),
+    'frase-incorrecta': t('gate.error.incorrect'),
+    'credencial-invalida': t('gate.error.corrupt'),
+  };
+
+  elements.gateLockedForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const phrase = elements.gateLockedInput.value;
+    void gate.abrir(phrase).then((result) => {
+      if (result.ok) {
+        bus.emit('gate:change', 'open');
+        return;
+      }
+      elements.gateLockedError.textContent =
+        gateErrorMessage[result.error] ?? t('gate.error.incorrect');
+      elements.gateLockedInput.value = '';
+      elements.gateLockedInput.focus();
+    });
+  });
+
+  elements.gateSetupForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const phrase = elements.gateSetupInput.value;
+    const confirmation = elements.gateSetupConfirmInput.value;
+    if (phrase !== confirmation) {
+      elements.gateSetupError.textContent = t('gate.error.mismatch');
+      elements.gateSetupConfirmInput.focus();
+      return;
+    }
+    void gate.establecer(phrase).then((result) => {
+      if (result.ok) {
+        bus.emit('gate:change', 'open');
+        return;
+      }
+      elements.gateSetupError.textContent =
+        gateErrorMessage[result.error] ?? t('gate.error.incorrect');
+      elements.gateSetupInput.focus();
+    });
+  });
+
+  // Initial state — resolved from storage; the Puerta always starts closed
+  // (setup on first run, locked afterwards), once per application load.
+  void gate.estado().then((state) => {
+    bus.emit('gate:change', state);
+  });
+}
+
+/**
+ * Wires the Frase de acceso section in Settings: change the phrase after
+ * confirming the current one. Inline errors; success clears the form.
+ */
+function wireGatePhraseSettings(
+  elements: AppElements,
+  platform: Platform,
+  bus: EventBus<EventMap>,
+): void {
+  const gate = new GateService(platform);
+  const errorMessage: Record<string, string> = {
+    'frase-vacia': t('gate.error.mismatch'),
+    'frase-corta': t('gate.error.short'),
+    'frase-incorrecta': t('gate.error.incorrect'),
+    'credencial-invalida': t('gate.error.corrupt'),
+  };
+
+  elements.gatePhraseForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const current = elements.gatePhraseCurrentInput.value;
+    const next = elements.gatePhraseNewInput.value;
+    const confirmation = elements.gatePhraseConfirmInput.value;
+    if (next !== confirmation) {
+      elements.gatePhraseError.textContent = t('gate.error.mismatch');
+      elements.gatePhraseConfirmInput.focus();
+      return;
+    }
+    void gate.cambiar(current, next).then((result) => {
+      if (result.ok) {
+        elements.gatePhraseCurrentInput.value = '';
+        elements.gatePhraseNewInput.value = '';
+        elements.gatePhraseConfirmInput.value = '';
+        elements.gatePhraseError.textContent = '';
+        showToast(elements.toastContainer, t('toast.gatePhraseChanged'), 'success');
+        return;
+      }
+      elements.gatePhraseError.textContent =
+        errorMessage[result.error] ?? t('gate.error.incorrect');
+      elements.gatePhraseCurrentInput.focus();
+    });
+  });
+  // Silence unused-param lint: bus kept in signature for symmetry with the
+  // other settings wirings (future modules may listen for phrase changes).
+  void bus;
 }
 
 /** Wires the provider `<select>`: manual activation of the active backend. */
