@@ -299,7 +299,29 @@ export interface EventMap {
   'escrito:delete': string;
   /** The escrito list was updated (full list pushed to the Pluma sidebar) */
   'escrito:updated': Escrito[];
+  /** Puerta de acceso state changed (setup → locked → open) */
+  'gate:change': GateState;
 }
+
+// ---------------------------------------------------------------------------
+// Puerta de acceso
+// ---------------------------------------------------------------------------
+
+/** State of the Puerta de acceso. Fresh per application load. */
+export type GateState = 'setup' | 'locked' | 'open';
+
+/** Failure vocabulary of {@link GateResult}. */
+export type GateError =
+  | 'frase-vacia'
+  | 'frase-corta'
+  | 'frase-incorrecta'
+  | 'ya-establecida'
+  | 'no-establecida'
+  | 'credencial-invalida';
+
+/** Outcome of a GateService operation. Errors use the domain vocabulary. */
+export type GateResult =
+  { ok: true; state: GateState } | { ok: false; error: GateError; state: GateState };
 
 // ---------------------------------------------------------------------------
 // Escritos (Pluma)

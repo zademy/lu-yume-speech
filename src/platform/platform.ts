@@ -13,7 +13,7 @@ import type { AppSettings } from '../types';
 import { WebBridge } from './web-bridge';
 
 /** Named credentials managed through the Platform seam. */
-export type CredentialName = 'groq' | 'worker';
+export type CredentialName = 'groq' | 'worker' | 'gate';
 
 export interface Platform {
   hasCredential(name: CredentialName): Promise<boolean>;

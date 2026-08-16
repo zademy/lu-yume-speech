@@ -31,3 +31,23 @@ _Avoid_: Versiones, regeneraciones
 **Métrica**:
 Indicador que se obtiene al agregar Grabaciones a lo largo del tiempo (cantidades, promedios, distribuciones). Se calcula al visualizarla y no se conserva como dato.
 _Avoid_: KPI, estadística, indicador, contador
+
+**Punto de inserción**:
+Posición de texto activa en el campo enfocado de la aplicación enfocada del sistema operativo. No es el cursor del ratón.
+_Avoid_: Cursor, foco del ratón, posición del mouse
+
+**Widget de dictado**:
+Ventana flotante mínima, siempre visible y sin foco, que muestra el estado y nivel de audio mientras se graba desde otra aplicación.
+_Avoid_: Pantallito, overlay, popup
+
+**Puerta de acceso**:
+Barrera inicial de pantalla completa que exige la Frase de acceso antes de revelar el resto de la aplicación. Aparece una vez por carga de la aplicación.
+_Avoid_: Login, pantalla de login, lock, autenticación
+
+**Frase de acceso**:
+Secreto compartido único que abre la Puerta de acceso. Se establece en el primer arranque y puede cambiarse desde los Ajustes confirmando la frase vigente.
+_Avoid_: Contraseña, password, PIN, credencial de usuario
+
+**Inserción simulada**:
+Entrega del texto al punto de inserción mediante portapapeles temporal y pegado simulado, restaurando el portapapeles original después.
+_Avoid_: Escritura directa, typing, pegado mágico

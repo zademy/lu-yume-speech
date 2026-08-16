@@ -39,6 +39,20 @@ Pure modules are tested in isolation under `tests/unit/`. HTTP is mocked with MS
 
 Conventional Commits — `feat`, `fix`, `docs`, `refactor`, `test`, `ci`, `chore`, with an optional scope: `feat(audio): ...`, `fix(groq-client): ...`. Imperative mood.
 
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues on this repo, via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Canonical triage roles (`bug`/`enhancement` categories; `needs-triage`/`needs-info`/`ready-for-agent`/`ready-for-human`/`wontfix` states) map 1:1 to GitHub labels. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: glossary in `CONTEXT.md`, decisions in `docs/adr/`. See `docs/agents/domain.md`.
+
 ## Reach these docs
 
 | When | Read |

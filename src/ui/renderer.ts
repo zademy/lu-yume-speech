@@ -65,6 +65,7 @@ export interface AppElements {
   root: HTMLDivElement;
   navigation: HTMLElement;
   navBackdrop: HTMLButtonElement;
+  appWorkspace: HTMLDivElement;
   mobileMenuButton: HTMLButtonElement;
   homeNavButton: HTMLButtonElement;
   dictationNavButton: HTMLButtonElement;
@@ -139,6 +140,19 @@ export interface AppElements {
   llmToggle: HTMLInputElement;
   llmModelInput: HTMLInputElement;
   llmInstructionsInput: HTMLTextAreaElement;
+  gateOverlay: HTMLDivElement;
+  gateLockedForm: HTMLFormElement;
+  gateLockedInput: HTMLInputElement;
+  gateLockedError: HTMLParagraphElement;
+  gateSetupForm: HTMLFormElement;
+  gateSetupInput: HTMLInputElement;
+  gateSetupConfirmInput: HTMLInputElement;
+  gateSetupError: HTMLParagraphElement;
+  gatePhraseForm: HTMLFormElement;
+  gatePhraseCurrentInput: HTMLInputElement;
+  gatePhraseNewInput: HTMLInputElement;
+  gatePhraseConfirmInput: HTMLInputElement;
+  gatePhraseError: HTMLParagraphElement;
 }
 
 /**
@@ -159,8 +173,8 @@ export function renderApp(): AppElements {
     root,
     `
       ${renderNavigation()}
-      <button id="navBackdrop" type="button" class="nav-backdrop" data-i18n-aria-label="nav.close.aria" tabindex="-1"></button>
-      <div class="app-workspace">
+      <button id="navBackdrop" type="button" class="nav-backdrop" data-i18n-aria-label="nav.close.aria" tabindex="-1" inert></button>
+      <div id="appWorkspace" class="app-workspace" inert>
         ${renderMobileHeader()}
         <main id="mainContent" class="app-content" tabindex="-1">
           ${renderHomeView()}
@@ -172,6 +186,7 @@ export function renderApp(): AppElements {
         </main>
       </div>
       ${renderToastContainer()}
+      ${renderGateOverlay()}
     `,
   );
 
@@ -179,6 +194,7 @@ export function renderApp(): AppElements {
     root,
     navigation: getRequiredElement(root, '#primaryNavigation', HTMLElement),
     navBackdrop: getRequiredElement(root, '#navBackdrop', HTMLButtonElement),
+    appWorkspace: getRequiredElement(root, '#appWorkspace', HTMLDivElement),
     mobileMenuButton: getRequiredElement(root, '#mobileMenuButton', HTMLButtonElement),
     homeNavButton: getRequiredElement(root, '#homeNavButton', HTMLButtonElement),
     dictationNavButton: getRequiredElement(root, '#dictationNavButton', HTMLButtonElement),
@@ -265,6 +281,19 @@ export function renderApp(): AppElements {
     llmToggle: getRequiredElement(root, '#llmToggle', HTMLInputElement),
     llmModelInput: getRequiredElement(root, '#llmModelInput', HTMLInputElement),
     llmInstructionsInput: getRequiredElement(root, '#llmInstructionsInput', HTMLTextAreaElement),
+    gateOverlay: getRequiredElement(root, '#gateOverlay', HTMLDivElement),
+    gateLockedForm: getRequiredElement(root, '#gateLockedForm', HTMLFormElement),
+    gateLockedInput: getRequiredElement(root, '#gateLockedInput', HTMLInputElement),
+    gateLockedError: getRequiredElement(root, '#gateLockedError', HTMLParagraphElement),
+    gateSetupForm: getRequiredElement(root, '#gateSetupForm', HTMLFormElement),
+    gateSetupInput: getRequiredElement(root, '#gateSetupInput', HTMLInputElement),
+    gateSetupConfirmInput: getRequiredElement(root, '#gateSetupConfirmInput', HTMLInputElement),
+    gateSetupError: getRequiredElement(root, '#gateSetupError', HTMLParagraphElement),
+    gatePhraseForm: getRequiredElement(root, '#gatePhraseForm', HTMLFormElement),
+    gatePhraseCurrentInput: getRequiredElement(root, '#gatePhraseCurrentInput', HTMLInputElement),
+    gatePhraseNewInput: getRequiredElement(root, '#gatePhraseNewInput', HTMLInputElement),
+    gatePhraseConfirmInput: getRequiredElement(root, '#gatePhraseConfirmInput', HTMLInputElement),
+    gatePhraseError: getRequiredElement(root, '#gatePhraseError', HTMLParagraphElement),
   };
 }
 
@@ -275,7 +304,7 @@ export function renderApp(): AppElements {
 /** Desktop sidebar + footer nav (Settings / About pinned at the bottom). */
 function renderNavigation(): string {
   return `
-    <aside id="primaryNavigation" class="app-sidebar" aria-label="Navegación principal" data-open="false">
+    <aside id="primaryNavigation" class="app-sidebar" aria-label="Navegación principal" data-open="false" inert>
       <div class="flex items-center gap-3 px-3 py-2 mb-7">
         <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--color-control-emphasis)] text-[var(--color-text-inverse)]">${icons.mic}</span>
         <span class="min-w-0">
@@ -464,6 +493,7 @@ function renderSettingsView(): string {
         ${renderInterfaceSection()}
         ${renderApiKeySection()}
         ${renderWorkerTokenSection()}
+        ${renderGateSection()}
         <section class="settings-card" aria-labelledby="transcriptionSettingsTitle">
           <div class="settings-card-heading">
             <span class="settings-icon">${icons.sliders}</span>
@@ -612,6 +642,66 @@ function renderWorkerTokenSection(): string {
         <div class="flex flex-wrap justify-end gap-2 pt-2">
           <button id="workerTokenDeleteButton" type="button" class="secondary-action"><span data-i18n="settings.api.delete"></span></button>
           <button id="workerTokenSaveButton" type="submit" class="primary-action"><span data-i18n="settings.worker.save"></span></button>
+        </div>
+      </form>
+    </section>`;
+}
+
+/**
+ * Puerta de acceso — fullscreen overlay.
+ *
+ * Rendered visible and inert-locking the shell by default; `main.ts`
+ * reveals the app only on `gate:change → open`. The `data-mode` attribute
+ * switches between the locked form and the first-run setup form.
+ */
+function renderGateOverlay(): string {
+  return `
+    <div id="gateOverlay" class="gate-overlay" role="dialog" aria-modal="true" aria-labelledby="gateTitle" data-mode="locked">
+      <div class="gate-card">
+        <span class="gate-icon">${icons.lock}</span>
+        <h2 id="gateTitle" data-i18n="gate.title">Puerta de acceso</h2>
+        <p class="gate-subtitle" data-i18n="gate.subtitle"></p>
+        <form id="gateLockedForm" class="gate-form gate-form-locked" novalidate>
+          <label for="gateLockedInput" class="field-label" data-i18n="gate.label"></label>
+          <input id="gateLockedInput" type="password" class="form-control" data-i18n-placeholder="gate.placeholder" autocomplete="current-password" aria-describedby="gateLockedError" />
+          <p id="gateLockedError" class="field-error" aria-live="polite"></p>
+          <button id="gateLockedSubmit" type="submit" class="primary-action"><span data-i18n="gate.submit"></span></button>
+        </form>
+        <form id="gateSetupForm" class="gate-form gate-form-setup" novalidate>
+          <p class="gate-subtitle" data-i18n="gate.setup.subtitle"></p>
+          <label for="gateSetupInput" class="field-label" data-i18n="gate.setup.label"></label>
+          <input id="gateSetupInput" type="password" class="form-control" data-i18n-placeholder="gate.placeholder" autocomplete="new-password" aria-describedby="gateSetupError" />
+          <label for="gateSetupConfirmInput" class="field-label" data-i18n="gate.setup.confirmLabel"></label>
+          <input id="gateSetupConfirmInput" type="password" class="form-control" data-i18n-placeholder="gate.placeholder" autocomplete="new-password" aria-describedby="gateSetupError" />
+          <p id="gateSetupError" class="field-error" aria-live="polite"></p>
+          <button id="gateSetupSubmit" type="submit" class="primary-action"><span data-i18n="gate.setup.submit"></span></button>
+        </form>
+      </div>
+    </div>`;
+}
+
+/**
+ * Frase de acceso section in Settings: current phrase + new phrase ×2.
+ * Only reachable while the gate is open, so the credential always exists.
+ */
+function renderGateSection(): string {
+  return `
+    <section class="settings-card" aria-labelledby="gateSettingsTitle">
+      <div class="settings-card-heading">
+        <span class="settings-icon">${icons.lock}</span>
+        <div class="flex-1"><h3 id="gateSettingsTitle" data-i18n="settings.gate.title">Frase de acceso</h3><p data-i18n="settings.gate.subtitle"></p></div>
+        <span class="status-badge" data-i18n="settings.gate.statusSet"></span>
+      </div>
+      <form id="gatePhraseForm" novalidate>
+        <label for="gatePhraseCurrentInput" class="field-label" data-i18n="settings.gate.current"></label>
+        <input id="gatePhraseCurrentInput" type="password" class="form-control" autocomplete="current-password" aria-describedby="gatePhraseError" />
+        <label for="gatePhraseNewInput" class="field-label" data-i18n="settings.gate.new"></label>
+        <input id="gatePhraseNewInput" type="password" class="form-control" autocomplete="new-password" />
+        <label for="gatePhraseConfirmInput" class="field-label" data-i18n="settings.gate.confirm"></label>
+        <input id="gatePhraseConfirmInput" type="password" class="form-control" autocomplete="new-password" />
+        <p id="gatePhraseError" class="field-error" aria-live="polite"></p>
+        <div class="flex flex-wrap justify-end gap-2 pt-2">
+          <button id="gatePhraseSaveButton" type="submit" class="primary-action"><span data-i18n="settings.gate.save"></span></button>
         </div>
       </form>
     </section>`;
@@ -848,6 +938,7 @@ const icons = {
   settings:
     '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>',
   key: '<svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15 8l3 3M18 5l3 3"/></svg>',
+  lock: '<svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>',
   eye: '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2.1 12a10.5 10.5 0 0 1 19.8 0 10.5 10.5 0 0 1-19.8 0"/><circle cx="12" cy="12" r="3"/></svg>',
   sliders:
     '<svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/></svg>',
