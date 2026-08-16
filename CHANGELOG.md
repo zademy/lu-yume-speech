@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.6.0](https://github.com/zademy/lu-yume-speech/compare/v1.5.0...v1.6.0) (2026-08-16)
+
+
+### Features
+
+* **gate:** añade Puerta de acceso con Frase de acceso (cosmética) ([13a7077](https://github.com/zademy/lu-yume-speech/commit/13a707717284372c429be81434fa43274f1f18ee))
+
+
+### Bug Fixes
+
+* **gate:** mapa de errores compartido, gate.error.empty y a11y del setup ([d5ebfae](https://github.com/zademy/lu-yume-speech/commit/d5ebfaef9cd8c0b8352a48d6a8a7c6b3026942eb))
+
 ## [1.5.0](https://github.com/zademy/lu-yume-speech/compare/v1.4.0...v1.5.0) (2026-08-16)
 
 
