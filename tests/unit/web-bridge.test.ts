@@ -67,6 +67,22 @@ describe('WebBridge', () => {
     });
   });
 
+  describe('gate credential', () => {
+    it('roundtrips set/get/has/delete independently of groq and worker', async () => {
+      await bridge.setCredential('gate', 'v1.c2FsdA.dGhlZGlnZXN0');
+      expect(await bridge.hasCredential('gate')).toBe(true);
+      expect(await bridge.getCredential('gate')).toBe('v1.c2FsdA.dGhlZGlnZXN0');
+      expect(localStorage.getItem('stt_gate_credential')).toBe(
+        JSON.stringify('v1.c2FsdA.dGhlZGlnZXN0'),
+      );
+
+      await bridge.deleteCredential('gate');
+      expect(await bridge.hasCredential('gate')).toBe(false);
+      expect(await bridge.hasCredential('groq')).toBe(false);
+      expect(await bridge.hasCredential('worker')).toBe(false);
+    });
+  });
+
   it('loadSettings returns null when nothing saved', async () => {
     expect(await bridge.loadSettings()).toBeNull();
   });

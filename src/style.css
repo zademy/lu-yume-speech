@@ -1643,3 +1643,73 @@ details[open] > .summary-card-heading::after {
   font-size: 12px;
   line-height: 1.65;
 }
+
+/* ---------------------------------------------------------------------------
+ * Puerta de acceso (gate overlay)
+ * ------------------------------------------------------------------------- */
+
+.gate-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: var(--color-surface);
+}
+
+.gate-overlay[hidden] {
+  display: none;
+}
+
+.gate-card {
+  width: min(24rem, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 2rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+  text-align: center;
+}
+
+.gate-icon {
+  width: 2.75rem;
+  height: 2.75rem;
+  margin-inline: auto;
+  display: grid;
+  place-items: center;
+  border-radius: 0.75rem;
+  color: var(--color-text-muted);
+}
+
+.gate-card h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.gate-subtitle {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.gate-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  text-align: left;
+}
+
+.gate-overlay[data-mode='locked'] .gate-form-setup,
+.gate-overlay[data-mode='setup'] .gate-form-locked {
+  display: none;
+}
+
+.gate-form .primary-action {
+  margin-top: 0.5rem;
+  width: 100%;
+}
