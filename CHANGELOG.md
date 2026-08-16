@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.0](https://github.com/zademy/lu-yume-speech/compare/v1.4.0...v1.5.0) (2026-08-16)
+
+
+### Features
+
+* **api:** add transcription provider adapter with Cloudflare Whisper worker ([bf1a3be](https://github.com/zademy/lu-yume-speech/commit/bf1a3bec198e3dcfc5ebf5fe016abbfa74f4e329))
+* **api:** add transcription provider adapter with Cloudflare Whisper… ([5cb3baa](https://github.com/zademy/lu-yume-speech/commit/5cb3baae63c065530ace187247038a3276fe2108))
+
 ## [1.4.0](https://github.com/zademy/lu-yume-speech/compare/v1.3.0...v1.4.0) (2026-08-11)
 
 
