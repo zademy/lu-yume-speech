@@ -84,8 +84,15 @@ export type WhisperModel = 'whisper-large-v3' | 'whisper-large-v3-turbo';
 export const WHISPER_MODELS: WhisperModel[] = ['whisper-large-v3', 'whisper-large-v3-turbo'];
 
 // ---------------------------------------------------------------------------
-// Transcription providers
+// Transcription methods and providers
 // ---------------------------------------------------------------------------
+
+/**
+ * Método de transcripción: how a Transcripción is produced.
+ * - 'remote' → a Proveedor remoto (Groq / Cloudflare Whisper)
+ * - 'local'  → a Modelo local executed in the browser (Motor local)
+ */
+export type TranscriptionMethod = 'remote' | 'local';
 
 /** Identifier of an installed transcription provider. */
 export type TranscriptionProviderId = 'groq' | 'cloudflare-whisper';
@@ -169,8 +176,12 @@ export const APP_LANGUAGES: readonly { value: AppLanguage; label: string }[] = [
 export interface AppSettings {
   /** Interface language (English by default). */
   appLanguage: AppLanguage;
-  /** Active transcription provider (manual selection; only one active). */
+  /** Método de transcripción activo. Independent from the selections below. */
+  transcriptionMethod: TranscriptionMethod;
+  /** Last Proveedor remoto used when the method is remote (manual selection). */
   transcriptionProvider: TranscriptionProviderId;
+  /** Last Modelo activo used when the method is local. `null` = none. */
+  localModelId: string | null;
   /** Base URL of the Cloudflare Whisper worker. */
   workerBaseUrl: string;
   model: WhisperModel;
@@ -205,7 +216,9 @@ export interface AppSettings {
 /** Sensible defaults so the app works without any stored preferences. */
 export const DEFAULT_SETTINGS: Readonly<AppSettings> = {
   appLanguage: 'en',
+  transcriptionMethod: 'remote',
   transcriptionProvider: 'groq',
+  localModelId: null,
   workerBaseUrl: 'https://worker-ia-whisper.zadot911218.workers.dev',
   model: 'whisper-large-v3-turbo',
   operationMode: 'transcribe',

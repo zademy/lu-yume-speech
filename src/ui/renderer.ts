@@ -19,6 +19,7 @@ import {
   TRANSCRIPTION_PROVIDERS,
   WHISPER_MODELS,
 } from '../types';
+import { TRANSCRIPTION_METHODS } from '../utils/transcription-method';
 
 /**
  * Replaces the children of {@link el} with nodes parsed from {@link html}.
@@ -89,6 +90,8 @@ export interface AppElements {
   audioMinutesMetric: HTMLSpanElement;
   dictationKeyGate: HTMLElement;
   dictationKeyGateButton: HTMLButtonElement;
+  dictationLocalGate: HTMLElement;
+  dictationLocalGateButton: HTMLButtonElement;
   dictationWorkspace: HTMLDivElement;
   appLanguageSelect: HTMLSelectElement;
   apiKeyForm: HTMLFormElement;
@@ -98,7 +101,9 @@ export interface AppElements {
   apiKeyDeleteButton: HTMLButtonElement;
   apiKeyError: HTMLParagraphElement;
   apiKeyStatus: HTMLSpanElement;
+  methodSelect: HTMLSelectElement;
   providerSelect: HTMLSelectElement;
+  localModelSelect: HTMLSelectElement;
   workerTokenForm: HTMLFormElement;
   workerTokenInput: HTMLInputElement;
   workerTokenToggle: HTMLButtonElement;
@@ -218,6 +223,12 @@ export function renderApp(): AppElements {
     audioMinutesMetric: getRequiredElement(root, '#audioMinutesMetric', HTMLSpanElement),
     dictationKeyGate: getRequiredElement(root, '#dictationKeyGate', HTMLElement),
     dictationKeyGateButton: getRequiredElement(root, '#dictationKeyGateButton', HTMLButtonElement),
+    dictationLocalGate: getRequiredElement(root, '#dictationLocalGate', HTMLElement),
+    dictationLocalGateButton: getRequiredElement(
+      root,
+      '#dictationLocalGateButton',
+      HTMLButtonElement,
+    ),
     dictationWorkspace: getRequiredElement(root, '#dictationWorkspace', HTMLDivElement),
     appLanguageSelect: getRequiredElement(root, '#appLanguageSelect', HTMLSelectElement),
     apiKeyForm: getRequiredElement(root, '#apiKeyForm', HTMLFormElement),
@@ -227,7 +238,9 @@ export function renderApp(): AppElements {
     apiKeyDeleteButton: getRequiredElement(root, '#apiKeyDeleteButton', HTMLButtonElement),
     apiKeyError: getRequiredElement(root, '#apiKeyError', HTMLParagraphElement),
     apiKeyStatus: getRequiredElement(root, '#apiKeyStatus', HTMLSpanElement),
+    methodSelect: getRequiredElement(root, '#methodSelect', HTMLSelectElement),
     providerSelect: getRequiredElement(root, '#providerSelect', HTMLSelectElement),
+    localModelSelect: getRequiredElement(root, '#localModelSelect', HTMLSelectElement),
     workerTokenForm: getRequiredElement(root, '#workerTokenForm', HTMLFormElement),
     workerTokenInput: getRequiredElement(root, '#workerTokenInput', HTMLInputElement),
     workerTokenToggle: getRequiredElement(root, '#workerTokenToggle', HTMLButtonElement),
@@ -435,6 +448,15 @@ function renderDictationView(modifierLabel: string): string {
         </div>
         <button id="dictationKeyGateButton" type="button" class="primary-action"><span data-i18n="dictation.gate.cta"></span></button>
       </section>
+      <section id="dictationLocalGate" class="credential-gate" aria-labelledby="localGateTitle" hidden>
+        <span class="credential-gate-icon">${icons.sliders}</span>
+        <div>
+          <p class="eyebrow" data-i18n="dictation.localGate.eyebrow">Local model required</p>
+          <h3 id="localGateTitle" data-i18n="dictation.localGate.title">Download a local model</h3>
+          <p data-i18n="dictation.localGate.body"></p>
+        </div>
+        <button id="dictationLocalGateButton" type="button" class="primary-action"><span data-i18n="dictation.localGate.cta"></span></button>
+      </section>
       <div id="dictationWorkspace" class="dictation-workspace" hidden>
         ${renderStatusBar(modifierLabel)}
         ${renderVisualizerArea()}
@@ -500,6 +522,7 @@ function renderSettingsView(): string {
             <div><h3 id="transcriptionSettingsTitle" data-i18n="settings.transcription.title">Transcription</h3><p data-i18n="settings.transcription.description"></p></div>
           </div>
           <div class="settings-grid">
+            ${renderMethodField()}
             ${renderSelectField(
               'providerSelect',
               'field.provider',
@@ -509,6 +532,7 @@ function renderSettingsView(): string {
                 selected: provider.value === DEFAULT_SETTINGS.transcriptionProvider,
               })),
             )}
+            ${renderLocalModelField()}
             ${renderSelectField(
               'modelSelect',
               'field.model',
@@ -819,6 +843,23 @@ function renderSelectField(
     )
     .join('');
   return `<div><label for="${id}" class="field-label" data-i18n="${labelKey}"></label><select id="${id}" class="form-control">${renderedOptions}</select></div>`;
+}
+
+/** Método de transcripción selector — options are i18n-keyed (remote / local). */
+function renderMethodField(): string {
+  const renderedOptions = TRANSCRIPTION_METHODS.map(
+    (o) =>
+      `<option value="${o.value}" data-i18n="${o.labelKey}" ${o.value === DEFAULT_SETTINGS.transcriptionMethod ? 'selected' : ''}></option>`,
+  ).join('');
+  return `<div><label for="methodSelect" class="field-label" data-i18n="field.method"></label><select id="methodSelect" class="form-control">${renderedOptions}</select></div>`;
+}
+
+/**
+ * Modelo activo selector. Ships with a single "no active model" option —
+ * downloaded models populate it once the local engine lands.
+ */
+function renderLocalModelField(): string {
+  return `<div><label for="localModelSelect" class="field-label" data-i18n="field.localModel"></label><select id="localModelSelect" class="form-control"><option value="none" data-i18n="localModel.none" selected></option></select></div>`;
 }
 
 /** Noise-reduction selector — options are i18n-keyed (off / DSP / RNNoise). */

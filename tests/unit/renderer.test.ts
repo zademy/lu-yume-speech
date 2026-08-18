@@ -46,6 +46,38 @@ describe('renderApp application shell', () => {
     expect(elements.settingsView.contains(elements.gatePhraseForm)).toBe(true);
   });
 
+  it('renders the transcription method hierarchy with local defaults', () => {
+    const elements = renderApp();
+    document.body.appendChild(elements.root);
+
+    // Método de transcripción: remote selected by default, local offered.
+    expect(elements.methodSelect.value).toBe('remote');
+    expect(
+      elements.methodSelect.querySelector<HTMLOptionElement>('option[value="local"]'),
+    ).not.toBeNull();
+
+    // Proveedor remoto keeps its Groq default under the remote method.
+    expect(elements.providerSelect.value).toBe('groq');
+
+    // Modelo activo ships as a single "no active model" placeholder.
+    expect(elements.localModelSelect.value).toBe('none');
+    expect(elements.localModelSelect.options.length).toBe(1);
+
+    // All three selectors live in the transcription settings card.
+    expect(elements.settingsView.contains(elements.methodSelect)).toBe(true);
+    expect(elements.settingsView.contains(elements.providerSelect)).toBe(true);
+    expect(elements.settingsView.contains(elements.localModelSelect)).toBe(true);
+  });
+
+  it('renders the local-model dictation gate hidden by default', () => {
+    const elements = renderApp();
+    document.body.appendChild(elements.root);
+
+    expect(elements.dictationView.contains(elements.dictationLocalGate)).toBe(true);
+    expect(elements.dictationLocalGate.hidden).toBe(true);
+    expect(elements.dictationLocalGateButton.localName).toBe('button');
+  });
+
   it('renders the Puerta de acceso visible with the shell inert by default', () => {
     const elements = renderApp();
     document.body.appendChild(elements.root);

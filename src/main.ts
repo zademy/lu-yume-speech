@@ -25,8 +25,15 @@ import type {
   HistoryEntry,
   AppSettings,
   TranscriptionProviderId,
+  TranscriptionMethod,
 } from './types';
 import { CLOUDFLARE_WHISPER_MODEL, DEFAULT_SETTINGS } from './types';
+import {
+  methodChangePatch,
+  hasActiveLocalModel,
+  resolveCanDictate,
+  remoteKnobsLocked,
+} from './utils/transcription-method';
 
 import { Recorder } from './audio/recorder';
 import { AudioAnalyzer } from './audio/audio-analyzer';
@@ -151,11 +158,18 @@ async function bootstrap(): Promise<void> {
   } else if (config.transcriptionProvider === 'groq' && !apiKey && workerToken) {
     config.transcriptionProvider = 'cloudflare-whisper';
   }
-  /** True when the ACTIVE provider has its credential configured. */
+  /** True when the active method allows dictation (see resolveCanDictate). */
   const canDictate = (): boolean =>
-    config.transcriptionProvider === 'cloudflare-whisper'
-      ? workerToken.length > 0
-      : apiKey.length > 0;
+    resolveCanDictate({
+      method: config.transcriptionMethod,
+      remoteCredentialOk:
+        config.transcriptionProvider === 'cloudflare-whisper'
+          ? workerToken.length > 0
+          : apiKey.length > 0,
+      // Local engine lands in a later ticket; without a Modelo activo the
+      // local method stays gated (never silently falling back to remote).
+      localModelReady: hasActiveLocalModel(config),
+    });
   const getConfig = (): AppSettings => config;
   const setConfig = (next: AppSettings): void => {
     config = next;
@@ -166,6 +180,7 @@ async function bootstrap(): Promise<void> {
   activeLang = config.appLanguage;
 
   const elements = renderApp();
+  elements.methodSelect.value = config.transcriptionMethod;
   elements.providerSelect.value = config.transcriptionProvider;
   elements.workerBaseUrlInput.value = config.workerBaseUrl;
   translateTree(elements.root, config.appLanguage);
@@ -280,6 +295,13 @@ async function bootstrap(): Promise<void> {
   const dictationController = createDictationController({
     bus,
     startRecorder: async () => {
+      // Gate Pluma dictation the same way the Dictar view is gated — a
+      // blocked method must record nothing rather than silently transcribe
+      // through a remote provider.
+      if (!canDictate()) {
+        showToast(elements.toastContainer, t('toast.needLocalModel'), 'warning');
+        return;
+      }
       await ensureAudioReady();
       recorder.start();
     },
@@ -449,8 +471,15 @@ async function bootstrap(): Promise<void> {
     groq: groqClient,
     'cloudflare-whisper': workerClient,
   };
-  const getActiveTranscriptionClient = (): TranscriptionProvider =>
-    transcriptionClients[config.transcriptionProvider];
+  const getActiveTranscriptionClient = (): TranscriptionProvider => {
+    // The Motor local lands in a later ticket. The local method must never
+    // silently fall back to a remote provider — the UI gates dictation, and
+    // this guard keeps any path that slips through honest.
+    if (config.transcriptionMethod === 'local') {
+      throw new Error('Local transcription engine is not available yet.');
+    }
+    return transcriptionClients[config.transcriptionProvider];
+  };
   const visualizer = new WaveformVisualizer(
     elements.waveformCanvas,
     resolveWaveformStyle(elements.waveformCanvas),
@@ -531,11 +560,21 @@ async function bootstrap(): Promise<void> {
       }
     },
   );
-  // Credential + provider wiring: badges, gates, and the provider selector.
+  // Credential + provider wiring: badges, gates, and the method/provider selectors.
   const refreshCredentialUi = (): void => {
+    const localBlocked = config.transcriptionMethod === 'local' && !hasActiveLocalModel(config);
     updateApiKeyState(elements, apiKey, canDictate());
     updateWorkerTokenState(elements, workerToken);
-    applyProviderConstraints(elements, config.transcriptionProvider, workerToken.length > 0);
+    // Under a blocked local method the key gate is irrelevant — the local
+    // model gate below owns the Dictar view instead.
+    if (localBlocked) elements.dictationKeyGate.hidden = true;
+    elements.dictationLocalGate.hidden = !localBlocked;
+    applyMethodConstraints(
+      elements,
+      config.transcriptionMethod,
+      config.transcriptionProvider,
+      workerToken.length > 0,
+    );
   };
   /** Switch the active transcription provider and persist the choice. */
   const switchProvider = (provider: TranscriptionProviderId): void => {
@@ -546,6 +585,20 @@ async function bootstrap(): Promise<void> {
     bus.emit('settings:change', patch);
     refreshCredentialUi();
   };
+  /**
+   * Switch the Método de transcripción and persist the choice.
+   * The patch carries ONLY the method — the last Proveedor remoto and the
+   * last Modelo activo persist independently.
+   */
+  const switchMethod = (method: TranscriptionMethod): void => {
+    const patch = methodChangePatch(method);
+    const next: AppSettings = { ...getConfig(), ...patch };
+    setConfig(next);
+    void platform.saveSettings(next);
+    bus.emit('settings:change', patch);
+    refreshCredentialUi();
+  };
+  wireMethodSelect(elements, () => config.transcriptionMethod, switchMethod);
   wireProviderSelect(elements, () => config.transcriptionProvider, switchProvider);
   wireApiKeySettings(
     elements,
@@ -553,8 +606,15 @@ async function bootstrap(): Promise<void> {
     () => apiKey,
     (next) => {
       apiKey = next;
-      // Deleting the active Groq key with a worker token available: auto-switch.
-      if (!next && config.transcriptionProvider === 'groq' && workerToken) {
+      // Deleting the active Groq key with a worker token available:
+      // auto-switch — only under the remote method (under local the provider
+      // selection is parked and must not be mutated).
+      if (
+        !next &&
+        config.transcriptionMethod === 'remote' &&
+        config.transcriptionProvider === 'groq' &&
+        workerToken
+      ) {
         switchProvider('cloudflare-whisper');
         return;
       }
@@ -570,8 +630,14 @@ async function bootstrap(): Promise<void> {
     () => workerToken,
     (next) => {
       workerToken = next;
-      // Deleting the active worker token with a Groq key available: auto-switch.
-      if (!next && config.transcriptionProvider === 'cloudflare-whisper' && apiKey) {
+      // Deleting the active worker token with a Groq key available:
+      // auto-switch — only under the remote method (see wireApiKeySettings).
+      if (
+        !next &&
+        config.transcriptionMethod === 'remote' &&
+        config.transcriptionProvider === 'cloudflare-whisper' &&
+        apiKey
+      ) {
         switchProvider('groq');
         return;
       }
@@ -629,11 +695,13 @@ async function bootstrap(): Promise<void> {
         navigate('settings');
         showToast(
           elements.toastContainer,
-          t(
-            config.transcriptionProvider === 'cloudflare-whisper'
-              ? 'toast.needWorkerToken'
-              : 'toast.needApiKey',
-          ),
+          config.transcriptionMethod === 'local'
+            ? t('toast.needLocalModel')
+            : t(
+                config.transcriptionProvider === 'cloudflare-whisper'
+                  ? 'toast.needWorkerToken'
+                  : 'toast.needApiKey',
+              ),
           'warning',
         );
         return;
@@ -746,6 +814,7 @@ function wireNavigation(
     });
   });
   elements.dictationKeyGateButton.addEventListener('click', () => navigate('settings'));
+  elements.dictationLocalGateButton.addEventListener('click', () => navigate('settings'));
   elements.mobileMenuButton.addEventListener('click', () => {
     const open = elements.navigation.dataset.open !== 'true';
     elements.navigation.dataset.open = String(open);
@@ -1023,6 +1092,55 @@ function wireProviderSelect(
   });
 }
 
+/** Wires the Método de transcripción `<select>`. */
+function wireMethodSelect(
+  elements: AppElements,
+  getMethod: () => TranscriptionMethod,
+  onChange: (method: TranscriptionMethod) => void,
+): void {
+  elements.methodSelect.addEventListener('change', () => {
+    const next = elements.methodSelect.value as TranscriptionMethod;
+    if (next !== getMethod()) onChange(next);
+  });
+}
+
+/**
+ * Reflects the Método de transcripción in the transcription controls.
+ *
+ * Under the local method the Proveedor remoto selector and the remote-only
+ * knobs are disabled and the (still empty) Modelo activo selector takes
+ * over; under the remote method the existing provider constraints apply.
+ */
+function applyMethodConstraints(
+  elements: AppElements,
+  method: TranscriptionMethod,
+  provider: TranscriptionProviderId,
+  hasWorkerToken: boolean,
+): void {
+  const isLocal = method === 'local';
+  elements.methodSelect.value = method;
+  elements.providerSelect.disabled = isLocal;
+  // No downloadable models exist yet — the selector stays a read-only
+  // "no active model" placeholder until the local engine lands.
+  elements.localModelSelect.value = 'none';
+  elements.localModelSelect.disabled = true;
+  if (isLocal) {
+    elements.modelSelect.disabled = true;
+    const translateOption = elements.operationModeSelect.querySelector<HTMLOptionElement>(
+      'option[value="translate"]',
+    );
+    if (translateOption) translateOption.disabled = true;
+    // A disabled option must not stay selected (mirrors the worker branch).
+    elements.operationModeSelect.value = 'transcribe';
+    elements.promptInput.disabled = true;
+    elements.temperatureSlider.disabled = true;
+    elements.responseFormatSelect.disabled = true;
+    elements.timestampToggle.disabled = true;
+  } else {
+    applyProviderConstraints(elements, provider, hasWorkerToken);
+  }
+}
+
 /**
  * Reflects the active provider in the transcription controls.
  *
@@ -1036,7 +1154,7 @@ function applyProviderConstraints(
   provider: TranscriptionProviderId,
   hasWorkerToken: boolean,
 ): void {
-  const isWorker = provider === 'cloudflare-whisper';
+  const isWorker = remoteKnobsLocked('remote', provider);
   elements.providerSelect.value = provider;
   const workerOption = elements.providerSelect.querySelector<HTMLOptionElement>(
     'option[value="cloudflare-whisper"]',
