@@ -876,10 +876,11 @@ function renderLocalModelField(): string {
 }
 
 /**
- * One Modelo del catálogo card (read-only stage): metadata, requirement and
- * a disabled Download button. State is text-first — never color-only — and
- * precision/speed carry the "Estimación" tag until LU YUME's own benchmark
- * replaces them.
+ * One Modelo del catálogo card: metadata plus the download controls driven
+ * by the Motor local (T3). Download starts the engine message; Cancel aborts
+ * it; progress is exposed as text with bytes and phase on an aria-live
+ * region (states are text-first — never color-only) and precision/speed
+ * carry the "Estimación" tag until LU YUME's own benchmark replaces them.
  */
 function renderLocalModelCard(entry: (typeof LOCAL_MODEL_CATALOG)[number]): string {
   return `
@@ -889,7 +890,7 @@ function renderLocalModelCard(entry: (typeof LOCAL_MODEL_CATALOG)[number]): stri
           <h4 class="text-[13px] font-semibold">${entry.name} <span class="text-[var(--color-text-muted)]">(${entry.dtype})</span></h4>
           <p class="text-[10.5px] text-[var(--color-text-muted)]">${formatDownloadSize(entry.downloadBytes)} · <span data-i18n="localModels.languages.${entry.autoDetectLanguage ? 'auto' : 'manual'}"></span></p>
         </div>
-        <span class="local-model-state rounded-full border border-[var(--color-border-subtle)] px-2 py-0.5 text-[10.5px]" data-state="not-downloaded" data-i18n="localModels.state.notDownloaded"></span>
+        <span class="local-model-state rounded-full border border-[var(--color-border-subtle)] px-2 py-0.5 text-[10.5px]" data-state="not-downloaded" data-model-state="${entry.id}" data-i18n="localModels.state.notDownloaded"></span>
       </div>
       <dl class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px] sm:grid-cols-3">
         <div><dt class="text-[var(--color-text-muted)]" data-i18n="localModels.precision"></dt><dd data-i18n="localModels.precision.${entry.precision}"></dd></div>
@@ -899,7 +900,14 @@ function renderLocalModelCard(entry: (typeof LOCAL_MODEL_CATALOG)[number]): stri
         <div><dt class="text-[var(--color-text-muted)]" data-i18n="localModels.estimateTag"></dt><dd data-i18n="localModels.estimateValue"></dd></div>
         <div><dt class="text-[var(--color-text-muted)]" data-i18n="localModels.license"></dt><dd><a class="underline" href="${entry.licenseUrl}" target="_blank" rel="noopener noreferrer">${entry.license}</a></dd></div>
       </dl>
-      <button type="button" class="mt-3 primary-action" data-model-download="${entry.id}" disabled data-i18n="localModels.download"></button>
+      <div class="mt-3 flex flex-wrap items-center gap-2">
+        <button type="button" class="primary-action" data-model-download="${entry.id}" data-i18n="localModels.download"></button>
+        <button type="button" class="secondary-action hidden" data-model-cancel="${entry.id}" data-i18n="localModels.cancel"></button>
+      </div>
+      <div class="mt-2 hidden" data-model-progress="${entry.id}">
+        <progress class="h-1.5 w-full" max="100" value="0" data-model-progressbar="${entry.id}"></progress>
+        <p class="mt-1 text-[10.5px] text-[var(--color-text-muted)]" role="status" aria-live="polite" data-model-progresstext="${entry.id}"></p>
+      </div>
     </li>`;
 }
 

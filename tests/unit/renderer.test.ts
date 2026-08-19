@@ -95,13 +95,22 @@ describe('renderApp application shell', () => {
       'whisper-large-v3-turbo',
     ]);
 
-    // Every card: localized state text (not color-only), disabled download.
+    // Every card: localized state text (not color-only) keyed for dynamic
+    // updates, an enabled Download control, a hidden Cancel and a hidden
+    // aria-live progress region (T3 download engine controls).
     for (const card of cards) {
       const state = card.querySelector<HTMLElement>('.local-model-state');
       expect(state?.textContent).toBe('No descargado');
+      expect(state?.dataset.modelState).toBe(card.dataset.modelId);
       const download = card.querySelector<HTMLButtonElement>('[data-model-download]');
-      expect(download?.disabled).toBe(true);
+      expect(download?.disabled).toBe(false);
       expect(download?.textContent).toBe('Descargar');
+      const cancel = card.querySelector<HTMLButtonElement>('[data-model-cancel]');
+      expect(cancel?.classList.contains('hidden')).toBe(true);
+      const progressText = card.querySelector<HTMLElement>('[data-model-progresstext]');
+      expect(progressText?.getAttribute('aria-live')).toBe('polite');
+      const progressWrap = card.querySelector<HTMLElement>('[data-model-progress]');
+      expect(progressWrap?.classList.contains('hidden')).toBe(true);
     }
 
     // Metadata: size line + license link to the pinned repo page.

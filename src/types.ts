@@ -254,6 +254,53 @@ export interface StatusUpdate {
 }
 
 // ---------------------------------------------------------------------------
+// Local models (Motor local)
+// ---------------------------------------------------------------------------
+
+/**
+ * Logical lifecycle state of a Modelo del catálogo (Motor local).
+ *
+ * T3 subset of the full spec lifecycle — 'active' and 'update-available'
+ * land with the lifecycle/inference tickets.
+ */
+export type LocalModelState =
+  'not-downloaded' | 'downloading' | 'preparing' | 'downloaded' | 'partial' | 'error';
+
+/** Progress phase reported while a model download runs. */
+export type LocalModelProgressPhase = 'downloading' | 'preparing';
+
+/** `localModel:progress` payload — percentage, bytes and phase. */
+export interface LocalModelProgressEvent {
+  /** Catalog entry the download belongs to. */
+  modelId: string;
+  /** Current phase: fetching artifacts or verifying them. */
+  phase: LocalModelProgressPhase;
+  /** Bytes received so far (complete cached artifacts count). */
+  receivedBytes: number;
+  /** Total declared bytes (`downloadBytes`). */
+  totalBytes: number;
+  /** Integer 0–100 progress (100 only once verified). */
+  percent: number;
+}
+
+/** `localModel:state` payload — fired on every logical state transition. */
+export interface LocalModelStateEvent {
+  modelId: string;
+  state: LocalModelState;
+  /** State before the transition (null when the record is first created). */
+  previous: LocalModelState | null;
+}
+
+/**
+ * `localModel:warning` payload — advisory only; downloads proceed.
+ * Space and persistence warnings are warnings by spec, never blockers.
+ */
+export type LocalModelWarningEvent =
+  | { kind: 'space-insufficient'; modelId: string; neededBytes: number; availableBytes: number }
+  | { kind: 'space-unreliable'; modelId: string }
+  | { kind: 'persistence-denied'; modelId: string };
+
+// ---------------------------------------------------------------------------
 // Events
 // ---------------------------------------------------------------------------
 
@@ -314,6 +361,12 @@ export interface EventMap {
   'escrito:updated': Escrito[];
   /** Puerta de acceso state changed (setup → locked → open) */
   'gate:change': GateState;
+  /** Local model download progress (percent, bytes, phase). */
+  'localModel:progress': LocalModelProgressEvent;
+  /** Local model logical state changed (Motor local). */
+  'localModel:state': LocalModelStateEvent;
+  /** Advisory warning from the Motor local (space / persistence). */
+  'localModel:warning': LocalModelWarningEvent;
 }
 
 // ---------------------------------------------------------------------------

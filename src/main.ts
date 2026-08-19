@@ -26,6 +26,7 @@ import type {
   AppSettings,
   TranscriptionProviderId,
   TranscriptionMethod,
+  LocalModelState,
 } from './types';
 import { CLOUDFLARE_WHISPER_MODEL, DEFAULT_SETTINGS } from './types';
 import {
@@ -34,8 +35,14 @@ import {
   resolveCanDictate,
   remoteKnobsLocked,
 } from './utils/transcription-method';
-import { formatDownloadSize } from './utils/local-model-catalog';
+import { LOCAL_MODEL_CATALOG, formatDownloadSize } from './utils/local-model-catalog';
 import { detectCapabilities, probeEnvironment } from './utils/local-model-capabilities';
+import { LocalDownloadEngine } from './local-models/download-engine';
+import { logicalStateStore } from './local-models/model-state-store';
+import {
+  createBrowserStorageAdvisor,
+  createCacheArtifactStore,
+} from './local-models/browser-ports';
 
 import { Recorder } from './audio/recorder';
 import { AudioAnalyzer } from './audio/audio-analyzer';
@@ -675,6 +682,11 @@ async function bootstrap(): Promise<void> {
       // Capability probing is decorative here — silence leaves the line blank.
     });
 
+  // Motor local (T3): download engine behind the Local models cards. Fully
+  // independent of the transcription pipeline — downloads while transcribing
+  // with Groq/Cloudflare are allowed by design.
+  const localModels = wireLocalModelEngine(bus, elements);
+
   wireTranscriptionPipeline(
     bus,
     getActiveTranscriptionClient,
@@ -706,6 +718,7 @@ async function bootstrap(): Promise<void> {
     bus.emit('settings:change', { appLanguage: lang });
     translateTree(elements.root, lang);
     renderLocalModelsDevice();
+    localModels.renderAll();
     metricsPanel.setLanguage(lang);
     plumaPanel.setLanguage(lang);
     sidebar._lang = lang;
@@ -1105,6 +1118,191 @@ function gateErrorMessages(): Partial<Record<GateError, string>> {
     'frase-incorrecta': t('gate.error.incorrect'),
     'credencial-invalida': t('gate.error.corrupt'),
   };
+}
+
+// ===========================================================================
+// Motor local — download engine (T3)
+// ===========================================================================
+
+/** i18n suffix per logical state ('not-downloaded' → 'notDownloaded', …). */
+const LOCAL_STATE_I18N_KEY: Record<LocalModelState, string> = {
+  'not-downloaded': 'notDownloaded',
+  downloading: 'downloading',
+  preparing: 'preparing',
+  downloaded: 'downloaded',
+  partial: 'partial',
+  error: 'error',
+};
+
+/** Cached DOM handles for one Modelo del catálogo card. */
+interface LocalCardRefs {
+  chip: HTMLElement;
+  download: HTMLButtonElement;
+  cancel: HTMLButtonElement;
+  progress: HTMLElement;
+  bar: HTMLProgressElement;
+  text: HTMLElement;
+}
+
+/**
+ * Wires the Motor local download engine to the Local models cards: one
+ * download at a time, progress (percent + bytes + phase) on an aria-live
+ * region, cancellation → Descarga parcial, advisory warnings as toasts.
+ *
+ * Downloads are deliberately independent of the transcription pipeline —
+ * a download while transcribing with Groq/Cloudflare is allowed by design.
+ *
+ * @returns `renderAll()` — re-renders every card's dynamic texts (called on
+ * language change); the engine instance for later lifecycle tickets.
+ */
+function wireLocalModelEngine(
+  bus: EventBus<EventMap>,
+  elements: AppElements,
+): { engine: LocalDownloadEngine | null; renderAll: () => void } {
+  const artifactStore = createCacheArtifactStore();
+
+  // No Cache Storage (insecure context / old browser): the section stays
+  // informational — download controls remain disabled, nothing is wired.
+  if (!artifactStore) {
+    for (const button of elements.root.querySelectorAll<HTMLButtonElement>(
+      '[data-model-download]',
+    )) {
+      button.disabled = true;
+    }
+    return { engine: null, renderAll: () => undefined };
+  }
+
+  const engine = new LocalDownloadEngine({
+    catalog: LOCAL_MODEL_CATALOG,
+    artifacts: artifactStore,
+    states: logicalStateStore,
+    storage: createBrowserStorageAdvisor(),
+    bus,
+  });
+
+  const refsCache = new Map<string, LocalCardRefs>();
+  const refsFor = (modelId: string): LocalCardRefs | null => {
+    const cached = refsCache.get(modelId);
+    if (cached) return cached;
+    const card = elements.root.querySelector(`[data-model-id="${modelId}"]`);
+    if (!card) return null;
+    const chip = card.querySelector<HTMLElement>(`[data-model-state="${modelId}"]`);
+    const download = card.querySelector<HTMLButtonElement>(`[data-model-download="${modelId}"]`);
+    const cancel = card.querySelector<HTMLButtonElement>(`[data-model-cancel="${modelId}"]`);
+    const progress = card.querySelector<HTMLElement>(`[data-model-progress="${modelId}"]`);
+    const bar = card.querySelector<HTMLProgressElement>(`[data-model-progressbar="${modelId}"]`);
+    const text = card.querySelector<HTMLElement>(`[data-model-progresstext="${modelId}"]`);
+    if (!chip || !download || !cancel || !progress || !bar || !text) return null;
+    const refs: LocalCardRefs = { chip, download, cancel, progress, bar, text };
+    refsCache.set(modelId, refs);
+    return refs;
+  };
+
+  let pendingFocusModel: string | null = null;
+
+  const updateCard = (modelId: string): void => {
+    const refs = refsFor(modelId);
+    const record = engine.getRecord(modelId);
+    if (!refs || !record) return;
+    const state = record.state;
+    const busy = state === 'downloading' || state === 'preparing';
+
+    refs.chip.dataset.state = state;
+    refs.chip.textContent = t(`localModels.state.${LOCAL_STATE_I18N_KEY[state]}`);
+
+    // One download at a time: every Download button disables while any run.
+    refs.download.disabled = engine.activeModelId !== null;
+    refs.download.textContent = t(
+      state === 'partial' || state === 'error'
+        ? 'localModels.downloadAgain'
+        : 'localModels.download',
+    );
+    refs.download.classList.toggle('hidden', busy || state === 'downloaded');
+    refs.cancel.classList.toggle('hidden', !busy);
+
+    // Stable focus: download start moves focus to Cancel; after cancel it
+    // returns to the (re-enabled) Download button.
+    if (busy && document.activeElement === refs.download) refs.cancel.focus();
+    if (!busy && pendingFocusModel === modelId) {
+      pendingFocusModel = null;
+      refs.download.focus();
+    }
+
+    if (!busy) {
+      refs.progress.classList.add('hidden');
+      refs.bar.value = 0;
+      refs.text.textContent = '';
+    }
+  };
+
+  const renderAll = (): void => {
+    for (const entry of LOCAL_MODEL_CATALOG) updateCard(entry.id);
+  };
+
+  bus.on('localModel:progress', ({ modelId, phase, percent, receivedBytes, totalBytes }) => {
+    const refs = refsFor(modelId);
+    if (!refs) return;
+    refs.progress.classList.remove('hidden');
+    refs.bar.value = percent;
+    refs.text.textContent =
+      phase === 'downloading'
+        ? t('localModels.progress.downloading', {
+            percent,
+            received: formatDownloadSize(receivedBytes),
+            total: formatDownloadSize(totalBytes),
+          })
+        : t('localModels.progress.preparing');
+  });
+
+  bus.on('localModel:state', ({ modelId, state }) => {
+    updateCard(modelId);
+    if (state === 'partial') {
+      showToast(elements.toastContainer, t('toast.localModel.cancelled'), 'warning');
+    } else if (state === 'error') {
+      showToast(elements.toastContainer, t('toast.localModel.failed'), 'error');
+    }
+  });
+
+  bus.on('localModel:warning', (warning) => {
+    const message =
+      warning.kind === 'space-insufficient'
+        ? t('localModels.warn.spaceInsufficient', {
+            available: formatDownloadSize(warning.availableBytes),
+            needed: formatDownloadSize(warning.neededBytes),
+          })
+        : t(`localModels.warn.${warning.kind}`);
+    showToast(elements.toastContainer, message, 'warning');
+  });
+
+  // Hydrate persisted records (a previous Descarga parcial shows as such),
+  // then attach click handlers so no click can race an uninitialized record.
+  void engine.init().then(() => {
+    renderAll();
+    for (const button of elements.root.querySelectorAll<HTMLButtonElement>(
+      '[data-model-download]',
+    )) {
+      button.addEventListener('click', () => {
+        const modelId = button.dataset.modelDownload;
+        if (!modelId) return;
+        void engine.requestDownload(modelId).then((outcome) => {
+          if (outcome.ok) return;
+          if (outcome.reason === 'busy') {
+            showToast(elements.toastContainer, t('toast.localModel.busy'), 'warning');
+          }
+        });
+      });
+    }
+    for (const button of elements.root.querySelectorAll<HTMLButtonElement>('[data-model-cancel]')) {
+      button.addEventListener('click', () => {
+        const modelId = button.dataset.modelCancel;
+        if (!modelId) return;
+        pendingFocusModel = modelId;
+        engine.cancelDownload(modelId);
+      });
+    }
+  });
+
+  return { engine, renderAll };
 }
 
 /** Wires the provider `<select>`: manual activation of the active backend. */
