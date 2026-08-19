@@ -15,14 +15,28 @@
 import Dexie, { type Table } from 'dexie';
 import type { LocalModelRecord, LogicalStateStorePort } from './download-engine';
 
+/**
+ * Per-model local performance data (benchmark rows land with T8). Kept in a
+ * dedicated table so "delete performance data" is a separate action from
+ * "delete model" and never touches Grabaciones (different database).
+ */
+export interface LocalModelPerfRow {
+  /** Catalog entry id (primary key). */
+  modelId: string;
+  /** Rows of benchmark measurements (shape finalized by T8). */
+  measurements: unknown[];
+  updatedAt: number;
+}
+
 class YumeLocalModelsDB extends Dexie {
   modelStates!: Table<LocalModelRecord, string>;
+  modelPerf!: Table<LocalModelPerfRow, string>;
 
   constructor() {
     super('lu-yume-local-models');
-    this.version(1).stores({
-      modelStates: 'modelId, state',
-    });
+    // v2 adds the perf table (T6); v1 DBs upgrade in place.
+    this.version(1).stores({ modelStates: 'modelId, state' });
+    this.version(2).stores({ modelStates: 'modelId, state', modelPerf: 'modelId' });
   }
 }
 
@@ -49,3 +63,12 @@ export const logicalStateStore: LogicalStateStorePort = {
     await db().modelStates.put(record);
   },
 };
+
+/**
+ * Delete the local performance data of one model. Separate action from
+ * {@link deleteModel} flows by design (spec story 52): it never touches
+ * model weights, the logical record, or Grabaciones.
+ */
+export async function clearLocalPerfData(modelId: string): Promise<void> {
+  await db().modelPerf.delete(modelId);
+}

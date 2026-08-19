@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  canDelete,
   canStartDownload,
   isActivatable,
   nextLocalModelState,
@@ -57,6 +58,21 @@ describe('nextLocalModelState', () => {
     expect(nextLocalModelState('downloaded', { type: 'download-start' })).toEqual({ ok: false });
   });
 
+  it('deletes from every resting state back to not-downloaded', () => {
+    for (const state of ['downloaded', 'partial', 'error'] as const) {
+      expect(nextLocalModelState(state, { type: 'deleted' }), state).toEqual({
+        ok: true,
+        state: 'not-downloaded',
+      });
+    }
+  });
+
+  it('never deletes mid-operation states (engine busy guard owns those)', () => {
+    expect(nextLocalModelState('downloading', { type: 'deleted' })).toEqual({ ok: false });
+    expect(nextLocalModelState('preparing', { type: 'deleted' })).toEqual({ ok: false });
+    expect(nextLocalModelState('not-downloaded', { type: 'deleted' })).toEqual({ ok: false });
+  });
+
   it('rejects events out of phase', () => {
     const illegal: Array<[LocalModelState, Parameters<typeof nextLocalModelState>[1]['type']]> = [
       ['not-downloaded', 'verified'],
@@ -84,6 +100,17 @@ describe('canStartDownload', () => {
     expect(canStartDownload('downloading')).toBe(false);
     expect(canStartDownload('preparing')).toBe(false);
     expect(canStartDownload('downloaded')).toBe(false);
+  });
+});
+
+describe('canDelete', () => {
+  it('mirrors the deleted transition: resting states only', () => {
+    expect(canDelete('downloaded')).toBe(true);
+    expect(canDelete('partial')).toBe(true);
+    expect(canDelete('error')).toBe(true);
+    expect(canDelete('not-downloaded')).toBe(false);
+    expect(canDelete('downloading')).toBe(false);
+    expect(canDelete('preparing')).toBe(false);
   });
 });
 

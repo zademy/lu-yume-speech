@@ -38,13 +38,14 @@ import {
 import { LOCAL_MODEL_CATALOG, formatDownloadSize } from './utils/local-model-catalog';
 import { detectCapabilities, probeEnvironment } from './utils/local-model-capabilities';
 import { LocalDownloadEngine } from './local-models/download-engine';
-import { logicalStateStore } from './local-models/model-state-store';
+import { clearLocalPerfData, logicalStateStore } from './local-models/model-state-store';
 import {
   createBrowserStorageAdvisor,
   createCacheArtifactStore,
   createInferenceWorker,
   readDeviceMemoryGb,
 } from './local-models/browser-ports';
+import { createCrossTabLock } from './local-models/cross-tab-lock';
 import { buildHistoryEntry } from './utils/history-entry';
 import { LocalWhisperProvider } from './local-models/local-whisper-provider';
 import { decodeAudioTo16kMono } from './local-models/audio-decode';
@@ -706,10 +707,26 @@ async function bootstrap(): Promise<void> {
       // Capability probing is decorative here — silence leaves the line blank.
     });
 
-  // Motor local (T3+T4): download engine behind the Local models cards plus
-  // the Modelo activo selector. Fully independent of the transcription
-  // pipeline — downloads while transcribing with Groq/Cloudflare are
-  // allowed by design.
+  // Local-inference flight tracking: switch/delete/update are blocked while
+  // a local transcription runs (spec story 23) — read off the existing bus
+  // events, no new coupling.
+  const localInference: { running: boolean } = { running: false };
+  bus.on('transcription:start', () => {
+    if (getConfig().transcriptionMethod === 'local') localInference.running = true;
+  });
+  const markInferenceDone = (): void => {
+    localInference.running = false;
+  };
+  bus.on('transcription:success', markInferenceDone);
+  bus.on('transcription:error', markInferenceDone);
+
+  // Motor local (T3+T4+T6): download engine behind the Local models cards
+  // plus the Modelo activo selector and the full lifecycle actions. Fully
+  // independent of the transcription pipeline — downloads while transcribing
+  // with Groq/Cloudflare are allowed by design.
+  // The delete dep needs the engine the wiring is about to create — a small
+  // holder breaks the circle (populated right after, used only on clicks).
+  const engineRef: { engine: LocalDownloadEngine | null } = { engine: null };
   const localModels = wireLocalModelEngine(bus, elements, {
     getActiveModelId: () => config.localModelId,
     getMethod: () => config.transcriptionMethod,
@@ -724,7 +741,25 @@ async function bootstrap(): Promise<void> {
       localEngineState.ready = ready;
       refreshCredentialUi();
     },
+    canMutate: () => !localInference.running,
+    onDelete: async (modelId) => {
+      const outcome = await engineRef.engine?.deleteModel(modelId);
+      if (!outcome) return { ok: false, reason: 'unknown-model' };
+      if (!outcome.ok) return outcome;
+      // Deleting the Modelo activo leaves Local with NO active model —
+      // never auto-switching to another model or a remote provider.
+      if (getConfig().localModelId === modelId) {
+        localClient.release();
+        const next = { ...getConfig(), localModelId: null };
+        setConfig(next);
+        await platform.saveSettings(next);
+        bus.emit('settings:change', { localModelId: null });
+        refreshCredentialUi();
+      }
+      return outcome;
+    },
   });
+  engineRef.engine = localModels.engine;
 
   // Motor local advanced controls (T5): backend policy, idle release,
   // resident-model line and manual memory release.
@@ -1240,8 +1275,13 @@ const LOCAL_STATE_I18N_KEY: Record<LocalModelState, string> = {
 /** Cached DOM handles for one Modelo del catálogo card. */
 interface LocalCardRefs {
   chip: HTMLElement;
+  activeBadge: HTMLElement;
   download: HTMLButtonElement;
   cancel: HTMLButtonElement;
+  activate: HTMLButtonElement;
+  update: HTMLButtonElement;
+  delete: HTMLButtonElement;
+  perfClear: HTMLButtonElement;
   progress: HTMLElement;
   bar: HTMLProgressElement;
   text: HTMLElement;
@@ -1269,6 +1309,10 @@ function wireLocalModelEngine(
     onActiveModelChange: (modelId: string | null) => void;
     onReadyStateChange: (ready: (modelId: string) => boolean) => void;
     getMethod: () => TranscriptionMethod;
+    /** Delete via the engine (returns its outcome for toasts). */
+    onDelete: (modelId: string) => Promise<{ ok: boolean; reason?: string }>;
+    /** False while a local inference runs (blocks switch/delete/update). */
+    canMutate: () => boolean;
   },
 ): { engine: LocalDownloadEngine | null; renderAll: () => void } {
   const artifactStore = createCacheArtifactStore();
@@ -1291,6 +1335,7 @@ function wireLocalModelEngine(
     storage: createBrowserStorageAdvisor(),
     bus,
     deviceMemoryGb: readDeviceMemoryGb(),
+    lock: createCrossTabLock(),
   });
 
   // Expose readiness to the dictation gate as soon as records exist.
@@ -1343,13 +1388,31 @@ function wireLocalModelEngine(
     const card = elements.root.querySelector(`[data-model-id="${modelId}"]`);
     if (!card) return null;
     const chip = card.querySelector<HTMLElement>(`[data-model-state="${modelId}"]`);
+    const activeBadge = card.querySelector<HTMLElement>(`[data-model-active-badge="${modelId}"]`);
     const download = card.querySelector<HTMLButtonElement>(`[data-model-download="${modelId}"]`);
     const cancel = card.querySelector<HTMLButtonElement>(`[data-model-cancel="${modelId}"]`);
+    const activate = card.querySelector<HTMLButtonElement>(`[data-model-activate="${modelId}"]`);
+    const update = card.querySelector<HTMLButtonElement>(`[data-model-update="${modelId}"]`);
+    const del = card.querySelector<HTMLButtonElement>(`[data-model-delete="${modelId}"]`);
+    const perfClear = card.querySelector<HTMLButtonElement>(`[data-model-perf-clear="${modelId}"]`);
     const progress = card.querySelector<HTMLElement>(`[data-model-progress="${modelId}"]`);
     const bar = card.querySelector<HTMLProgressElement>(`[data-model-progressbar="${modelId}"]`);
     const text = card.querySelector<HTMLElement>(`[data-model-progresstext="${modelId}"]`);
-    if (!chip || !download || !cancel || !progress || !bar || !text) return null;
-    const refs: LocalCardRefs = { chip, download, cancel, progress, bar, text };
+    if (!chip || !activeBadge || !download || !cancel || !activate || !update || !del) return null;
+    if (!perfClear || !progress || !bar || !text) return null;
+    const refs: LocalCardRefs = {
+      chip,
+      activeBadge,
+      download,
+      cancel,
+      activate,
+      update,
+      delete: del,
+      perfClear,
+      progress,
+      bar,
+      text,
+    };
     refsCache.set(modelId, refs);
     return refs;
   };
@@ -1362,12 +1425,22 @@ function wireLocalModelEngine(
     if (!refs || !record) return;
     const state = record.state;
     const busy = state === 'downloading' || state === 'preparing';
+    const engineBusy = engine.activeModelId !== null;
+    const active = deps.getActiveModelId() === modelId && state === 'downloaded';
+    const updateAvailable = state === 'downloaded' && engine.isUpdateAvailable(modelId);
+    const mutable = deps.canMutate();
 
-    refs.chip.dataset.state = state;
-    refs.chip.textContent = t(`localModels.state.${LOCAL_STATE_I18N_KEY[state]}`);
+    refs.chip.dataset.state = updateAvailable ? 'update-available' : state;
+    refs.chip.textContent = updateAvailable
+      ? t('localModels.state.updateAvailable')
+      : t(`localModels.state.${LOCAL_STATE_I18N_KEY[state]}`);
 
-    // One download at a time: every Download button disables while any run.
-    refs.download.disabled = engine.activeModelId !== null;
+    // Exactly one card carries the Active badge.
+    refs.activeBadge.classList.toggle('hidden', !active);
+
+    // One operation at a time: every mutating control disables while any
+    // runs; switch/delete/update also lock while a local inference runs.
+    refs.download.disabled = engineBusy;
     refs.download.textContent = t(
       state === 'partial' || state === 'error'
         ? 'localModels.downloadAgain'
@@ -1375,6 +1448,19 @@ function wireLocalModelEngine(
     );
     refs.download.classList.toggle('hidden', busy || state === 'downloaded');
     refs.cancel.classList.toggle('hidden', !busy);
+
+    refs.activate.classList.toggle('hidden', state !== 'downloaded' || active);
+    refs.activate.disabled = !mutable || engineBusy;
+
+    refs.update.classList.toggle('hidden', !updateAvailable || busy);
+    refs.update.disabled = !mutable || engineBusy;
+
+    const deletable = state === 'downloaded' || state === 'partial' || state === 'error';
+    refs.delete.classList.toggle('hidden', !deletable || busy);
+    refs.delete.disabled = !mutable || engineBusy;
+
+    refs.perfClear.classList.toggle('hidden', state === 'not-downloaded' || busy);
+    refs.perfClear.disabled = engineBusy;
 
     // Stable focus: download start moves focus to Cancel; after cancel it
     // returns to the (re-enabled) Download button.
@@ -1396,7 +1482,8 @@ function wireLocalModelEngine(
     refreshLocalModelOptions();
   };
 
-  bus.on('localModel:progress', ({ modelId, phase, percent, receivedBytes, totalBytes }) => {
+  bus.on('localModel:progress', (event) => {
+    const { modelId, phase, percent, receivedBytes, totalBytes } = event;
     const refs = refsFor(modelId);
     if (!refs) return;
     refs.progress.classList.remove('hidden');
@@ -1407,13 +1494,19 @@ function wireLocalModelEngine(
             percent,
             received: formatDownloadSize(receivedBytes),
             total: formatDownloadSize(totalBytes),
-          })
+          }) + (event.isUpdate ? ` · ${t('localModels.progress.updating')}` : '')
         : t('localModels.progress.preparing');
   });
 
-  bus.on('localModel:state', ({ modelId, state }) => {
+  bus.on('localModel:state', ({ modelId, state, previous }) => {
     updateCard(modelId);
     refreshLocalModelOptions();
+    if (previous === 'downloaded' && (state === 'partial' || state === 'not-downloaded')) {
+      // Reconciliation found lost artifacts — instructions, not a technical
+      // error (the browser evicted files under storage pressure).
+      showToast(elements.toastContainer, t('toast.localModel.reconciled'), 'warning');
+      return;
+    }
     if (state === 'partial') {
       showToast(elements.toastContainer, t('toast.localModel.cancelled'), 'warning');
     } else if (state === 'error') {
@@ -1465,6 +1558,58 @@ function wireLocalModelEngine(
         if (!modelId) return;
         pendingFocusModel = modelId;
         engine.cancelDownload(modelId);
+      });
+    }
+    for (const button of elements.root.querySelectorAll<HTMLButtonElement>(
+      '[data-model-activate]',
+    )) {
+      button.addEventListener('click', () => {
+        const modelId = button.dataset.modelActivate;
+        if (!modelId || !deps.canMutate()) return;
+        deps.onActiveModelChange(modelId);
+        renderAll();
+      });
+    }
+    for (const button of elements.root.querySelectorAll<HTMLButtonElement>('[data-model-update]')) {
+      button.addEventListener('click', () => {
+        const modelId = button.dataset.modelUpdate;
+        if (!modelId || !deps.canMutate()) return;
+        void engine.requestUpdate(modelId).then((outcome) => {
+          if (outcome.ok) {
+            showToast(elements.toastContainer, t('toast.localModel.updated'), 'success');
+          } else if (outcome.reason === 'busy-other-tab') {
+            showToast(elements.toastContainer, t('toast.localModel.busyOtherTab'), 'warning');
+          } else if (outcome.reason !== 'busy') {
+            showToast(elements.toastContainer, t('toast.localModel.updateFailed'), 'error');
+          }
+        });
+      });
+    }
+    for (const button of elements.root.querySelectorAll<HTMLButtonElement>('[data-model-delete]')) {
+      button.addEventListener('click', () => {
+        const modelId = button.dataset.modelDelete;
+        if (!modelId || !deps.canMutate()) return;
+        if (!window.confirm(t('localModels.confirmDelete'))) return;
+        void deps.onDelete(modelId).then((outcome) => {
+          if (outcome.ok) {
+            showToast(elements.toastContainer, t('toast.localModel.deleted'), 'success');
+          } else if (outcome.reason === 'busy-other-tab') {
+            showToast(elements.toastContainer, t('toast.localModel.busyOtherTab'), 'warning');
+          } else if (outcome.reason !== 'busy') {
+            showToast(elements.toastContainer, t('toast.localModel.deleteFailed'), 'error');
+          }
+        });
+      });
+    }
+    for (const button of elements.root.querySelectorAll<HTMLButtonElement>(
+      '[data-model-perf-clear]',
+    )) {
+      button.addEventListener('click', () => {
+        const modelId = button.dataset.modelPerfClear;
+        if (!modelId) return;
+        void clearLocalPerfData(modelId).then(() => {
+          showToast(elements.toastContainer, t('toast.localModel.perfCleared'), 'success');
+        });
       });
     }
   });

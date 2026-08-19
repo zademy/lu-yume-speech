@@ -29,6 +29,8 @@ import type {
 } from '../types';
 import type { LocalCatalogEntry } from '../utils/local-model-catalog';
 import { artifactUrl } from './artifact-store';
+import type { CrossTabLockPort } from './cross-tab-lock';
+import { LOCAL_MODELS_LOCK_NAME } from './cross-tab-lock';
 import { nextLocalModelState, type LocalModelLifecycleEvent } from './download-state-machine';
 import { memoryTierGuard } from './memory-guard';
 import { evaluateSpace } from './space-check';
@@ -65,6 +67,8 @@ export interface ArtifactStorePort {
     signal: AbortSignal,
     onDelta: (deltaBytes: number) => void,
   ): Promise<void>;
+  /** Remove artifacts by canonical URL (deletion / failed-update cleanup). */
+  deleteArtifacts(urls: readonly string[]): Promise<void>;
 }
 
 /** Logical state persistence (IndexedDB in production). */
@@ -85,7 +89,36 @@ export type DownloadRequestOutcome =
   | { ok: true }
   | {
       ok: false;
-      reason: 'unknown-model' | 'busy' | 'invalid-state' | 'cancelled' | 'download-failed';
+      reason:
+        | 'unknown-model'
+        | 'busy'
+        | 'invalid-state'
+        | 'cancelled'
+        | 'download-failed'
+        | 'busy-other-tab';
+    };
+
+/** Outcome of a `deleteModel` message. */
+export type DeleteModelOutcome =
+  | { ok: true }
+  | {
+      ok: false;
+      reason: 'unknown-model' | 'busy' | 'invalid-state' | 'busy-other-tab';
+    };
+
+/** Terminal outcome of a `requestUpdate` message (explicit, atomic). */
+export type UpdateRequestOutcome =
+  | { ok: true }
+  | {
+      ok: false;
+      reason:
+        | 'unknown-model'
+        | 'busy'
+        | 'invalid-state'
+        | 'up-to-date'
+        | 'cancelled'
+        | 'update-failed'
+        | 'busy-other-tab';
     };
 
 /** Outcome of a `cancelDownload` message. */
@@ -102,6 +135,8 @@ export interface LocalDownloadEngineDeps {
   now?: () => number;
   /** Device RAM in GB when reported (memory-tier advisory); null/omitted = unknown. */
   deviceMemoryGb?: number | null;
+  /** Cross-tab serialization (Web Locks in production; noop fallback). */
+  lock?: CrossTabLockPort;
 }
 
 interface ActiveDownload {
@@ -121,7 +156,11 @@ export class LocalDownloadEngine {
 
   /**
    * Hydrate persisted records (a Descarga parcial from a previous session
-   * must show as partial, not not-downloaded). Entries without a record start
+   * must show as partial, not not-downloaded), then reconcile them against
+   * what the browser actually still stores: a "downloaded" record whose
+   * artifacts the browser evicted becomes Descarga parcial (some files) or
+   * No descargado (none) — surfaced as state events so the UI can show
+   * instructions, never a technical error. Entries without a record start
    * as an unpersisted `not-downloaded`.
    */
   async init(): Promise<void> {
@@ -140,6 +179,48 @@ export class LocalDownloadEngine {
         },
       );
     }
+    await this.reconcile();
+  }
+
+  /**
+   * Compare persisted records with the physical artifact store and repair
+   * the logical state (spec story 32). Only `downloaded` records are
+   * checked — every other state already assumes missing files. Stale
+   * artifacts of a superseded revision are NOT deleted here: updates own
+   * their replacement.
+   */
+  private async reconcile(): Promise<void> {
+    for (const entry of this.deps.catalog) {
+      const record = this.records.get(entry.id);
+      if (!record || record.state !== 'downloaded') continue;
+
+      const artifactUrls = entry.artifacts.map((artifact) =>
+        artifactUrl(entry.repo, record.revision, artifact.path),
+      );
+      let present = 0;
+      for (let i = 0; i < entry.artifacts.length; i += 1) {
+        const artifact = entry.artifacts[i];
+        if (!artifact) continue;
+        const complete = await this.deps.artifacts.hasArtifact(
+          artifactUrls[i] as string,
+          artifact.bytes,
+        );
+        if (complete) present += 1;
+      }
+      if (present === entry.artifacts.length) continue;
+
+      // Physical loss: some files are gone. Any file left = Descarga parcial
+      // (re-download resumes from the survivors); nothing = No descargado.
+      record.state = present > 0 ? 'partial' : 'not-downloaded';
+      record.verified = false;
+      record.receivedBytes = present > 0 ? present : 0;
+      await this.deps.states.put({ ...record });
+      this.deps.bus.emit('localModel:state', {
+        modelId: entry.id,
+        state: record.state,
+        previous: 'downloaded',
+      });
+    }
   }
 
   /** Read-only snapshot of the logical record (null for unknown ids). */
@@ -151,6 +232,15 @@ export class LocalDownloadEngine {
   /** Model id currently downloading, if any. */
   get activeModelId(): string | null {
     return this.active?.modelId ?? null;
+  }
+
+  /** Whether a newer catalog revision exists for this model's record. */
+  isUpdateAvailable(modelId: string): boolean {
+    const entry = this.deps.catalog.find((candidate) => candidate.id === modelId);
+    const record = this.records.get(modelId);
+    return (
+      !!entry && !!record && record.state === 'downloaded' && record.revision !== entry.revision
+    );
   }
 
   /**
@@ -168,6 +258,20 @@ export class LocalDownloadEngine {
       return { ok: false, reason: 'invalid-state' };
     }
 
+    const lock = this.deps.lock ?? noopLock;
+    const outcome = await lock.withLock(LOCAL_MODELS_LOCK_NAME, async () =>
+      this.runDownload(modelId, entry, record),
+    );
+    if (!outcome.ok) return { ok: false, reason: 'busy-other-tab' };
+    return outcome.value;
+  }
+
+  /** Download flow — runs holding the cross-tab lock. */
+  private async runDownload(
+    modelId: string,
+    entry: LocalCatalogEntry,
+    record: LocalModelRecord,
+  ): Promise<DownloadRequestOutcome> {
     const controller = new AbortController();
     this.active = { modelId, controller };
     // Read through a closure: `signal.aborted` can flip between awaits, and
@@ -178,7 +282,7 @@ export class LocalDownloadEngine {
       await this.preFlightWarnings(entry);
       await this.applyTransition(modelId, { type: 'download-start' });
 
-      const fetched = await this.fetchArtifacts(entry, controller.signal);
+      const fetched = await this.fetchArtifacts(entry, controller.signal, record.revision);
       if (aborted()) {
         await this.applyTransition(modelId, { type: 'cancelled' });
         return { ok: false, reason: 'cancelled' };
@@ -201,7 +305,7 @@ export class LocalDownloadEngine {
         await this.applyTransition(modelId, { type: 'cancelled' });
         return { ok: false, reason: 'cancelled' };
       }
-      const verified = await this.verifyArtifacts(entry, controller.signal);
+      const verified = await this.verifyArtifacts(entry, record.revision, controller.signal);
       if (aborted()) {
         await this.applyTransition(modelId, { type: 'cancelled' });
         return { ok: false, reason: 'cancelled' };
@@ -234,6 +338,162 @@ export class LocalDownloadEngine {
     if (this.active.modelId !== modelId) return { ok: false, reason: 'model-mismatch' };
     this.active.controller.abort();
     return { ok: true };
+  }
+
+  /**
+   * Message: delete a model — weights, partials and the logical record of
+   * the revision. Runs under the cross-tab lock; refused while any engine
+   * operation is in flight. The caller decides what "deleting the active
+   * model" means for the Modelo activo (the engine never switches models
+   * or providers on its own).
+   */
+  async deleteModel(modelId: string): Promise<DeleteModelOutcome> {
+    const entry = this.deps.catalog.find((candidate) => candidate.id === modelId);
+    if (!entry) return { ok: false, reason: 'unknown-model' };
+    if (this.active) return { ok: false, reason: 'busy' };
+
+    const record = this.record(modelId);
+    if (!nextLocalModelState(record.state, { type: 'deleted' }).ok) {
+      return { ok: false, reason: 'invalid-state' };
+    }
+
+    const lock = this.deps.lock ?? noopLock;
+    const outcome = await lock.withLock(LOCAL_MODELS_LOCK_NAME, async () => {
+      // Remove every artifact of every revision this record may have used:
+      // the persisted revision and the current catalog revision (a failed
+      // update may have left new-revision partials behind).
+      const revisions = new Set([record.revision, entry.revision]);
+      const urls: string[] = [];
+      for (const revision of revisions) {
+        for (const artifact of entry.artifacts) {
+          urls.push(artifactUrl(entry.repo, revision, artifact.path));
+        }
+      }
+      await this.deps.artifacts.deleteArtifacts(urls);
+      await this.applyTransition(modelId, { type: 'deleted' });
+      // 'deleted' lands on not-downloaded; reset the byte counters and pin
+      // the record back to the catalog revision.
+      const updated = this.record(modelId);
+      updated.receivedBytes = 0;
+      updated.revision = entry.revision;
+      await this.deps.states.put({ ...updated });
+      return true;
+    });
+    if (!outcome.ok) return { ok: false, reason: 'busy-other-tab' };
+    return { ok: true };
+  }
+
+  /**
+   * Message: explicit, atomic model update. The new catalog revision is
+   * downloaded and verified ALONGSIDE the old one — the record keeps its
+   * old revision (usable, still the Modelo activo) until the new artifacts
+   * are complete; only then are the old artifacts deleted and the record
+   * repointed. A failure or cancellation cleans up the new-revision
+   * artifacts and leaves the old revision exactly as it was (implicit
+   * rollback: the old revision is never removed before the new one is
+   * verified).
+   */
+  async requestUpdate(modelId: string): Promise<UpdateRequestOutcome> {
+    const entry = this.deps.catalog.find((candidate) => candidate.id === modelId);
+    if (!entry) return { ok: false, reason: 'unknown-model' };
+    if (this.active) return { ok: false, reason: 'busy' };
+
+    const record = this.record(modelId);
+    if (record.state !== 'downloaded') return { ok: false, reason: 'invalid-state' };
+    if (record.revision === entry.revision) return { ok: false, reason: 'up-to-date' };
+
+    const lock = this.deps.lock ?? noopLock;
+    const outcome = await lock.withLock(LOCAL_MODELS_LOCK_NAME, async () =>
+      this.runUpdate(modelId, entry, record),
+    );
+    if (!outcome.ok) return { ok: false, reason: 'busy-other-tab' };
+    return outcome.value;
+  }
+
+  /** Update flow — runs holding the cross-tab lock; old revision stays live. */
+  private async runUpdate(
+    modelId: string,
+    entry: LocalCatalogEntry,
+    record: LocalModelRecord,
+  ): Promise<UpdateRequestOutcome> {
+    const oldRevision = record.revision;
+    const newRevision = entry.revision;
+    const controller = new AbortController();
+    this.active = { modelId, controller };
+    const aborted = (): boolean => controller.signal.aborted;
+    const newArtifactUrls = entry.artifacts.map((artifact) =>
+      artifactUrl(entry.repo, newRevision, artifact.path),
+    );
+
+    try {
+      await this.preFlightWarnings(entry);
+      this.emitProgress(modelId, 'downloading', 0, entry.downloadBytes, 0, true);
+
+      let received = 0;
+      for (const artifact of entry.artifacts) {
+        if (aborted()) throw new DOMException('aborted', 'AbortError');
+        const url = artifactUrl(entry.repo, newRevision, artifact.path);
+        const cached = await this.deps.artifacts.hasArtifact(url, artifact.bytes);
+        if (cached) {
+          received += artifact.bytes;
+          continue;
+        }
+        await this.deps.artifacts.storeArtifact(url, controller.signal, (delta) => {
+          received += delta;
+          this.emitProgress(
+            modelId,
+            'downloading',
+            received,
+            entry.downloadBytes,
+            progressPercent(received, entry.downloadBytes),
+            true,
+          );
+        });
+      }
+
+      if (aborted()) throw new DOMException('aborted', 'AbortError');
+      this.emitProgress(modelId, 'preparing', entry.downloadBytes, entry.downloadBytes, 99, true);
+      let verified = true;
+      for (const artifact of entry.artifacts) {
+        if (aborted()) {
+          verified = false;
+          break;
+        }
+        const url = artifactUrl(entry.repo, newRevision, artifact.path);
+        if (!(await this.deps.artifacts.hasArtifact(url, artifact.bytes))) {
+          verified = false;
+          break;
+        }
+      }
+      if (aborted()) throw new DOMException('aborted', 'AbortError');
+      if (!verified) return { ok: false, reason: 'update-failed' };
+
+      // Success atomically: old artifacts out, record repointed, still
+      // downloaded. The record never left 'downloaded', so the old revision
+      // stayed usable (and activatable) throughout.
+      await this.deps.artifacts.deleteArtifacts(
+        entry.artifacts.map((artifact) => artifactUrl(entry.repo, oldRevision, artifact.path)),
+      );
+      record.revision = newRevision;
+      record.receivedBytes = record.totalBytes;
+      record.updatedAt = this.now();
+      await this.deps.states.put({ ...record });
+      this.deps.bus.emit('localModel:state', {
+        modelId,
+        state: 'downloaded',
+        previous: 'downloaded',
+      });
+      return { ok: true };
+    } catch (error) {
+      // Rollback by construction: remove the partial new-revision artifacts;
+      // the old revision was never touched.
+      await this.deps.artifacts.deleteArtifacts(newArtifactUrls).catch(() => undefined);
+      if (aborted()) return { ok: false, reason: 'cancelled' };
+      console.error(`[local-models] update of ${modelId} failed:`, error);
+      return { ok: false, reason: 'update-failed' };
+    } finally {
+      this.active = null;
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -311,7 +571,11 @@ export class LocalDownloadEngine {
    * re-download resumes instead of restarting). Returns false on failure;
    * aborts propagate to the caller, which maps them to Descarga parcial.
    */
-  private async fetchArtifacts(entry: LocalCatalogEntry, signal: AbortSignal): Promise<boolean> {
+  private async fetchArtifacts(
+    entry: LocalCatalogEntry,
+    signal: AbortSignal,
+    revision: string,
+  ): Promise<boolean> {
     const record = this.record(entry.id);
     let received = 0;
     let lastPercent = -1;
@@ -329,7 +593,7 @@ export class LocalDownloadEngine {
       // settling (e.g. during pre-flight): registering work under an already
       // aborted signal must stop immediately, not stream a full artifact.
       if (signal.aborted) throw new DOMException('aborted', 'AbortError');
-      const url = artifactUrl(entry.repo, entry.revision, artifact.path);
+      const url = artifactUrl(entry.repo, revision, artifact.path);
       const cached = await this.deps.artifacts.hasArtifact(url, artifact.bytes);
       if (cached) {
         received += artifact.bytes;
@@ -352,10 +616,14 @@ export class LocalDownloadEngine {
    * Every artifact present in the store with its exact declared size. Bails
    * out with false when cancelled mid-verification (caller maps to partial).
    */
-  private async verifyArtifacts(entry: LocalCatalogEntry, signal: AbortSignal): Promise<boolean> {
+  private async verifyArtifacts(
+    entry: LocalCatalogEntry,
+    revision: string,
+    signal: AbortSignal,
+  ): Promise<boolean> {
     for (const artifact of entry.artifacts) {
       if (signal.aborted) return false;
-      const url = artifactUrl(entry.repo, entry.revision, artifact.path);
+      const url = artifactUrl(entry.repo, revision, artifact.path);
       const present = await this.deps.artifacts.hasArtifact(url, artifact.bytes);
       if (!present) return false;
     }
@@ -375,8 +643,13 @@ export class LocalDownloadEngine {
     } else if (transition.state === 'downloaded') {
       record.verified = true;
       record.receivedBytes = record.totalBytes;
-    } else if (transition.state === 'partial' || transition.state === 'error') {
+    } else if (
+      transition.state === 'partial' ||
+      transition.state === 'error' ||
+      transition.state === 'not-downloaded'
+    ) {
       record.verified = false;
+      if (transition.state === 'not-downloaded') record.receivedBytes = 0;
     }
     await this.deps.states.put({ ...record });
     const payload: LocalModelStateEvent = { modelId, state: record.state, previous };
@@ -389,6 +662,7 @@ export class LocalDownloadEngine {
     receivedBytes: number,
     totalBytes: number,
     percent: number,
+    isUpdate = false,
   ): void {
     const payload: LocalModelProgressEvent = {
       modelId,
@@ -396,6 +670,7 @@ export class LocalDownloadEngine {
       receivedBytes,
       totalBytes,
       percent,
+      ...(isUpdate ? { isUpdate: true } : {}),
     };
     this.deps.bus.emit('localModel:progress', payload);
   }
@@ -404,6 +679,13 @@ export class LocalDownloadEngine {
     this.deps.bus.emit('localModel:warning', warning);
   }
 }
+
+/** Fallback lock used when no cross-tab port is injected (single-tab). */
+const noopLock: CrossTabLockPort = {
+  async withLock<T>(_name: string, work: () => Promise<T>) {
+    return { ok: true, value: await work() };
+  },
+};
 
 /** Integer 0–99 progress; 100 is only meaningful once verified. */
 function progressPercent(receivedBytes: number, totalBytes: number): number {

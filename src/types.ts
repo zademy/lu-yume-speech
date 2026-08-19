@@ -300,6 +300,8 @@ export interface LocalModelProgressEvent {
   totalBytes: number;
   /** Integer 0–100 progress (100 only once verified). */
   percent: number;
+  /** Whether the transfer is an explicit model update (old revision stays active). */
+  isUpdate?: boolean;
 }
 
 /** `localModel:state` payload — fired on every logical state transition. */

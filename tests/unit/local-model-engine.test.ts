@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { EventBus } from '../../src/core/event-bus';
 import { artifactUrl } from '../../src/local-models/artifact-store';
+import type { CrossTabLockPort } from '../../src/local-models/cross-tab-lock';
 import {
   LocalDownloadEngine,
   type ArtifactStorePort,
@@ -114,6 +115,16 @@ class FakeArtifactStore implements ArtifactStorePort {
       sent += take;
     }
     this.stored.set(url, total);
+  }
+
+  /** URLs removed by deleteArtifacts (assertions + lost-artifact simulation). */
+  readonly deleted = new Set<string>();
+
+  async deleteArtifacts(urls: readonly string[]): Promise<void> {
+    for (const url of urls) {
+      this.deleted.add(url);
+      this.stored.delete(url);
+    }
   }
 }
 
@@ -411,8 +422,263 @@ describe('LocalDownloadEngine — failures', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Pre-flight: space check + persistence
+// Lifecycle: delete / atomic update / reconcile / cross-tab lock (T6)
 // ---------------------------------------------------------------------------
+
+/** Lock fake: `busy` simulates another tab holding the lock. */
+function fakeLock(busy = false): CrossTabLockPort {
+  return {
+    async withLock<T>(_name: string, work: () => Promise<T>) {
+      return busy
+        ? { ok: false, reason: 'busy-other-tab' as const }
+        : { ok: true, value: await work() };
+    },
+  };
+}
+
+describe('LocalDownloadEngine — delete (T6)', () => {
+  it('deletes a downloaded model: artifacts of both revisions + record reset', async () => {
+    const h = createHarness();
+    await h.engine.init();
+    await h.engine.requestDownload(MODEL.id);
+
+    const outcome = await h.engine.deleteModel(MODEL.id);
+
+    expect(outcome).toEqual({ ok: true });
+    expect(h.engine.getRecord(MODEL.id)).toMatchObject({
+      state: 'not-downloaded',
+      revision: MODEL.revision,
+      receivedBytes: 0,
+      verified: false,
+    });
+    // Every artifact URL of the revision is gone from the store.
+    for (const artifact of MODEL.artifacts) {
+      expect(h.artifacts.deleted.has(urlOf(MODEL, artifact.path))).toBe(true);
+    }
+    expect(h.stateEvents.at(-1)).toMatchObject({ state: 'not-downloaded', previous: 'downloaded' });
+  });
+
+  it('refuses to delete while an engine operation runs (busy)', async () => {
+    const h = createHarness();
+    h.artifacts.hangUrls.add(urlOf(MODEL, 'first.bin'));
+    await h.engine.init();
+
+    const pending = h.engine.requestDownload(MODEL.id);
+    await vi.waitFor(() => expect(h.engine.activeModelId).toBe(MODEL.id));
+
+    expect(await h.engine.deleteModel(OTHER.id)).toEqual({ ok: false, reason: 'busy' });
+
+    h.engine.cancelDownload(MODEL.id);
+    await pending;
+  });
+
+  it('refuses to delete a not-downloaded model (invalid-state)', async () => {
+    const h = createHarness();
+    await h.engine.init();
+    expect(await h.engine.deleteModel(MODEL.id)).toEqual({ ok: false, reason: 'invalid-state' });
+  });
+
+  it('reports busy-other-tab when the lock is held elsewhere', async () => {
+    const bus = new EventBus<EventMap>();
+    const artifacts = new FakeArtifactStore([MODEL]);
+    const states = new FakeStateStore();
+    // Seed a fully downloaded record (the lock blocks the download itself);
+    // artifacts are pre-cached so startup reconciliation keeps it downloaded.
+    states.records.set(MODEL.id, {
+      modelId: MODEL.id,
+      state: 'downloaded',
+      revision: MODEL.revision,
+      receivedBytes: MODEL.downloadBytes,
+      totalBytes: MODEL.downloadBytes,
+      verified: true,
+      updatedAt: 1,
+    });
+    for (const artifact of MODEL.artifacts) {
+      artifacts.stored.set(urlOf(MODEL, artifact.path), artifact.bytes);
+    }
+    const engine = new LocalDownloadEngine({
+      catalog: [MODEL],
+      artifacts,
+      states,
+      storage: fakeStorage(),
+      bus,
+      now: () => 1,
+      lock: fakeLock(true),
+    });
+    await engine.init();
+
+    expect(await engine.deleteModel(MODEL.id)).toEqual({ ok: false, reason: 'busy-other-tab' });
+    // Nothing changed: the record is still downloaded.
+    expect(engine.getRecord(MODEL.id)).toMatchObject({ state: 'downloaded' });
+  });
+});
+
+describe('LocalDownloadEngine — atomic update (T6)', () => {
+  /** Harness whose catalog was repointed to a NEW revision after download. */
+  async function updatedCatalogHarness() {
+    const h = createHarness();
+    await h.engine.init();
+    await h.engine.requestDownload(MODEL.id);
+
+    const NEW_ENTRY = { ...MODEL, revision: `rev-${MODEL.id}-v2` } as LocalCatalogEntry;
+    // The fake's plan is built from constructor entries — teach it the new
+    // revision's URLs too (same sizes: same artifacts, different revision).
+    for (const artifact of MODEL.artifacts) {
+      h.artifacts.plan.set(
+        artifactUrl(NEW_ENTRY.repo, NEW_ENTRY.revision, artifact.path),
+        artifact.bytes,
+      );
+    }
+    const newCatalog = [NEW_ENTRY, OTHER] as readonly LocalCatalogEntry[];
+    const newEngine = new LocalDownloadEngine({
+      catalog: newCatalog,
+      artifacts: h.artifacts,
+      states: h.states,
+      storage: h.storage,
+      bus: h.bus,
+      now: () => 1,
+    });
+    await newEngine.init();
+    return { ...h, engine: newEngine, newEntry: NEW_ENTRY };
+  }
+
+  const urlOfRev = (entry: LocalCatalogEntry, revision: string, path: string): string =>
+    artifactUrl(entry.repo, revision, path);
+
+  it('downloads the new revision alongside, then swaps and frees the old one', async () => {
+    const h = await updatedCatalogHarness();
+    expect(h.engine.isUpdateAvailable(MODEL.id)).toBe(true);
+
+    const outcome = await h.engine.requestUpdate(MODEL.id);
+
+    expect(outcome).toEqual({ ok: true });
+    const record = h.engine.getRecord(MODEL.id);
+    expect(record).toMatchObject({
+      state: 'downloaded',
+      revision: h.newEntry.revision,
+      verified: true,
+    });
+    // New revision artifacts present; old revision artifacts removed.
+    for (const artifact of MODEL.artifacts) {
+      expect(h.artifacts.stored.has(urlOfRev(MODEL, h.newEntry.revision, artifact.path))).toBe(
+        true,
+      );
+      expect(h.artifacts.deleted.has(urlOfRev(MODEL, MODEL.revision, artifact.path))).toBe(true);
+    }
+  });
+
+  it('keeps the old revision intact when the update download fails (implicit rollback)', async () => {
+    const h = await updatedCatalogHarness();
+    h.artifacts.failUrls.add(urlOfRev(MODEL, h.newEntry.revision, 'second.bin'));
+
+    const outcome = await h.engine.requestUpdate(MODEL.id);
+
+    expect(outcome).toEqual({ ok: false, reason: 'update-failed' });
+    const record = h.engine.getRecord(MODEL.id);
+    // Record never left the old revision, still downloaded and activatable.
+    expect(record).toMatchObject({ state: 'downloaded', revision: MODEL.revision, verified: true });
+    // Old artifacts untouched; no new-revision file remains cached.
+    for (const artifact of MODEL.artifacts) {
+      expect(h.artifacts.stored.has(urlOfRev(MODEL, MODEL.revision, artifact.path))).toBe(true);
+      expect(h.artifacts.stored.has(urlOfRev(MODEL, h.newEntry.revision, artifact.path))).toBe(
+        false,
+      );
+    }
+  });
+
+  it('rejects an update when the record is already at the catalog revision', async () => {
+    const h = createHarness();
+    await h.engine.init();
+    await h.engine.requestDownload(MODEL.id);
+    expect(await h.engine.requestUpdate(MODEL.id)).toEqual({ ok: false, reason: 'up-to-date' });
+  });
+
+  it('rejects an update from a non-downloaded state', async () => {
+    const h = createHarness();
+    await h.engine.init();
+    expect(await h.engine.requestUpdate(MODEL.id)).toEqual({ ok: false, reason: 'invalid-state' });
+  });
+
+  it('reports update progress flagged as isUpdate', async () => {
+    const h = await updatedCatalogHarness();
+    await h.engine.requestUpdate(MODEL.id);
+    const updateProgress = h.progress.filter((event) => event.isUpdate);
+    expect(updateProgress.length).toBeGreaterThan(1);
+    expect(updateProgress.every((event) => event.modelId === MODEL.id)).toBe(true);
+  });
+});
+
+describe('LocalDownloadEngine — startup reconciliation (T6)', () => {
+  it('downgrades a downloaded record whose cache lost every file', async () => {
+    const h = createHarness();
+    await h.engine.init();
+    await h.engine.requestDownload(MODEL.id);
+
+    // The browser evicts everything between sessions.
+    h.artifacts.stored.clear();
+
+    const second = new LocalDownloadEngine({
+      catalog: [MODEL, OTHER],
+      artifacts: h.artifacts,
+      states: h.states,
+      storage: h.storage,
+      bus: h.bus,
+      now: () => 2,
+    });
+    h.stateEvents.length = 0;
+    await second.init();
+
+    expect(second.getRecord(MODEL.id)).toMatchObject({ state: 'not-downloaded', verified: false });
+    expect(h.stateEvents).toContainEqual({
+      modelId: MODEL.id,
+      state: 'not-downloaded',
+      previous: 'downloaded',
+    });
+  });
+
+  it('downgrades to partial when only some files survived (resume-friendly)', async () => {
+    const h = createHarness();
+    await h.engine.init();
+    await h.engine.requestDownload(MODEL.id);
+
+    // Evict all but the first artifact.
+    for (const artifact of MODEL.artifacts.slice(1)) {
+      h.artifacts.stored.delete(urlOf(MODEL, artifact.path));
+    }
+
+    const second = new LocalDownloadEngine({
+      catalog: [MODEL, OTHER],
+      artifacts: h.artifacts,
+      states: h.states,
+      storage: h.storage,
+      bus: h.bus,
+      now: () => 2,
+    });
+    await second.init();
+
+    expect(second.getRecord(MODEL.id)).toMatchObject({ state: 'partial', verified: false });
+  });
+
+  it('leaves consistent records untouched', async () => {
+    const h = createHarness();
+    await h.engine.init();
+    await h.engine.requestDownload(MODEL.id);
+
+    const second = new LocalDownloadEngine({
+      catalog: [MODEL, OTHER],
+      artifacts: h.artifacts,
+      states: h.states,
+      storage: h.storage,
+      bus: h.bus,
+      now: () => 2,
+    });
+    h.stateEvents.length = 0;
+    await second.init();
+
+    expect(second.getRecord(MODEL.id)).toMatchObject({ state: 'downloaded' });
+    expect(h.stateEvents).toEqual([]);
+  });
+});
 
 describe('LocalDownloadEngine — pre-flight warnings', () => {
   it('warns when the estimate says there is not enough room, but proceeds', async () => {

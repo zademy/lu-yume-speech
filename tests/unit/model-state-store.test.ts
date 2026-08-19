@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { LocalModelRecord } from '../../src/local-models/download-engine';
 import {
   __resetLocalModelStatesForTests,
+  clearLocalPerfData,
   logicalStateStore,
 } from '../../src/local-models/model-state-store';
 
@@ -51,5 +52,19 @@ describe('logicalStateStore', () => {
 
     expect((await logicalStateStore.get('whisper-base'))?.state).toBe('partial');
     expect((await logicalStateStore.get('whisper-large-v3-turbo'))?.state).toBe('downloaded');
+  });
+
+  it('clearing performance data never touches the model record (separate action)', async () => {
+    const record = sampleRecord('whisper-base', 'downloaded');
+    await logicalStateStore.put(record);
+
+    await clearLocalPerfData('whisper-base');
+
+    // The logical record survives intact — perf data is a separate store.
+    expect(await logicalStateStore.get('whisper-base')).toEqual(record);
+  });
+
+  it('clearing performance data of an unknown model resolves (idempotent)', async () => {
+    await expect(clearLocalPerfData('never-seen')).resolves.toBeUndefined();
   });
 });

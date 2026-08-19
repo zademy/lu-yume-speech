@@ -69,6 +69,16 @@ export class CacheArtifactStore implements ArtifactStorePort {
   }
 
   /**
+   * Remove complete artifacts by their canonical URLs (model deletion /
+   * failed-update cleanup). Unknown URLs are ignored — deletion is
+   * best-effort and idempotent.
+   */
+  async deleteArtifacts(urls: readonly string[]): Promise<void> {
+    const cache = await this.cacheStorage.open(LOCAL_MODEL_CACHE_NAME);
+    await Promise.all(urls.map((url) => cache.delete(url)));
+  }
+
+  /**
    * Stream one artifact into the cache. The response body is read in chunks
    * (`onDelta` per chunk) and only the reassembled full body is cached, so
    * aborts never leave a truncated artifact behind.

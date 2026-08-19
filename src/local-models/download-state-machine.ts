@@ -18,7 +18,8 @@ export type LocalModelLifecycleEvent =
   | { type: 'verified' }
   | { type: 'verify-failed' }
   | { type: 'cancelled' }
-  | { type: 'failed' };
+  | { type: 'failed' }
+  | { type: 'deleted' };
 
 /** Result of applying one event: either the next state or a rejection. */
 export type LocalModelTransition = { ok: true; state: LocalModelState } | { ok: false };
@@ -27,7 +28,9 @@ export type LocalModelTransition = { ok: true; state: LocalModelState } | { ok: 
  * Legal transitions (spec: No descargado → Descargando → Preparando →
  * Descargado; Descarga parcial tras cancelación; Descarga parcial and Error
  * are re-downloadable; a fully Descargado model never re-enters the download
- * flow through this machine — updates are explicit and land with T6).
+ * flow through this machine — updates are explicit and atomic, landing with
+ * T6; deletion removes every on-disk artifact of the revision and returns
+ * the record to No descargado).
  */
 const TRANSITIONS: Readonly<
   Record<LocalModelState, Partial<Record<LocalModelLifecycleEvent['type'], LocalModelState>>>
@@ -43,9 +46,9 @@ const TRANSITIONS: Readonly<
     'verify-failed': 'error',
     cancelled: 'partial',
   },
-  partial: { 'download-start': 'downloading' },
-  error: { 'download-start': 'downloading' },
-  downloaded: {},
+  partial: { 'download-start': 'downloading', deleted: 'not-downloaded' },
+  error: { 'download-start': 'downloading', deleted: 'not-downloaded' },
+  downloaded: { deleted: 'not-downloaded' },
 };
 
 /**
@@ -63,6 +66,15 @@ export function nextLocalModelState(
 /** Whether a state can start a download (re-download for partial/error). */
 export function canStartDownload(state: LocalModelState): boolean {
   return nextLocalModelState(state, { type: 'download-start' }).ok;
+}
+
+/**
+ * Whether a model in this state may be deleted (artifacts, partials and
+ * manifest of the revision removed). Never while an operation runs — the
+ * engine additionally guards against its own in-flight downloads.
+ */
+export function canDelete(state: LocalModelState): boolean {
+  return nextLocalModelState(state, { type: 'deleted' }).ok;
 }
 
 /**

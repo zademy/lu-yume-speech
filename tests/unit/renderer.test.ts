@@ -107,7 +107,9 @@ describe('renderApp application shell', () => {
 
     // Every card: localized state text (not color-only) keyed for dynamic
     // updates, an enabled Download control, a hidden Cancel and a hidden
-    // aria-live progress region (T3 download engine controls).
+    // aria-live progress region (T3 download engine controls), plus the T6
+    // lifecycle actions (activate/update/delete/clear-perf) hidden until the
+    // engine reveals them, and the unique Active badge hidden by default.
     for (const card of cards) {
       const state = card.querySelector<HTMLElement>('.local-model-state');
       expect(state?.textContent).toBe('No descargado');
@@ -117,6 +119,16 @@ describe('renderApp application shell', () => {
       expect(download?.textContent).toBe('Descargar');
       const cancel = card.querySelector<HTMLButtonElement>('[data-model-cancel]');
       expect(cancel?.classList.contains('hidden')).toBe(true);
+      const activate = card.querySelector<HTMLButtonElement>('[data-model-activate]');
+      expect(activate?.classList.contains('hidden')).toBe(true);
+      const update = card.querySelector<HTMLButtonElement>('[data-model-update]');
+      expect(update?.classList.contains('hidden')).toBe(true);
+      const del = card.querySelector<HTMLButtonElement>('[data-model-delete]');
+      expect(del?.classList.contains('hidden')).toBe(true);
+      const perfClear = card.querySelector<HTMLButtonElement>('[data-model-perf-clear]');
+      expect(perfClear?.classList.contains('hidden')).toBe(true);
+      const activeBadge = card.querySelector<HTMLElement>('[data-model-active-badge]');
+      expect(activeBadge?.classList.contains('hidden')).toBe(true);
       const progressText = card.querySelector<HTMLElement>('[data-model-progresstext]');
       expect(progressText?.getAttribute('aria-live')).toBe('polite');
       const progressWrap = card.querySelector<HTMLElement>('[data-model-progress]');
