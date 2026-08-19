@@ -151,6 +151,14 @@ export interface AppElements {
   llmToggle: HTMLInputElement;
   llmModelInput: HTMLInputElement;
   llmInstructionsInput: HTMLTextAreaElement;
+  localLlmAuth: HTMLInputElement;
+  localLlmAuthRow: HTMLElement;
+  localRecovery: HTMLElement;
+  localRecoveryDismiss: HTMLButtonElement;
+  localRecoveryMessage: HTMLElement;
+  localRecoveryActions: HTMLElement;
+  localRecoveryDetail: HTMLElement;
+  localRecoveryCopy: HTMLButtonElement;
   gateOverlay: HTMLDivElement;
   gateLockedForm: HTMLFormElement;
   gateLockedInput: HTMLInputElement;
@@ -305,6 +313,14 @@ export function renderApp(): AppElements {
     llmToggle: getRequiredElement(root, '#llmToggle', HTMLInputElement),
     llmModelInput: getRequiredElement(root, '#llmModelInput', HTMLInputElement),
     llmInstructionsInput: getRequiredElement(root, '#llmInstructionsInput', HTMLTextAreaElement),
+    localLlmAuth: getRequiredElement(root, '#localLlmAuth', HTMLInputElement),
+    localLlmAuthRow: getRequiredElement(root, '#localLlmAuthRow', HTMLElement),
+    localRecovery: getRequiredElement(root, '#localRecovery', HTMLElement),
+    localRecoveryDismiss: getRequiredElement(root, '#localRecoveryDismiss', HTMLButtonElement),
+    localRecoveryMessage: getRequiredElement(root, '#localRecoveryMessage', HTMLElement),
+    localRecoveryActions: getRequiredElement(root, '#localRecoveryActions', HTMLElement),
+    localRecoveryDetail: getRequiredElement(root, '#localRecoveryDetail', HTMLElement),
+    localRecoveryCopy: getRequiredElement(root, '#localRecoveryCopy', HTMLButtonElement),
     gateOverlay: getRequiredElement(root, '#gateOverlay', HTMLDivElement),
     gateLockedForm: getRequiredElement(root, '#gateLockedForm', HTMLFormElement),
     gateLockedInput: getRequiredElement(root, '#gateLockedInput', HTMLInputElement),
@@ -845,6 +861,19 @@ function renderOutputSection(): string {
           ${renderToolbarButton('clearBtn', icons.trash, 'output.clear')}
         </div>
       </div>
+      <div id="localRecovery" hidden role="alert" aria-labelledby="localRecoveryTitle" class="rounded-xl border border-[var(--color-status-error)] bg-[var(--color-surface-muted)] p-3">
+        <div class="flex items-start justify-between gap-2">
+          <h3 id="localRecoveryTitle" class="text-sm font-bold text-[var(--color-status-error)]" data-i18n="recovery.title"></h3>
+          <button type="button" id="localRecoveryDismiss" class="secondary-action shrink-0" data-i18n="recovery.dismiss"></button>
+        </div>
+        <p id="localRecoveryMessage" class="mt-1 text-[12px] leading-4 text-[var(--color-text-secondary)]"></p>
+        <div id="localRecoveryActions" class="mt-2 flex flex-wrap items-center gap-2"></div>
+        <details class="mt-2">
+          <summary class="cursor-pointer text-[11px] text-[var(--color-text-muted)]" data-i18n="recovery.technical"></summary>
+          <pre id="localRecoveryDetail" class="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg border border-[var(--color-border-subtle)] p-2 font-mono text-[10.5px] text-[var(--color-text-secondary)]"></pre>
+          <button type="button" id="localRecoveryCopy" class="secondary-action mt-1" data-i18n="recovery.copyTechnical"></button>
+        </details>
+      </div>
       <textarea id="output" class="output-area" data-i18n-placeholder="output.placeholder" spellcheck="true"></textarea>
       <div id="metadataPanel" class="hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3 text-xs text-[var(--color-text-secondary)]"></div>
       <div class="flex items-center justify-between gap-3 pt-2">
@@ -996,6 +1025,13 @@ function renderQualitySection(): string {
       <div class="settings-grid-span">${renderTextField('customFillerWordsInput', 'field.fillerWords', 'field.fillerWords.placeholder')}</div>
       ${renderToggleField('silenceTrimToggle', 'field.silenceTrim', 'field.silenceTrim.hint', DEFAULT_SETTINGS.enableSilenceTrim)}
       ${renderToggleField('llmToggle', 'field.llmToggle', 'field.llmToggle.hint', DEFAULT_SETTINGS.enableLlmPostProcess)}
+      <div id="localLlmAuthRow" class="settings-grid-span hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3">
+        <label class="flex items-start gap-2 text-xs text-[var(--color-text-secondary)]">
+          <input id="localLlmAuth" type="checkbox" class="mt-0.5 accent-[var(--color-control-emphasis)]" />
+          <span data-i18n="field.localLlmAuth"></span>
+        </label>
+        <p class="mt-1.5 text-[11px] leading-4 text-[var(--color-text-muted)]" data-i18n="field.localLlmAuth.explain"></p>
+      </div>
       ${renderTextField('llmModelInput', 'field.llmModel', 'field.llmModel')}
       <div class="settings-grid-span">${renderTextareaField('llmInstructionsInput', 'field.llmInstructions', 'field.llmInstructions.placeholder', 2)}</div>
     </div>`;

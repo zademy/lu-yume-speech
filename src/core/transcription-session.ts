@@ -85,4 +85,21 @@ export class TranscriptionSession {
     this.pending = null;
     this.stage = 'idle';
   }
+
+  /**
+   * Abandon a failed LOCAL run while keeping the stashed audio for manual
+   * recovery (spec T7: the Grabación is conserved and only manual actions
+   * are offered). Returns the kept audio — null when nothing was stashed.
+   * A subsequent recording overwrites it (surfaced by `submit`), and
+   * `complete()` takes it when a retry succeeds.
+   */
+  failKeepingAudio(): PendingAudio | null {
+    this.stage = 'idle';
+    return this.pending;
+  }
+
+  /** Drop any recovery audio kept by {@link failKeepingAudio}. */
+  discardKept(): void {
+    this.pending = null;
+  }
 }

@@ -21,6 +21,7 @@ import type {
   LocalBackend,
   LocalInferenceProvenance,
   TranscriptionResult,
+  LocalFailureCode,
   TranscriptionError,
 } from '../types';
 import type { TranscriptionProvider, TranscriptionRequest } from '../api/transcription-provider';
@@ -98,6 +99,7 @@ export class LocalWhisperProvider implements TranscriptionProvider {
     if (!modelId) {
       throw this.fail({
         kind: 'incompatible',
+        code: 'no-active-model',
         message: 'No hay un Modelo activo. Descarga y activa uno en Ajustes › Modelos locales.',
       });
     }
@@ -105,12 +107,14 @@ export class LocalWhisperProvider implements TranscriptionProvider {
     if (!entry) {
       throw this.fail({
         kind: 'incompatible',
+        code: 'model-not-in-catalog',
         message: 'El Modelo activo ya no está en el catálogo. Elige otro en Ajustes.',
       });
     }
     if (!this.deps.isModelReady(modelId)) {
       throw this.fail({
         kind: 'incompatible',
+        code: 'model-not-downloaded',
         message: 'El Modelo activo no está descargado por completo. Vuelve a descargarlo.',
       });
     }
@@ -121,6 +125,7 @@ export class LocalWhisperProvider implements TranscriptionProvider {
     if (memoryVerdict.level === 'block') {
       throw this.fail({
         kind: 'incompatible',
+        code: 'memory-blocked',
         message: `${entry.name} necesita mucha memoria (tier ${entry.memoryTier}); este dispositivo reporta ${this.deps.getDeviceMemoryGb()} GB.`,
       });
     }
@@ -140,6 +145,7 @@ export class LocalWhisperProvider implements TranscriptionProvider {
     if (!plan.ok) {
       throw this.fail({
         kind: 'incompatible',
+        code: plan.reason === 'webgpu-required' ? 'webgpu-required' : 'wasm-not-supported',
         message:
           plan.reason === 'webgpu-required'
             ? `${entry.name} requiere WebGPU y este navegador no lo ofrece. Usa Whisper Base o Small para CPU.`
@@ -152,6 +158,7 @@ export class LocalWhisperProvider implements TranscriptionProvider {
     if (!resolution.ok) {
       throw this.fail({
         kind: 'incompatible',
+        code: 'request-incompatible',
         message:
           resolution.incompatibility === 'explicit-language-required'
             ? 'Este modelo no detecta el idioma: elige un idioma explícito.'
@@ -164,6 +171,7 @@ export class LocalWhisperProvider implements TranscriptionProvider {
     const decoded = await this.deps.decoder(blob).catch(() => {
       throw this.fail({
         kind: 'parse',
+        code: 'audio-decode',
         message: 'No se pudo decodificar la grabación para el Motor local.',
       });
     });
@@ -275,6 +283,7 @@ export class LocalWhisperProvider implements TranscriptionProvider {
         ok: false,
         error: this.fail({
           kind: 'network',
+          code: 'browser-not-supported',
           message: 'El Motor local no está disponible en este navegador.',
         }),
       };
@@ -309,6 +318,7 @@ export class LocalWhisperProvider implements TranscriptionProvider {
           ok: false,
           error: this.fail({
             kind: 'network',
+            code: 'cancelled',
             message:
               'Transcripción cancelada por completo. Los pesos descargados se conservan; el modelo se recargará en el próximo uso.',
             cause: error,
@@ -325,6 +335,7 @@ export class LocalWhisperProvider implements TranscriptionProvider {
         ok: false,
         error: this.fail({
           kind: 'network',
+          code: workerFailureCode(messageText, message.type === 'load'),
           message: messageText || 'Fallo de inferencia del Motor local.',
         }),
       };
@@ -365,7 +376,11 @@ export class LocalWhisperProvider implements TranscriptionProvider {
       this.cancelAll();
       return {
         ok: false,
-        error: this.fail({ kind: 'parse', message: 'Respuesta inesperada del Motor local.' }),
+        error: this.fail({
+          kind: 'parse',
+          code: 'load-failed',
+          message: 'Respuesta inesperada del Motor local.',
+        }),
       };
     }
     this.loadedSpec = spec;
@@ -415,3 +430,18 @@ function sameSpec(a: WorkerModelSpec, b: WorkerModelSpec): boolean {
  * WebGPU alloc errors) — those free the resident model per spec.
  */
 const MEMORY_ERROR_PATTERN = /\b(out of memory|oom|alloc(?:ation)? failed|memory access)\b/i;
+
+/** Cache-miss messages from the worker (weights no longer in the cache). */
+const WEIGHTS_MISSING_PATTERN = /\bcach[eé]\b/i;
+
+/**
+ * Structured code for worker-origin failures (they arrive as message
+ * strings): memory exhaustion, cache-miss weights and WebGPU losses map to
+ * their recovery categories; everything else is a plain inference failure.
+ */
+function workerFailureCode(messageText: string, isLoad: boolean): LocalFailureCode {
+  if (messageText && MEMORY_ERROR_PATTERN.test(messageText)) return 'memory-inference';
+  if (messageText && WEIGHTS_MISSING_PATTERN.test(messageText)) return 'weights-missing';
+  if (messageText && /\bwebgpu\b/i.test(messageText)) return 'webgpu-required';
+  return isLoad ? 'load-failed' : 'inference-failed';
+}

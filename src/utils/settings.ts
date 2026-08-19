@@ -68,6 +68,7 @@ export function readQualitySettings(elements: AppElements): Partial<AppSettings>
     customFillerWords,
     enableSilenceTrim: elements.silenceTrimToggle.checked,
     enableLlmPostProcess: elements.llmToggle.checked,
+    localLlmAuthorized: elements.localLlmAuth.checked,
     llmModel: elements.llmModelInput.value.trim() || DEFAULT_SETTINGS.llmModel,
     llmInstructions: elements.llmInstructionsInput.value,
   };
@@ -85,6 +86,7 @@ export function populateQualitySettings(elements: AppElements, settings: AppSett
     settings.customFillerWords === null ? '' : settings.customFillerWords.join(', ');
   elements.silenceTrimToggle.checked = settings.enableSilenceTrim;
   elements.llmToggle.checked = settings.enableLlmPostProcess;
+  elements.localLlmAuth.checked = settings.localLlmAuthorized;
   elements.llmModelInput.value = settings.llmModel;
   elements.llmInstructionsInput.value = settings.llmInstructions;
 }

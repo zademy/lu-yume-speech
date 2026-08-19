@@ -181,6 +181,45 @@ const en: Dictionary = {
   'toast.localModel.reconciled':
     'The browser removed some model files. Download the model again to use it.',
   'toast.localModel.perfCleared': 'Local performance data cleared — transcriptions are untouched.',
+  'field.localLlmAuth': 'Authorize sending the transcription text to Groq for polishing',
+  'field.localLlmAuth.explain':
+    'Only with Método Local: by default nothing leaves this device. If you enable this, the TEXT of local transcriptions is sent to Groq for polishing — never the audio. You can revoke it at any time.',
+  'recovery.title': 'Local transcription failed',
+  'recovery.dismiss': 'Dismiss',
+  'recovery.technical': 'Technical detail',
+  'recovery.copyTechnical': 'Copy technical report',
+  'recovery.copied': 'Copied',
+  'recovery.copyFailed': 'Could not copy',
+  'recovery.kept': 'Recording kept on this device — choose an action below.',
+  'recovery.category.browser-not-supported':
+    'This browser does not support the local engine (Web Workers required).',
+  'recovery.category.webgpu-unavailable':
+    'WebGPU is not available — this model needs it, or it failed mid-run.',
+  'recovery.category.insufficient-memory': 'Not enough memory to run this model on this device.',
+  'recovery.category.insufficient-space': 'Not enough storage space to download this model.',
+  'recovery.category.download-interrupted': 'The download was interrupted.',
+  'recovery.category.integrity-invalid': 'The downloaded files do not match their expected sizes.',
+  'recovery.category.model-incompatible':
+    'This model or request is not compatible with the current setup.',
+  'recovery.category.inference-failed': 'The local inference run failed.',
+  'recovery.category.busy-other-tab': 'Another tab is using local models right now.',
+  'recovery.action.retry': 'Retry',
+  'recovery.action.smaller-model': 'Use a smaller model',
+  'recovery.action.switch-backend': 'Switch to CPU (WASM)',
+  'recovery.action.remote-groq': 'Send to Groq instead',
+  'recovery.action.remote-cloudflare': 'Send to Cloudflare instead',
+  'recovery.action.re-download': 'Download again',
+  'recovery.action.update-browser': 'Update browser',
+  'recovery.action.wait-other-tab': 'Wait for the other tab',
+  'recovery.action.free-space': 'Free up space',
+  'recovery.hint.smaller-model': 'Pick a lighter model in Settings › Local models.',
+  'recovery.hint.re-download': 'Open Settings › Local models and download again.',
+  'recovery.hint.free-space': 'Free up storage and try the download again.',
+  'recovery.hint.switch-backend': 'Backend switched to CPU (WASM) — retrying.',
+  'recovery.hint.update-browser':
+    'This browser cannot run the local engine. A Chromium/Firefox/Safari update may add support.',
+  'recovery.hint.wait-other-tab':
+    'Finish or cancel the local operation in the other tab, then retry here.',
   'localModels.backendMode': 'Backend',
   'localModels.backend.auto': 'Automatic (WebGPU → CPU)',
   'localModels.backend.wasm': 'Force CPU (WASM)',
@@ -563,6 +602,47 @@ const es: Dictionary = {
     'El navegador eliminó algunos archivos del modelo. Vuelve a descargarlo para usarlo.',
   'toast.localModel.perfCleared':
     'Datos de rendimiento local borrados — las transcripciones no se tocan.',
+  'field.localLlmAuth': 'Autorizar el envío del texto de la transcripción a Groq para pulirlo',
+  'field.localLlmAuth.explain':
+    'Solo con Método Local: por defecto nada sale de este dispositivo. Si activas esto, el TEXTO de las transcripciones locales se envía a Groq para pulirlo — nunca el audio. Puedes revocarlo cuando quieras.',
+  'recovery.title': 'La transcripción local falló',
+  'recovery.dismiss': 'Descartar',
+  'recovery.technical': 'Detalle técnico',
+  'recovery.copyTechnical': 'Copiar informe técnico',
+  'recovery.copied': 'Copiado',
+  'recovery.copyFailed': 'No se pudo copiar',
+  'recovery.kept': 'Grabación conservada en este dispositivo — elige una acción.',
+  'recovery.category.browser-not-supported':
+    'Este navegador no soporta el Motor local (requiere Web Workers).',
+  'recovery.category.webgpu-unavailable':
+    'WebGPU no está disponible — este modelo lo necesita, o falló a mitad de ejecución.',
+  'recovery.category.insufficient-memory':
+    'No hay memoria suficiente para ejecutar este modelo en este dispositivo.',
+  'recovery.category.insufficient-space': 'No hay espacio suficiente para descargar este modelo.',
+  'recovery.category.download-interrupted': 'La descarga se interrumpió.',
+  'recovery.category.integrity-invalid':
+    'Los archivos descargados no coinciden con sus tamaños esperados.',
+  'recovery.category.model-incompatible':
+    'Este modelo o petición no es compatible con la configuración actual.',
+  'recovery.category.inference-failed': 'La inferencia local falló.',
+  'recovery.category.busy-other-tab': 'Otra pestaña está usando los modelos locales ahora mismo.',
+  'recovery.action.retry': 'Reintentar',
+  'recovery.action.smaller-model': 'Usar un modelo más pequeño',
+  'recovery.action.switch-backend': 'Cambiar a CPU (WASM)',
+  'recovery.action.remote-groq': 'Enviar a Groq',
+  'recovery.action.remote-cloudflare': 'Enviar a Cloudflare',
+  'recovery.action.re-download': 'Descargar de nuevo',
+  'recovery.action.update-browser': 'Actualizar navegador',
+  'recovery.action.wait-other-tab': 'Esperar a la otra pestaña',
+  'recovery.action.free-space': 'Liberar espacio',
+  'recovery.hint.smaller-model': 'Elige un modelo más ligero en Ajustes › Modelos locales.',
+  'recovery.hint.re-download': 'Abre Ajustes › Modelos locales y descarga de nuevo.',
+  'recovery.hint.free-space': 'Libera espacio de almacenamiento y reintenta la descarga.',
+  'recovery.hint.switch-backend': 'Backend cambiado a CPU (WASM) — reintentando.',
+  'recovery.hint.update-browser':
+    'Este navegador no puede ejecutar el Motor local. Actualizar Chromium/Firefox/Safari puede añadir soporte.',
+  'recovery.hint.wait-other-tab':
+    'Termina o cancela la operación local en la otra pestaña y reintenta aquí.',
   'localModels.backendMode': 'Backend',
   'localModels.backend.auto': 'Automático (WebGPU → CPU)',
   'localModels.backend.wasm': 'Forzar CPU (WASM)',

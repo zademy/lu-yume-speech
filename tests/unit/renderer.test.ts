@@ -78,6 +78,32 @@ describe('renderApp application shell', () => {
     expect(elements.dictationLocalGateButton.localName).toBe('button');
   });
 
+  it('renders the local recovery panel hidden, accessible and action-driven (T7)', () => {
+    const elements = renderApp();
+    document.body.appendChild(elements.root);
+
+    // Lives in the Dictar view next to the output area, hidden until a
+    // local failure offers manual actions.
+    expect(elements.localRecovery.hidden).toBe(true);
+    expect(elements.localRecovery.getAttribute('role')).toBe('alert');
+    expect(elements.localRecovery.getAttribute('aria-labelledby')).toBe('localRecoveryTitle');
+    // Dismiss and copy-report controls are real buttons (focusable, named).
+    expect(elements.localRecoveryDismiss.localName).toBe('button');
+    expect(elements.localRecoveryCopy.localName).toBe('button');
+    // The technical report never ships inside the visible message.
+    expect(elements.localRecoveryActions.children.length).toBe(0);
+    expect(elements.localRecoveryDetail.textContent).toBe('');
+  });
+
+  it('renders the local LLM authorization row hidden by default (T7 privacy)', () => {
+    const elements = renderApp();
+    document.body.appendChild(elements.root);
+
+    expect(elements.localLlmAuthRow.classList.contains('hidden')).toBe(true);
+    expect(elements.localLlmAuth.type).toBe('checkbox');
+    expect(elements.localLlmAuth.checked).toBe(false);
+  });
+
   it('renders the local-models settings section read-only', () => {
     const elements = renderApp();
     document.body.appendChild(elements.root);

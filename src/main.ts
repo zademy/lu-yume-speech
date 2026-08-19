@@ -46,6 +46,13 @@ import {
   readDeviceMemoryGb,
 } from './local-models/browser-ports';
 import { createCrossTabLock } from './local-models/cross-tab-lock';
+import {
+  buildTechnicalReport,
+  classifyLocalFailure,
+  fromTranscriptionError,
+  type LocalRecoveryAction,
+} from './local-models/local-errors';
+import { createRecoveryController } from './ui/recovery-panel';
 import { buildHistoryEntry } from './utils/history-entry';
 import { LocalWhisperProvider } from './local-models/local-whisper-provider';
 import { decodeAudioTo16kMono } from './local-models/audio-decode';
@@ -81,7 +88,11 @@ import { renderSummaryHistory, summaryToText } from './ui/summary-panel';
 import { ThemeManager } from './utils/theme';
 import { createSidebar, populateEntries } from './ui/sidebar';
 import { calculateHistoryStats } from './utils/history-stats';
-import { buildPrompt, toPostProcessConfig } from './utils/transcription-config';
+import {
+  buildPrompt,
+  shouldRunLlmPostProcess,
+  toPostProcessConfig,
+} from './utils/transcription-config';
 import { postProcessText } from './utils/text-postprocess';
 
 import { registerKeyboardShortcuts } from './utils/keyboard';
@@ -609,7 +620,22 @@ async function bootstrap(): Promise<void> {
       config.transcriptionProvider,
       workerToken.length > 0,
     );
+    updateLocalLlmAuthVisibility();
   };
+
+  /**
+   * The explicit text-egress authorization for the LLM pass is only
+   * relevant (and only shown) with Método Local AND the pass enabled —
+   * remote methods never gate the pass behind it.
+   */
+  const updateLocalLlmAuthVisibility = (): void => {
+    elements.localLlmAuthRow.classList.toggle(
+      'hidden',
+      !(getConfig().transcriptionMethod === 'local' && elements.llmToggle.checked),
+    );
+  };
+  elements.llmToggle.addEventListener('change', updateLocalLlmAuthVisibility);
+  updateLocalLlmAuthVisibility();
   /** Switch the active transcription provider and persist the choice. */
   const switchProvider = (provider: TranscriptionProviderId): void => {
     const patch: Partial<AppSettings> = { transcriptionProvider: provider };
@@ -821,6 +847,75 @@ async function bootstrap(): Promise<void> {
     }
   }, 30_000);
 
+  // Recovery panel (T7): local failures keep the recording and offer ONLY
+  // manual actions. Retry re-enters the pipeline with the kept blob; every
+  // explicit remote choice persists the switch first (the click IS the
+  // authorization to send), then retries — nothing is ever auto-sent.
+  const retryRunner: { run: ((blob: Blob) => void) | null } = { run: null };
+  const applyRecoveryAction = (action: LocalRecoveryAction, kept: { blob: Blob }): void => {
+    switch (action) {
+      case 'retry':
+        retryRunner.run?.(kept.blob);
+        break;
+      case 'smaller-model':
+      case 're-download':
+      case 'free-space':
+        navigate('settings');
+        showToast(elements.toastContainer, t(`recovery.hint.${action}`), 'info');
+        break;
+      case 'switch-backend': {
+        if (getConfig().localBackend === 'auto') {
+          const patch = { localBackend: 'wasm' as const };
+          const next = { ...getConfig(), ...patch };
+          setConfig(next);
+          void platform.saveSettings(next);
+          bus.emit('settings:change', patch);
+          elements.localBackendSelect.value = 'wasm';
+          showToast(elements.toastContainer, t('recovery.hint.switch-backend'), 'info');
+        }
+        retryRunner.run?.(kept.blob);
+        break;
+      }
+      case 'remote-groq':
+      case 'remote-cloudflare': {
+        const provider =
+          action === 'remote-groq' ? ('groq' as const) : ('cloudflare-whisper' as const);
+        const patch =
+          getConfig().transcriptionProvider === provider
+            ? { transcriptionMethod: 'remote' as const }
+            : { transcriptionMethod: 'remote' as const, transcriptionProvider: provider };
+        const next = { ...getConfig(), ...patch };
+        setConfig(next);
+        void platform.saveSettings(next);
+        bus.emit('settings:change', patch);
+        elements.methodSelect.value = 'remote';
+        elements.providerSelect.value = provider;
+        refreshCredentialUi();
+        retryRunner.run?.(kept.blob);
+        break;
+      }
+      case 'update-browser':
+      case 'wait-other-tab':
+        showToast(elements.toastContainer, t(`recovery.hint.${action}`), 'info');
+        break;
+    }
+  };
+  const recovery = createRecoveryController(
+    {
+      root: elements.localRecovery,
+      message: elements.localRecoveryMessage,
+      actions: elements.localRecoveryActions,
+      detail: elements.localRecoveryDetail,
+      copy: elements.localRecoveryCopy,
+      dismiss: elements.localRecoveryDismiss,
+    },
+    {
+      lang: () => getConfig().appLanguage,
+      onAction: applyRecoveryAction,
+      copyText: copyToClipboard,
+    },
+  );
+
   wireTranscriptionPipeline(
     bus,
     getActiveTranscriptionClient,
@@ -829,7 +924,10 @@ async function bootstrap(): Promise<void> {
     getApiKey,
     renderHistory,
     () => dictationTarget.current,
+    recovery,
+    retryRunner,
   );
+
   wireRecordingHandlers(
     bus,
     elements,
@@ -1886,6 +1984,8 @@ function wireTranscriptionPipeline(
   getApiKey: () => string,
   refreshHistory: () => Promise<void>,
   getDictationTarget: () => 'output' | 'pluma',
+  recovery: ReturnType<typeof createRecoveryController>,
+  retryRunner: { run: ((blob: Blob) => void) | null },
 ): void {
   // Named pipeline state — replaces the former `lastBlob` closure so a failed
   // take can never leak into a later success, and a rapid re-record surfaces
@@ -1894,19 +1994,23 @@ function wireTranscriptionPipeline(
 
   bus.on('recording:start', () => session.startRecording());
 
-  bus.on('audio:blob-ready', async (blob) => {
+  /**
+   * One transcription take: trim (fail-open), build the request from the
+   * live controls, dispatch to the active client and set the processing
+   * status. Shared by the live recording flow and manual recovery retries.
+   */
+  const runTranscription = async (rawBlob: Blob): Promise<void> => {
     const config = getConfig();
-    session.submit(blob, blob.type);
 
     // Optionally strip leading/trailing silence before transcription. Fail-open:
     // if decoding is unavailable or the clip is silent, trimSilence returns the
     // original blob so transcription still proceeds.
     const audio = config.enableSilenceTrim
-      ? await trimSilence(blob, {
+      ? await trimSilence(rawBlob, {
           thresholdDb: config.silenceThresholdDb,
           paddingMs: config.silencePaddingMs,
         })
-      : blob;
+      : rawBlob;
 
     const base = readTranscriptionOptions(elements);
     const options: TranscriptionOptions =
@@ -1932,7 +2036,17 @@ function wireTranscriptionPipeline(
           ? { message: 'Procesando con Cloudflare Whisper…', level: 'processing' }
           : { message: `Procesando con ${options.model}...`, level: 'processing' },
     );
+  };
+
+  bus.on('audio:blob-ready', async (blob) => {
+    session.submit(blob, blob.type);
+    recovery.hide();
+    await runTranscription(blob);
   });
+
+  // Manual recovery retries re-enter the exact same pipeline with the kept
+  // blob (the composition root registered this hook when wiring the panel).
+  retryRunner.run = (blob) => void runTranscription(blob);
 
   bus.on('transcription:success', async (result) => {
     renderMetadata(elements.metadataPanel, result);
@@ -1951,7 +2065,7 @@ function wireTranscriptionPipeline(
     const lang = result.language ?? (config.language === 'auto' ? 'en' : config.language);
     let text = postProcessText(result.text, toPostProcessConfig(config), lang);
 
-    if (config.enableLlmPostProcess && text.trim()) {
+    if (shouldRunLlmPostProcess(config, config.transcriptionMethod) && text.trim()) {
       setStatus(elements, { message: 'Refinando con LLM…', level: 'processing' });
       text = await postProcessWithLlm(text, getApiKey(), {
         model: config.llmModel,
@@ -2017,8 +2131,39 @@ function wireTranscriptionPipeline(
   });
 
   bus.on('transcription:error', (error) => {
-    session.fail();
     console.error('[App] Transcription error:', error);
+    const config = getConfig();
+
+    // Local failures keep the Grabación and offer ONLY manual actions —
+    // nothing is ever re-sent automatically (spec T7). A cancelled run is
+    // not a failure to recover from.
+    if (config.transcriptionMethod === 'local') {
+      const kept = session.failKeepingAudio();
+      const input = fromTranscriptionError(error);
+      const classification = classifyLocalFailure(input);
+      const cancelled = input.code === 'cancelled';
+      if (!cancelled && kept) {
+        recovery.offer(
+          kept,
+          classification,
+          buildTechnicalReport(input, {
+            at: new Date().toISOString(),
+            method: 'local',
+            modelId: config.localModelId ?? undefined,
+            userAgent: navigator.userAgent,
+            deviceMemoryGb: readDeviceMemoryGb(),
+          }),
+        );
+        setStatus(elements, {
+          message: t(`recovery.category.${classification.category}`),
+          level: 'error',
+        });
+        showToast(elements.toastContainer, t('recovery.kept'), 'warning');
+        return;
+      }
+      session.discardKept();
+    }
+    session.fail();
     showToast(elements.toastContainer, error.message, 'error');
     setStatus(elements, { message: `Error: ${error.message}`, level: 'error' });
   });

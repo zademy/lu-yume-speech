@@ -226,7 +226,7 @@ describe('LocalWhisperProvider — contract: typed failures', () => {
   it('fails incompatible when no Modelo activo exists', async () => {
     const h = createProvider({ activeModelId: null });
     await expect(h.provider.transcribe(blob(), REQUEST)).rejects.toMatchObject({
-      detail: { kind: 'incompatible' },
+      detail: { kind: 'incompatible', code: 'no-active-model' },
     });
     expect(h.events.at(-1)?.event).toBe('error');
   });
@@ -234,7 +234,7 @@ describe('LocalWhisperProvider — contract: typed failures', () => {
   it('fails incompatible when the model is not fully downloaded', async () => {
     const h = createProvider({ ready: false });
     await expect(h.provider.transcribe(blob(), REQUEST)).rejects.toMatchObject({
-      detail: { kind: 'incompatible' },
+      detail: { kind: 'incompatible', code: 'model-not-downloaded' },
     });
   });
 

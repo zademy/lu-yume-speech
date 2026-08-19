@@ -211,6 +211,13 @@ export interface AppSettings {
   silencePaddingMs: number;
   /** Run an optional LLM pass (Groq chat completions) to polish raw transcription text. */
   enableLlmPostProcess: boolean;
+  /**
+   * Explicit authorization to send locally transcribed TEXT to the Groq LLM
+   * post-processor. With Método Local the pass stays off until this is set
+   * through the explanatory checkbox (privacy default: nothing leaves the
+   * device). Audio never leaves under any setting.
+   */
+  localLlmAuthorized: boolean;
   /** Groq chat model used for LLM post-processing. */
   llmModel: string;
   /** Extra user instructions appended to the built-in LLM post-processing system prompt. */
@@ -250,6 +257,7 @@ export const DEFAULT_SETTINGS: Readonly<AppSettings> = {
   silenceThresholdDb: -40,
   silencePaddingMs: 250,
   enableLlmPostProcess: false,
+  localLlmAuthorized: false,
   llmModel: 'llama-3.3-70b-versatile',
   llmInstructions: '',
   localBackend: 'auto',
@@ -617,9 +625,31 @@ export type TranscriptionError =
   /** Request incompatible with the active model (local engine). */
   | ({ kind: 'incompatible' } & ErrorPayload);
 
+/**
+ * Structured failure code attached to local-engine `TranscriptionError`s so
+ * recovery classification never depends on parsing human messages.
+ */
+export type LocalFailureCode =
+  | 'no-active-model'
+  | 'model-not-in-catalog'
+  | 'model-not-downloaded'
+  | 'memory-blocked'
+  | 'webgpu-required'
+  | 'wasm-not-supported'
+  | 'request-incompatible'
+  | 'browser-not-supported'
+  | 'audio-decode'
+  | 'load-failed'
+  | 'weights-missing'
+  | 'memory-inference'
+  | 'inference-failed'
+  | 'cancelled';
+
 interface ErrorPayload {
   message: string;
   cause?: unknown;
+  /** Structured local-engine failure code (never set by remote providers). */
+  code?: LocalFailureCode;
 }
 
 /**
