@@ -476,6 +476,41 @@ describe('LocalDownloadEngine — pre-flight warnings', () => {
     expect(h.warnings).toEqual([]);
   });
 
+  it('warns (only) when the memory tier outweighs the reported RAM', async () => {
+    const heavy: typeof MODEL = { ...MODEL, memoryTier: 'high' };
+    const bus = new EventBus<EventMap>();
+    const artifacts = new FakeArtifactStore([heavy]);
+    const states = new FakeStateStore();
+    const engine = new LocalDownloadEngine({
+      catalog: [heavy],
+      artifacts,
+      states,
+      storage: fakeStorage(),
+      bus,
+      now: () => 1,
+      deviceMemoryGb: 2,
+    });
+    const warnings: LocalModelWarningEvent[] = [];
+    bus.on('localModel:warning', (event) => warnings.push(event));
+
+    await engine.init();
+    const outcome = await engine.requestDownload(heavy.id);
+
+    // Advisory only: the download still completes.
+    expect(outcome).toEqual({ ok: true });
+    expect(warnings).toEqual([
+      { kind: 'memory-tier', modelId: heavy.id, tier: 'high', deviceMemoryGb: 2 },
+    ]);
+  });
+
+  it('stays silent on memory tier when the device reports no RAM', async () => {
+    const h = createHarness();
+    // Default harness has no deviceMemoryGb — guard must not fire.
+    await h.engine.init();
+    await h.engine.requestDownload(MODEL.id);
+    expect(h.warnings).toEqual([]);
+  });
+
   it('tolerates a throwing storage estimate (advisory only, no warning)', async () => {
     const h = createHarness({
       storage: {

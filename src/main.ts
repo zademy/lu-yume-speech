@@ -28,7 +28,7 @@ import type {
   TranscriptionMethod,
   LocalModelState,
 } from './types';
-import { CLOUDFLARE_WHISPER_MODEL, DEFAULT_SETTINGS } from './types';
+import { DEFAULT_SETTINGS } from './types';
 import {
   methodChangePatch,
   hasActiveLocalModel,
@@ -43,7 +43,9 @@ import {
   createBrowserStorageAdvisor,
   createCacheArtifactStore,
   createInferenceWorker,
+  readDeviceMemoryGb,
 } from './local-models/browser-ports';
+import { buildHistoryEntry } from './utils/history-entry';
 import { LocalWhisperProvider } from './local-models/local-whisper-provider';
 import { decodeAudioTo16kMono } from './local-models/audio-decode';
 
@@ -499,6 +501,8 @@ async function bootstrap(): Promise<void> {
     getActiveModelId: () => config.localModelId,
     isModelReady: (modelId: string) => localEngineState.ready(modelId),
     hasWebgpu: () => localModelsCaps?.webgpu === true,
+    getBackendPolicy: () => config.localBackend,
+    getDeviceMemoryGb: () => readDeviceMemoryGb(),
     workerFactory: createInferenceWorker,
     decoder: decodeAudioTo16kMono,
   });
@@ -722,6 +726,66 @@ async function bootstrap(): Promise<void> {
     },
   });
 
+  // Motor local advanced controls (T5): backend policy, idle release,
+  // resident-model line and manual memory release.
+  const renderLocalResident = (): void => {
+    const resident = localClient.getResident();
+    if (!resident) {
+      elements.localResidentLine.textContent = t('localModels.resident.none');
+      elements.localReleaseBtn.classList.add('hidden');
+      return;
+    }
+    const entry = LOCAL_MODEL_CATALOG.find((candidate) => candidate.id === resident.modelId);
+    elements.localResidentLine.textContent = t('localModels.resident', {
+      name: entry?.name ?? resident.modelId,
+      backend: t(`localModels.backendName.${resident.backend}`),
+    });
+    elements.localReleaseBtn.classList.remove('hidden');
+  };
+  bus.on('localModel:memory', renderLocalResident);
+
+  const persistLocalSetting = (patch: Partial<AppSettings>): void => {
+    const next = { ...getConfig(), ...patch };
+    setConfig(next);
+    void platform.saveSettings(next);
+    bus.emit('settings:change', patch);
+  };
+  elements.localBackendSelect.value = config.localBackend;
+  elements.localBackendSelect.addEventListener('change', () => {
+    persistLocalSetting({
+      localBackend: elements.localBackendSelect.value as 'auto' | 'wasm',
+    });
+    showToast(elements.toastContainer, t('toast.localModel.backendMode'), 'info');
+  });
+  elements.localIdleMinutes.value = String(config.localIdleReleaseMinutes);
+  elements.localIdleMinutes.addEventListener('change', () => {
+    const minutes = Math.max(0, Math.floor(Number(elements.localIdleMinutes.value) || 0));
+    elements.localIdleMinutes.value = String(minutes);
+    persistLocalSetting({ localIdleReleaseMinutes: minutes });
+  });
+  elements.localReleaseBtn.addEventListener('click', () => {
+    localClient.release();
+    showToast(elements.toastContainer, t('toast.localModel.released'), 'success');
+  });
+  renderLocalResident();
+
+  // Idle release: the resident model frees after configurable minutes with
+  // no user interaction (download kept; the model reloads on next use).
+  let lastUserActivity = Date.now();
+  const onUserActivity = (): void => {
+    lastUserActivity = Date.now();
+  };
+  window.addEventListener('pointerdown', onUserActivity, { passive: true });
+  window.addEventListener('keydown', onUserActivity);
+  const idleTimer = window.setInterval(() => {
+    const minutes = getConfig().localIdleReleaseMinutes;
+    if (minutes <= 0 || !localClient.getResident()) return;
+    if (Date.now() - lastUserActivity >= minutes * 60_000) {
+      localClient.release();
+      setStatus(elements, { message: t('status.localModel.idleReleased'), level: 'idle' });
+    }
+  }, 30_000);
+
   wireTranscriptionPipeline(
     bus,
     getActiveTranscriptionClient,
@@ -753,6 +817,7 @@ async function bootstrap(): Promise<void> {
     bus.emit('settings:change', { appLanguage: lang });
     translateTree(elements.root, lang);
     renderLocalModelsDevice();
+    renderLocalResident();
     localModels.renderAll();
     metricsPanel.setLanguage(lang);
     plumaPanel.setLanguage(lang);
@@ -794,6 +859,9 @@ async function bootstrap(): Promise<void> {
 
   window.addEventListener('unload', () => {
     cleanup();
+    window.clearInterval(idleTimer);
+    window.removeEventListener('pointerdown', onUserActivity);
+    window.removeEventListener('keydown', onUserActivity);
     resizeObserver?.disconnect();
     if (onResize) window.removeEventListener('resize', onResize);
     visualizer.stop();
@@ -1222,6 +1290,7 @@ function wireLocalModelEngine(
     states: logicalStateStore,
     storage: createBrowserStorageAdvisor(),
     bus,
+    deviceMemoryGb: readDeviceMemoryGb(),
   });
 
   // Expose readiness to the dictation gate as soon as records exist.
@@ -1359,7 +1428,16 @@ function wireLocalModelEngine(
             available: formatDownloadSize(warning.availableBytes),
             needed: formatDownloadSize(warning.neededBytes),
           })
-        : t(`localModels.warn.${warning.kind}`);
+        : warning.kind === 'memory-tier'
+          ? t('localModels.warn.memory-tier', {
+              tier: warning.tier,
+              gb: warning.deviceMemoryGb,
+            })
+          : t(
+              warning.kind === 'space-unreliable'
+                ? 'localModels.warn.spaceUnreliable'
+                : 'localModels.warn.persistenceDenied',
+            );
     showToast(elements.toastContainer, message, 'warning');
   });
 
@@ -1763,22 +1841,14 @@ function wireTranscriptionPipeline(
     // Save to history
     const options = readTranscriptionOptions(elements);
     const mode = readOperationMode(elements);
-    const isWorker = config.transcriptionProvider === 'cloudflare-whisper';
-    const isLocal = config.transcriptionMethod === 'local';
-    const entry: HistoryEntry = {
-      id: crypto.randomUUID(),
+    const entry = buildHistoryEntry({
+      config,
+      options,
+      result,
       text,
-      language: result.language,
-      model: isWorker ? CLOUDFLARE_WHISPER_MODEL : options.model,
-      // Provenance per method: the remote provider for remote backends, the
-      // catalog id of the Modelo activo for the Motor local (full model +
-      // revision provenance lands with T7).
-      ...(isLocal ? { localModelId: config.localModelId ?? undefined } : {}),
-      provider: isWorker ? 'cloudflare-whisper' : undefined,
-      duration: result.duration,
-      createdAt: Date.now(),
-      operationMode: mode,
-    };
+      mode,
+      now: Date.now(),
+    });
     const pending = session.complete();
     const blob = pending?.blob ?? new Blob([], { type: 'audio/webm' });
     const mimeType = pending?.mimeType ?? 'audio/webm';

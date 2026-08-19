@@ -45,6 +45,16 @@ export const createInferenceWorker: InferenceWorkerFactory = () => {
   return adapter;
 };
 
+/**
+ * Device RAM in GB when the browser reports it (`navigator.deviceMemory`,
+ * Chrome-only, coarse), else null. Feeds the memory-tier guards; null keeps
+ * them silent (unreliable signals never act).
+ */
+export function readDeviceMemoryGb(): number | null {
+  const deviceMemory = (navigator as { deviceMemory?: number }).deviceMemory;
+  return typeof deviceMemory === 'number' && deviceMemory > 0 ? deviceMemory : null;
+}
+
 /** `navigator.storage` advisor; every method degrades to null when absent. */
 export function createBrowserStorageAdvisor(): StorageAdvisorPort {
   interface StorageLike {

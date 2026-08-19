@@ -106,6 +106,10 @@ export interface AppElements {
   providerSelect: HTMLSelectElement;
   localModelSelect: HTMLSelectElement;
   localModelsDevice: HTMLParagraphElement;
+  localBackendSelect: HTMLSelectElement;
+  localIdleMinutes: HTMLInputElement;
+  localReleaseBtn: HTMLButtonElement;
+  localResidentLine: HTMLParagraphElement;
   workerTokenForm: HTMLFormElement;
   workerTokenInput: HTMLInputElement;
   workerTokenToggle: HTMLButtonElement;
@@ -244,6 +248,10 @@ export function renderApp(): AppElements {
     providerSelect: getRequiredElement(root, '#providerSelect', HTMLSelectElement),
     localModelSelect: getRequiredElement(root, '#localModelSelect', HTMLSelectElement),
     localModelsDevice: getRequiredElement(root, '#localModelsDevice', HTMLParagraphElement),
+    localBackendSelect: getRequiredElement(root, '#localBackendSelect', HTMLSelectElement),
+    localIdleMinutes: getRequiredElement(root, '#localIdleMinutes', HTMLInputElement),
+    localReleaseBtn: getRequiredElement(root, '#localReleaseBtn', HTMLButtonElement),
+    localResidentLine: getRequiredElement(root, '#localResidentLine', HTMLParagraphElement),
     workerTokenForm: getRequiredElement(root, '#workerTokenForm', HTMLFormElement),
     workerTokenInput: getRequiredElement(root, '#workerTokenInput', HTMLInputElement),
     workerTokenToggle: getRequiredElement(root, '#workerTokenToggle', HTMLButtonElement),
@@ -584,6 +592,22 @@ function renderSettingsView(): string {
             <div><h3 id="localModelsTitle" data-i18n="settings.localModels.title">Local models</h3><p data-i18n="settings.localModels.description"></p></div>
           </div>
           <p id="localModelsDevice" class="text-[11px] text-[var(--color-text-muted)]" aria-live="polite">&nbsp;</p>
+          <div class="mt-2 flex flex-wrap items-end gap-3 text-[11px]">
+            <div>
+              <label for="localBackendSelect" class="field-label" data-i18n="localModels.backendMode"></label>
+              <select id="localBackendSelect" class="form-control">
+                <option value="auto" data-i18n="localModels.backend.auto"></option>
+                <option value="wasm" data-i18n="localModels.backend.wasm"></option>
+              </select>
+            </div>
+            <div>
+              <label for="localIdleMinutes" class="field-label" data-i18n="localModels.idleRelease"></label>
+              <input id="localIdleMinutes" type="number" min="0" step="5" class="form-control w-24" aria-describedby="localIdleHelp" />
+              <p id="localIdleHelp" class="mt-1 text-[10.5px] text-[var(--color-text-muted)]" data-i18n="localModels.idleRelease.hint"></p>
+            </div>
+            <button type="button" id="localReleaseBtn" class="secondary-action hidden" data-i18n="localModels.release"></button>
+          </div>
+          <p id="localResidentLine" class="mt-2 text-[11px] text-[var(--color-text-muted)]" aria-live="polite" data-i18n="localModels.resident.none"></p>
           <ul id="localModelsList" class="mt-2 flex flex-col gap-3">
             ${LOCAL_MODEL_CATALOG.map((entry) => renderLocalModelCard(entry)).join('')}
           </ul>

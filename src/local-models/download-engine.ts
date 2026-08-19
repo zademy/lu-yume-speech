@@ -30,6 +30,7 @@ import type {
 import type { LocalCatalogEntry } from '../utils/local-model-catalog';
 import { artifactUrl } from './artifact-store';
 import { nextLocalModelState, type LocalModelLifecycleEvent } from './download-state-machine';
+import { memoryTierGuard } from './memory-guard';
 import { evaluateSpace } from './space-check';
 
 /** Persisted logical record of one Modelo del catálogo. */
@@ -99,6 +100,8 @@ export interface LocalDownloadEngineDeps {
   storage: StorageAdvisorPort;
   bus: EventBus<EventMap>;
   now?: () => number;
+  /** Device RAM in GB when reported (memory-tier advisory); null/omitted = unknown. */
+  deviceMemoryGb?: number | null;
 }
 
 interface ActiveDownload {
@@ -273,6 +276,18 @@ export class LocalDownloadEngine {
       }
     } catch (error) {
       console.warn('[local-models] storage estimate failed (advisory only):', error);
+    }
+
+    // Memory-tier advisory before download (guard is silent when the device
+    // reports no RAM — unreliable signals never warn).
+    const memoryVerdict = memoryTierGuard(entry.memoryTier, this.deps.deviceMemoryGb ?? null);
+    if (memoryVerdict.level === 'warn' || memoryVerdict.level === 'block') {
+      this.emitWarning({
+        kind: 'memory-tier',
+        modelId: entry.id,
+        tier: entry.memoryTier,
+        deviceMemoryGb: this.deps.deviceMemoryGb as number,
+      });
     }
 
     if (!this.persistenceRequested) {

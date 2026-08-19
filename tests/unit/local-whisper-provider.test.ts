@@ -51,17 +51,26 @@ class FakeWorker implements InferenceWorkerLike {
   terminated = false;
   private handler: ((data: unknown) => void) | null = null;
   private readonly autoLoad: boolean;
+  private readonly readyBackend: 'webgpu' | 'wasm';
 
-  constructor(autoLoad = true) {
+  constructor(autoLoad = true, readyBackend: 'webgpu' | 'wasm' = 'wasm') {
     this.autoLoad = autoLoad;
+    this.readyBackend = readyBackend;
     FakeWorker.instances.push(this);
   }
 
   postMessage(message: WorkerRequest): void {
     this.posted.push(message);
     if (this.autoLoad && message.type === 'load') {
-      this.respond({ type: 'ready', requestId: message.requestId });
+      this.respond({ type: 'ready', requestId: message.requestId, backend: this.readyBackend });
     }
+  }
+
+  /** The last load request posted (helper for backend-plan assertions). */
+  get lastLoad(): Extract<WorkerRequest, { type: 'load' }> {
+    const found = [...this.posted].reverse().find((m) => m.type === 'load');
+    if (!found || found.type !== 'load') throw new Error('no load posted');
+    return found;
   }
 
   terminate(): void {
@@ -93,6 +102,9 @@ function createProvider(
     activeModelId?: string | null;
     ready?: boolean;
     webgpu?: boolean;
+    policy?: 'auto' | 'wasm';
+    deviceMemoryGb?: number | null;
+    effectiveBackend?: 'webgpu' | 'wasm';
   } = {},
 ) {
   const bus = new EventBus<EventMap>();
@@ -111,7 +123,11 @@ function createProvider(
     getActiveModelId: () => ('activeModelId' in over ? (over.activeModelId ?? null) : entry.id),
     isModelReady: () => over.ready ?? true,
     hasWebgpu: () => over.webgpu ?? false,
-    workerFactory: over.workerFactory ?? (() => new FakeWorker(over.autoLoad ?? true)),
+    getBackendPolicy: () => over.policy ?? 'auto',
+    getDeviceMemoryGb: () => ('deviceMemoryGb' in over ? (over.deviceMemoryGb ?? null) : null),
+    workerFactory:
+      over.workerFactory ??
+      (() => new FakeWorker(over.autoLoad ?? true, over.effectiveBackend ?? 'wasm')),
     decoder: async () => ({ audio: new Float32Array([0, 0.5, 1]), duration: 2.5 }),
   });
   return { provider, bus, events };
@@ -124,7 +140,6 @@ const REQUEST: TranscriptionRequest = {
   temperature: 0,
   responseFormat: 'json',
 };
-
 
 /** Wait for the n-th (1-based) spawned fake worker to exist, then return it. */
 async function awaitWorker(index = 1): Promise<FakeWorker> {
@@ -162,6 +177,7 @@ describe('LocalWhisperProvider — contract: result', () => {
       text: ' hola mundo',
       language: undefined, // auto → detection (not surfaced by the worker)
       duration: 2.5,
+      provenance: { modelId: ENTRY.id, revision: ENTRY.revision, backend: 'wasm' },
     });
     expect(h.events.map((e) => e.event)).toContain('start');
     expect(h.events.at(-1)).toMatchObject({ event: 'success' });
@@ -262,7 +278,9 @@ describe('LocalWhisperProvider — contract: typed failures', () => {
       getActiveModelId: () => ENTRY.id,
       isModelReady: () => true,
       hasWebgpu: () => false,
-      workerFactory: () => new FakeWorker(),
+      getBackendPolicy: () => 'auto',
+      getDeviceMemoryGb: () => null,
+      workerFactory: () => new FakeWorker(true, 'wasm'),
       decoder: async () => {
         throw new Error('boom');
       },
@@ -326,7 +344,7 @@ describe('LocalWhisperProvider — contract: abort', () => {
     controller.abort();
 
     await expect(pending).rejects.toMatchObject({
-      detail: { kind: 'network', message: 'Transcripción cancelada.' },
+      detail: { kind: 'network', message: expect.stringContaining('cancelada por completo') },
     });
     expect(worker.terminated).toBe(true);
   });
@@ -363,6 +381,156 @@ describe('LocalWhisperProvider — contract: abort', () => {
 // Events
 // ---------------------------------------------------------------------------
 
+describe('LocalWhisperProvider — backend selection (T5)', () => {
+  it('plans webgpu→wasm attempts for a wasm-compatible model under auto with WebGPU', async () => {
+    const h = createProvider({ webgpu: true });
+    const pending = h.provider.transcribe(blob(), REQUEST);
+    const worker = await awaitWorker();
+    await vi.waitFor(() => expect(worker.posted.some((m) => m.type === 'load')).toBe(true));
+    expect(worker.lastLoad.backends).toEqual(['webgpu', 'wasm']);
+    await vi.waitFor(() => expect(worker.posted.some((m) => m.type === 'transcribe')).toBe(true));
+    worker.respond({ type: 'result', requestId: worker.lastTranscribe.requestId, text: 'x' });
+    await pending;
+  });
+
+  it('plans wasm only without a WebGPU adapter', async () => {
+    const h = createProvider({ webgpu: false });
+    const pending = h.provider.transcribe(blob(), REQUEST);
+    const worker = await awaitWorker();
+    await vi.waitFor(() => expect(worker.posted.some((m) => m.type === 'load')).toBe(true));
+    expect(worker.lastLoad.backends).toEqual(['wasm']);
+    await vi.waitFor(() => expect(worker.posted.some((m) => m.type === 'transcribe')).toBe(true));
+    worker.respond({ type: 'result', requestId: worker.lastTranscribe.requestId, text: 'x' });
+    await pending;
+  });
+
+  it('force-WASM plans a single wasm attempt', async () => {
+    const h = createProvider({ webgpu: true, policy: 'wasm' });
+    const pending = h.provider.transcribe(blob(), REQUEST);
+    const worker = await awaitWorker();
+    await vi.waitFor(() => expect(worker.posted.some((m) => m.type === 'load')).toBe(true));
+    expect(worker.lastLoad.backends).toEqual(['wasm']);
+    await vi.waitFor(() => expect(worker.posted.some((m) => m.type === 'transcribe')).toBe(true));
+    worker.respond({ type: 'result', requestId: worker.lastTranscribe.requestId, text: 'x' });
+    await pending;
+  });
+
+  it('refuses a webgpu-required model without WebGPU with the clear message', async () => {
+    const h = createProvider({ entry: TURBO, webgpu: false });
+    await expect(h.provider.transcribe(blob(), REQUEST)).rejects.toMatchObject({
+      detail: { kind: 'incompatible', message: expect.stringContaining('requiere WebGPU') },
+    });
+  });
+
+  it('refuses force-WASM on a model that does not permit WASM', async () => {
+    const h = createProvider({ entry: TURBO, webgpu: true, policy: 'wasm' });
+    await expect(h.provider.transcribe(blob(), REQUEST)).rejects.toMatchObject({
+      detail: { kind: 'incompatible', message: expect.stringContaining('no admite CPU') },
+    });
+  });
+
+  it('captures the effective backend and stamps it in the result provenance', async () => {
+    const h = createProvider({ webgpu: true, effectiveBackend: 'webgpu' });
+    const pending = h.provider.transcribe(blob(), REQUEST);
+    const worker = await awaitWorker();
+    await vi.waitFor(() => expect(worker.posted.some((m) => m.type === 'transcribe')).toBe(true));
+    worker.respond({ type: 'result', requestId: worker.lastTranscribe.requestId, text: 'hola' });
+    const result = await pending;
+
+    expect(result.provenance).toEqual({
+      modelId: ENTRY.id,
+      revision: ENTRY.revision,
+      backend: 'webgpu',
+    });
+    expect(h.provider.getResident()).toEqual({ modelId: ENTRY.id, backend: 'webgpu' });
+  });
+});
+
+describe('LocalWhisperProvider — memory management (T5)', () => {
+  it('emits localModel:memory on load and on release; release keeps nothing resident', async () => {
+    const h = createProvider();
+    const memoryEvents: unknown[] = [];
+    h.bus.on('localModel:memory', (event) => memoryEvents.push(event));
+
+    const pending = h.provider.transcribe(blob(), REQUEST);
+    const worker = await awaitWorker();
+    await vi.waitFor(() => expect(worker.posted.some((m) => m.type === 'transcribe')).toBe(true));
+    worker.respond({ type: 'result', requestId: worker.lastTranscribe.requestId, text: 'x' });
+    await pending;
+    expect(memoryEvents).toContainEqual({ modelId: ENTRY.id, backend: 'wasm' });
+
+    h.provider.release();
+    expect(h.provider.getResident()).toBeNull();
+    expect(worker.terminated).toBe(true);
+    expect(memoryEvents.at(-1)).toEqual({ modelId: null, backend: null });
+  });
+
+  it('release is a no-op when nothing is resident (no spurious event)', () => {
+    const h = createProvider();
+    const memoryEvents: unknown[] = [];
+    h.bus.on('localModel:memory', (event) => memoryEvents.push(event));
+
+    h.provider.release();
+
+    expect(memoryEvents).toEqual([]);
+  });
+
+  it('a memory-looking inference failure frees the resident model', async () => {
+    const h = createProvider();
+    const pending = h.provider.transcribe(blob(), REQUEST);
+    const worker = await awaitWorker();
+    await vi.waitFor(() => expect(worker.posted.some((m) => m.type === 'transcribe')).toBe(true));
+    worker.respond({
+      type: 'error',
+      requestId: worker.lastTranscribe.requestId,
+      message: 'WebGPU: out of memory during allocation',
+    });
+    await expect(pending).rejects.toMatchObject({ detail: { kind: 'network' } });
+
+    expect(worker.terminated).toBe(true);
+    expect(h.provider.getResident()).toBeNull();
+  });
+
+  it('an ordinary inference failure keeps the model resident', async () => {
+    const h = createProvider();
+    const pending = h.provider.transcribe(blob(), REQUEST);
+    const worker = await awaitWorker();
+    await vi.waitFor(() => expect(worker.posted.some((m) => m.type === 'transcribe')).toBe(true));
+    worker.respond({
+      type: 'error',
+      requestId: worker.lastTranscribe.requestId,
+      message: 'tokenizer glitch',
+    });
+    await expect(pending).rejects.toMatchObject({ detail: { kind: 'network' } });
+
+    expect(worker.terminated).toBe(false);
+    expect(h.provider.getResident()).toEqual({ modelId: ENTRY.id, backend: 'wasm' });
+  });
+
+  it('memory-tier block refuses the load with an incompatible error', async () => {
+    const heavy = { ...ENTRY, memoryTier: 'very-high' as const };
+    const h = createProvider({ entry: heavy, deviceMemoryGb: 2 });
+    await expect(h.provider.transcribe(blob(), REQUEST)).rejects.toMatchObject({
+      detail: { kind: 'incompatible', message: expect.stringContaining('memoria') },
+    });
+  });
+
+  it('memory-tier warn emits a warning status but proceeds', async () => {
+    const heavy = { ...ENTRY, memoryTier: 'high' as const };
+    const h = createProvider({ entry: heavy, deviceMemoryGb: 2 });
+    const pending = h.provider.transcribe(blob(), REQUEST);
+    const worker = await awaitWorker();
+    await vi.waitFor(() => expect(worker.posted.some((m) => m.type === 'transcribe')).toBe(true));
+    worker.respond({ type: 'result', requestId: worker.lastTranscribe.requestId, text: 'x' });
+    await expect(pending).resolves.toMatchObject({ text: 'x' });
+
+    const statuses = h.events
+      .filter((e) => e.event === 'status')
+      .map((e) => (e.payload as StatusUpdate).message);
+    expect(statuses.some((message) => message.includes('poca memoria'))).toBe(true);
+  });
+});
+
 describe('LocalWhisperProvider — bus events', () => {
   it('emits transcription:start with the model name and status updates while loading', async () => {
     const h = createProvider({ autoLoad: false });
@@ -375,7 +543,7 @@ describe('LocalWhisperProvider — bus events', () => {
       requestId: loadRequest.requestId,
       note: 'Preparando tokenizer.json…',
     });
-    worker.respond({ type: 'ready', requestId: loadRequest.requestId });
+    worker.respond({ type: 'ready', requestId: loadRequest.requestId, backend: 'wasm' });
     await vi.waitFor(() => expect(worker.posted.some((m) => m.type === 'transcribe')).toBe(true));
     worker.respond({ type: 'result', requestId: worker.lastTranscribe.requestId, text: 'x' });
     await pending;

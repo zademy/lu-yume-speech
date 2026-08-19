@@ -16,11 +16,19 @@
  */
 
 import type { EventBus } from '../core/event-bus';
-import type { EventMap, TranscriptionResult, TranscriptionError } from '../types';
+import type {
+  EventMap,
+  LocalBackend,
+  LocalInferenceProvenance,
+  TranscriptionResult,
+  TranscriptionError,
+} from '../types';
 import type { TranscriptionProvider, TranscriptionRequest } from '../api/transcription-provider';
 import { fail as sharedFail } from '../api/transcription-provider';
 import type { LocalCatalogEntry } from '../utils/local-model-catalog';
 import type { AudioDecoderPort } from './audio-decode';
+import { planBackends, type BackendPolicy } from './backend-decision';
+import { memoryTierGuard } from './memory-guard';
 import { resolveLocalRequest } from './local-request';
 import type { WorkerModelSpec, WorkerRequest, WorkerResponse } from './worker-protocol';
 import { isWorkerResponse } from './worker-protocol';
@@ -46,6 +54,10 @@ export interface LocalWhisperProviderDeps {
   isModelReady: (modelId: string) => boolean;
   /** Whether the device exposed a WebGPU adapter (capability probe). */
   hasWebgpu: () => boolean;
+  /** Configured backend policy: 'auto' (WebGPU→WASM) or force-WASM. */
+  getBackendPolicy: () => BackendPolicy;
+  /** Device RAM in GB when reported, else null (memory-tier guard). */
+  getDeviceMemoryGb: () => number | null;
   workerFactory: InferenceWorkerFactory;
   decoder: AudioDecoderPort;
 }
@@ -64,6 +76,12 @@ export class LocalWhisperProvider implements TranscriptionProvider {
   private worker: InferenceWorkerLike | null = null;
   /** Model spec currently loaded in the worker (null = nothing loaded). */
   private loadedSpec: WorkerModelSpec | null = null;
+  /** Catalog id of the loaded model (null = nothing loaded). */
+  private loadedModelId: string | null = null;
+  /** Backend the resident model actually runs on (null = nothing loaded). */
+  private effectiveBackend: LocalBackend | null = null;
+  /** Ordered backend attempts planned for the current model. */
+  private backends: LocalBackend[] = ['wasm'];
   private readonly pending = new Map<number, Pending>();
   private nextRequestId = 1;
 
@@ -96,12 +114,39 @@ export class LocalWhisperProvider implements TranscriptionProvider {
         message: 'El Modelo activo no está descargado por completo. Vuelve a descargarlo.',
       });
     }
-    if (entry.backend === 'webgpu-required' && !this.deps.hasWebgpu()) {
+
+    // Memory-tier guard before load: warn on a tight device, block only the
+    // extreme mismatch (unreliable reports never act).
+    const memoryVerdict = memoryTierGuard(entry.memoryTier, this.deps.getDeviceMemoryGb());
+    if (memoryVerdict.level === 'block') {
       throw this.fail({
         kind: 'incompatible',
-        message: `${entry.name} requiere WebGPU y este navegador no lo ofrece.`,
+        message: `${entry.name} necesita mucha memoria (tier ${entry.memoryTier}); este dispositivo reporta ${this.deps.getDeviceMemoryGb()} GB.`,
       });
     }
+    if (memoryVerdict.level === 'warn') {
+      this.deps.bus.emit('status:change', {
+        message: `Advertencia: ${entry.name} en un dispositivo con poca memoria reportada (${this.deps.getDeviceMemoryGb()} GB).`,
+        level: 'warning',
+      });
+    }
+
+    // Backend plan (auto WebGPU→WASM or forced WASM) with clear refusals.
+    const plan = planBackends({
+      policy: this.deps.getBackendPolicy(),
+      requirement: entry.backend,
+      hasWebgpu: this.deps.hasWebgpu(),
+    });
+    if (!plan.ok) {
+      throw this.fail({
+        kind: 'incompatible',
+        message:
+          plan.reason === 'webgpu-required'
+            ? `${entry.name} requiere WebGPU y este navegador no lo ofrece. Usa Whisper Base o Small para CPU.`
+            : `${entry.name} no admite CPU (WASM); el modo forzado solo aplica a modelos compatibles con CPU.`,
+      });
+    }
+    this.backends = plan.backends;
 
     const resolution = resolveLocalRequest(request.language, request.mode, entry);
     if (!resolution.ok) {
@@ -124,7 +169,7 @@ export class LocalWhisperProvider implements TranscriptionProvider {
     });
 
     const spec: WorkerModelSpec = { repo: entry.repo, revision: entry.revision };
-    const loaded = await this.ensureLoaded(spec, externalSignal);
+    const loaded = await this.ensureLoaded(spec, entry.id, externalSignal);
     if (!loaded.ok) throw loaded.error;
 
     const result = await this.exchange(
@@ -151,9 +196,31 @@ export class LocalWhisperProvider implements TranscriptionProvider {
       text: result.response.text,
       language: resolution.request.language ?? result.response.language,
       duration: decoded.duration,
+      provenance: this.buildProvenance(entry),
     };
     this.deps.bus.emit('transcription:success', transcription);
     return transcription;
+  }
+
+  // -------------------------------------------------------------------------
+  // Public memory-management surface (T5)
+  // -------------------------------------------------------------------------
+
+  /** Resident model info for the UI; null when nothing is loaded. */
+  getResident(): { modelId: string; backend: LocalBackend } | null {
+    return this.loadedSpec && this.effectiveBackend
+      ? { modelId: this.loadedModelId as string, backend: this.effectiveBackend }
+      : null;
+  }
+
+  /**
+   * Free the resident model from memory (manual release, idle release,
+   * model switch). Terminates the worker — the download is never touched
+   * and the model simply reloads on the next use.
+   */
+  release(): void {
+    if (!this.worker) return;
+    this.cancelAll();
   }
 
   // -------------------------------------------------------------------------
@@ -163,15 +230,31 @@ export class LocalWhisperProvider implements TranscriptionProvider {
   /**
    * Hard cancel per spec: terminate the worker, reject everything pending.
    * Downloaded weights are untouched; the next call reloads the model.
+   * Announces the residency change on the bus (memory released).
    */
   private cancelAll(): void {
+    const wasResident = this.worker !== null;
     this.worker?.terminate();
     this.worker = null;
     this.loadedSpec = null;
+    this.loadedModelId = null;
+    this.effectiveBackend = null;
     for (const pending of this.pending.values()) {
       pending.reject(new DOMException('aborted', 'AbortError'));
     }
     this.pending.clear();
+    if (wasResident) {
+      this.deps.bus.emit('localModel:memory', { modelId: null, backend: null });
+    }
+  }
+
+  /** Provenance snapshot of the resident model (called on success). */
+  private buildProvenance(entry: LocalCatalogEntry): LocalInferenceProvenance {
+    return {
+      modelId: entry.id,
+      revision: entry.revision,
+      backend: this.effectiveBackend ?? 'wasm',
+    };
   }
 
   private takeRequestId(): number {
@@ -226,16 +309,23 @@ export class LocalWhisperProvider implements TranscriptionProvider {
           ok: false,
           error: this.fail({
             kind: 'network',
-            message: 'Transcripción cancelada.',
+            message:
+              'Transcripción cancelada por completo. Los pesos descargados se conservan; el modelo se recargará en el próximo uso.',
             cause: error,
           }),
         };
+      }
+      // A memory-looking inference failure frees the resident model (spec:
+      // released on memory error; the download is never touched).
+      const messageText = error instanceof Error ? error.message : '';
+      if (messageText && MEMORY_ERROR_PATTERN.test(messageText)) {
+        this.cancelAll();
       }
       return {
         ok: false,
         error: this.fail({
           kind: 'network',
-          message: error instanceof Error ? error.message : 'Fallo de inferencia del Motor local.',
+          message: messageText || 'Fallo de inferencia del Motor local.',
         }),
       };
     } finally {
@@ -247,6 +337,7 @@ export class LocalWhisperProvider implements TranscriptionProvider {
   /** Load the model spec if the current worker doesn't have it yet. */
   private async ensureLoaded(
     spec: WorkerModelSpec,
+    modelId: string,
     externalSignal?: AbortSignal,
   ): Promise<{ ok: true } | { ok: false; error: Error }> {
     if (this.worker && this.loadedSpec && sameSpec(this.loadedSpec, spec)) {
@@ -260,7 +351,7 @@ export class LocalWhisperProvider implements TranscriptionProvider {
       level: 'processing',
     });
     const reply = await this.exchange(
-      { type: 'load', requestId: this.takeRequestId(), model: spec, device: 'wasm' },
+      { type: 'load', requestId: this.takeRequestId(), model: spec, backends: this.backends },
       undefined,
       externalSignal,
     );
@@ -278,6 +369,12 @@ export class LocalWhisperProvider implements TranscriptionProvider {
       };
     }
     this.loadedSpec = spec;
+    this.loadedModelId = modelId;
+    this.effectiveBackend = reply.response.backend;
+    this.deps.bus.emit('localModel:memory', {
+      modelId,
+      backend: this.effectiveBackend,
+    });
     return { ok: true };
   }
 
@@ -312,3 +409,9 @@ export class LocalWhisperProvider implements TranscriptionProvider {
 function sameSpec(a: WorkerModelSpec, b: WorkerModelSpec): boolean {
   return a.repo === b.repo && a.revision === b.revision;
 }
+
+/**
+ * Heuristic for inference failures that smell like memory exhaustion (ORT /
+ * WebGPU alloc errors) — those free the resident model per spec.
+ */
+const MEMORY_ERROR_PATTERN = /\b(out of memory|oom|alloc(?:ation)? failed|memory access)\b/i;

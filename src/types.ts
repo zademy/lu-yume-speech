@@ -10,6 +10,8 @@
  * - SRP: This module only declares types, nothing else.
  */
 
+import type { LocalModelMemoryTier } from './utils/local-model-catalog';
+
 // ---------------------------------------------------------------------------
 // Audio
 // ---------------------------------------------------------------------------
@@ -38,6 +40,8 @@ export interface TranscriptionResult {
   segments?: TranscriptionSegment[];
   /** Word-level timestamps (only with verbose_json + word granularity) */
   words?: TranscriptionWord[];
+  /** Motor-local provenance (model + revision + effective backend). */
+  provenance?: LocalInferenceProvenance;
 }
 
 /** Single transcription segment with timing and confidence metadata. */
@@ -211,6 +215,16 @@ export interface AppSettings {
   llmModel: string;
   /** Extra user instructions appended to the built-in LLM post-processing system prompt. */
   llmInstructions: string;
+  /**
+   * Motor local backend policy: 'auto' = try WebGPU, fall back to WASM only
+   * for models that permit it; 'wasm' = force CPU (advanced diagnostic).
+   */
+  localBackend: 'auto' | 'wasm';
+  /**
+   * Minutes of tab inactivity after which the resident local model is freed
+   * from memory (download kept). 0 = never release on idle.
+   */
+  localIdleReleaseMinutes: number;
 }
 
 /** Sensible defaults so the app works without any stored preferences. */
@@ -238,6 +252,8 @@ export const DEFAULT_SETTINGS: Readonly<AppSettings> = {
   enableLlmPostProcess: false,
   llmModel: 'llama-3.3-70b-versatile',
   llmInstructions: '',
+  localBackend: 'auto',
+  localIdleReleaseMinutes: 30,
 };
 
 // ---------------------------------------------------------------------------
@@ -256,6 +272,9 @@ export interface StatusUpdate {
 // ---------------------------------------------------------------------------
 // Local models (Motor local)
 // ---------------------------------------------------------------------------
+
+/** Memory-requirement tier (re-exported catalog type for event payloads). */
+export type { LocalModelMemoryTier } from './utils/local-model-catalog';
 
 /**
  * Logical lifecycle state of a Modelo del catálogo (Motor local).
@@ -298,7 +317,35 @@ export interface LocalModelStateEvent {
 export type LocalModelWarningEvent =
   | { kind: 'space-insufficient'; modelId: string; neededBytes: number; availableBytes: number }
   | { kind: 'space-unreliable'; modelId: string }
-  | { kind: 'persistence-denied'; modelId: string };
+  | { kind: 'persistence-denied'; modelId: string }
+  | {
+      kind: 'memory-tier';
+      modelId: string;
+      tier: LocalModelMemoryTier;
+      deviceMemoryGb: number;
+    };
+
+/** Inference backend the Motor local actually runs on. */
+export type LocalBackend = 'webgpu' | 'wasm';
+
+/** `localModel:memory` payload — residency of the loaded model in the worker. */
+export interface LocalModelMemoryEvent {
+  /** Catalog id of the resident model; null = nothing resident. */
+  modelId: string | null;
+  /** Backend the resident model runs on; null = nothing resident. */
+  backend: LocalBackend | null;
+}
+
+/**
+ * How a Transcripción was produced when extra provenance applies (Motor
+ * local). Remote providers leave this undefined — their provenance is the
+ * provider id stored alongside the entry.
+ */
+export interface LocalInferenceProvenance {
+  modelId: string;
+  revision: string;
+  backend: LocalBackend;
+}
 
 // ---------------------------------------------------------------------------
 // Events
@@ -365,8 +412,10 @@ export interface EventMap {
   'localModel:progress': LocalModelProgressEvent;
   /** Local model logical state changed (Motor local). */
   'localModel:state': LocalModelStateEvent;
-  /** Advisory warning from the Motor local (space / persistence). */
+  /** Advisory warning from the Motor local (space / persistence / memory). */
   'localModel:warning': LocalModelWarningEvent;
+  /** Resident local model in the worker changed (loaded / released). */
+  'localModel:memory': LocalModelMemoryEvent;
 }
 
 // ---------------------------------------------------------------------------
@@ -438,8 +487,14 @@ export interface HistoryEntry {
   language?: string;
   /** Whisper model used */
   model: WhisperModel;
+  /** Método de transcripción that produced this entry (audit provenance). */
+  method?: TranscriptionMethod;
   /** Catalog id of the Modelo activo (local method provenance). */
   localModelId?: string;
+  /** Pinned revision of the local model (local method provenance). */
+  localModelRevision?: string;
+  /** Backend the local inference actually ran on (local method provenance). */
+  backend?: LocalBackend;
   /** Provider that produced this entry (omitted = Groq). */
   provider?: TranscriptionProviderId;
   /** Audio duration in seconds */

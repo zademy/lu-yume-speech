@@ -8,6 +8,8 @@
  * while keeping the wire format compile-checked.
  */
 
+import type { LocalBackend } from '../types';
+
 /** Model identity the worker needs to build its Transformers.js pipeline. */
 export interface WorkerModelSpec {
   repo: string;
@@ -16,7 +18,18 @@ export interface WorkerModelSpec {
 
 /** Main → worker messages. */
 export type WorkerRequest =
-  | { type: 'load'; requestId: number; model: WorkerModelSpec; device: 'wasm' }
+  | {
+      type: 'load';
+      requestId: number;
+      model: WorkerModelSpec;
+      /**
+       * Ordered backend attempts (planned by the provider): WebGPU first with
+       * a WASM fallback only for models that permit it. The worker verifies
+       * each attempt by actually creating the session and reports the
+       * effective backend in `ready`.
+       */
+      backends: LocalBackend[];
+    }
   | {
       type: 'transcribe';
       requestId: number;
@@ -31,7 +44,7 @@ export type WorkerRequest =
 /** Worker → main messages (every reply echoes the originating requestId). */
 export type WorkerResponse =
   | { type: 'loading'; requestId: number; note: string }
-  | { type: 'ready'; requestId: number }
+  | { type: 'ready'; requestId: number; backend: LocalBackend }
   | { type: 'result'; requestId: number; text: string; language?: string }
   | { type: 'error'; requestId: number; message: string };
 

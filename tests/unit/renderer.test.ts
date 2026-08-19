@@ -87,6 +87,16 @@ describe('renderApp application shell', () => {
     expect(elements.settingsView.contains(elements.localModelsDevice)).toBe(true);
     expect(elements.localModelsDevice.getAttribute('aria-live')).toBe('polite');
 
+    // Advanced controls (T5): backend policy, idle release, manual free and
+    // the resident-model line (aria-live, text-first).
+    expect(elements.localBackendSelect.value).toBe('auto');
+    expect(
+      elements.localBackendSelect.querySelector<HTMLOptionElement>('option[value="wasm"]'),
+    ).not.toBeNull();
+    expect(elements.localIdleMinutes.localName).toBe('input');
+    expect(elements.localReleaseBtn.classList.contains('hidden')).toBe(true);
+    expect(elements.localResidentLine.getAttribute('aria-live')).toBe('polite');
+
     // Stage-1 catalog cards, in catalog order.
     const cards = [...elements.root.querySelectorAll<HTMLElement>('.local-model-card')];
     expect(cards.map((c) => c.dataset.modelId)).toEqual([

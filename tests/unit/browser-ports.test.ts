@@ -109,14 +109,14 @@ describe('createInferenceWorker', () => {
 
       const received: unknown[] = [];
       worker?.onMessage((data) => received.push(data));
-      FakeWorkerCtor.last?.onmessage?.({ data: { type: 'ready', requestId: 1 } });
-      expect(received).toEqual([{ type: 'ready', requestId: 1 }]);
+      FakeWorkerCtor.last?.onmessage?.({ data: { type: 'ready', requestId: 1, backend: 'wasm' } });
+      expect(received).toEqual([{ type: 'ready', requestId: 1, backend: 'wasm' }]);
 
       worker?.postMessage({
         type: 'load',
         requestId: 2,
         model: { repo: 'r', revision: 'v' },
-        device: 'wasm',
+        backends: ['wasm'],
       });
       expect(FakeWorkerCtor.last?.posted.length).toBe(1);
 
