@@ -34,6 +34,8 @@ import {
   resolveCanDictate,
   remoteKnobsLocked,
 } from './utils/transcription-method';
+import { formatDownloadSize } from './utils/local-model-catalog';
+import { detectCapabilities, probeEnvironment } from './utils/local-model-capabilities';
 
 import { Recorder } from './audio/recorder';
 import { AudioAnalyzer } from './audio/audio-analyzer';
@@ -649,6 +651,30 @@ async function bootstrap(): Promise<void> {
   wireGate(elements, platform, bus);
   wireGatePhraseSettings(elements, platform);
 
+  // Device summary for Ajustes › Modelos locales — async, best-effort, and
+  // re-rendered on language change so it never stays in a stale language.
+  let localModelsCaps: ReturnType<typeof detectCapabilities> | null = null;
+  const renderLocalModelsDevice = (): void => {
+    if (!localModelsCaps) return;
+    const caps = localModelsCaps;
+    const backend = t(`localModels.device.${caps.backendKey}`);
+    if (caps.storageQuotaBytes === null || !caps.localInferenceSupported) {
+      elements.localModelsDevice.textContent = backend;
+      return;
+    }
+    const usage = formatDownloadSize(caps.storageUsageBytes ?? 0);
+    const quota = formatDownloadSize(caps.storageQuotaBytes);
+    elements.localModelsDevice.textContent = `${backend} · ${t('localModels.device.storage')}: ${usage} / ${quota}`;
+  };
+  probeEnvironment()
+    .then((probe) => {
+      localModelsCaps = detectCapabilities(probe);
+      renderLocalModelsDevice();
+    })
+    .catch(() => {
+      // Capability probing is decorative here — silence leaves the line blank.
+    });
+
   wireTranscriptionPipeline(
     bus,
     getActiveTranscriptionClient,
@@ -679,6 +705,7 @@ async function bootstrap(): Promise<void> {
     await platform.saveSettings(next);
     bus.emit('settings:change', { appLanguage: lang });
     translateTree(elements.root, lang);
+    renderLocalModelsDevice();
     metricsPanel.setLanguage(lang);
     plumaPanel.setLanguage(lang);
     sidebar._lang = lang;

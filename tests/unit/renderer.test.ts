@@ -78,6 +78,43 @@ describe('renderApp application shell', () => {
     expect(elements.dictationLocalGateButton.localName).toBe('button');
   });
 
+  it('renders the local-models settings section read-only', () => {
+    const elements = renderApp();
+    document.body.appendChild(elements.root);
+    translateTree(elements.root, 'es');
+
+    // Device summary exists and starts empty (filled async at runtime).
+    expect(elements.settingsView.contains(elements.localModelsDevice)).toBe(true);
+    expect(elements.localModelsDevice.getAttribute('aria-live')).toBe('polite');
+
+    // Stage-1 catalog cards, in catalog order.
+    const cards = [...elements.root.querySelectorAll<HTMLElement>('.local-model-card')];
+    expect(cards.map((c) => c.dataset.modelId)).toEqual([
+      'whisper-base',
+      'whisper-small',
+      'whisper-large-v3-turbo',
+    ]);
+
+    // Every card: localized state text (not color-only), disabled download.
+    for (const card of cards) {
+      const state = card.querySelector<HTMLElement>('.local-model-state');
+      expect(state?.textContent).toBe('No descargado');
+      const download = card.querySelector<HTMLButtonElement>('[data-model-download]');
+      expect(download?.disabled).toBe(true);
+      expect(download?.textContent).toBe('Descargar');
+    }
+
+    // Metadata: size line + license link to the pinned repo page.
+    const base = cards[0];
+    expect(base?.textContent).toContain('138.4 MiB');
+    const license = base?.querySelector<HTMLAnchorElement>('dl a');
+    expect(license?.href).toBe('https://huggingface.co/onnx-community/whisper-base');
+
+    // Turbo declares its WebGPU requirement in text.
+    const turbo = cards[2];
+    expect(turbo?.textContent).toContain('Requiere WebGPU');
+  });
+
   it('renders the Puerta de acceso visible with the shell inert by default', () => {
     const elements = renderApp();
     document.body.appendChild(elements.root);
