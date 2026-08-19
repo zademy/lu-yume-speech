@@ -42,7 +42,10 @@ import { logicalStateStore } from './local-models/model-state-store';
 import {
   createBrowserStorageAdvisor,
   createCacheArtifactStore,
+  createInferenceWorker,
 } from './local-models/browser-ports';
+import { LocalWhisperProvider } from './local-models/local-whisper-provider';
+import { decodeAudioTo16kMono } from './local-models/audio-decode';
 
 import { Recorder } from './audio/recorder';
 import { AudioAnalyzer } from './audio/audio-analyzer';
@@ -168,6 +171,11 @@ async function bootstrap(): Promise<void> {
     config.transcriptionProvider = 'cloudflare-whisper';
   }
   /** True when the active method allows dictation (see resolveCanDictate). */
+  // The Motor local readiness is decided by the download engine's records
+  // (hydrated after engine.init); until then no local model is ready.
+  const localEngineState: { ready: (modelId: string) => boolean } = {
+    ready: () => false,
+  };
   const canDictate = (): boolean =>
     resolveCanDictate({
       method: config.transcriptionMethod,
@@ -175,9 +183,8 @@ async function bootstrap(): Promise<void> {
         config.transcriptionProvider === 'cloudflare-whisper'
           ? workerToken.length > 0
           : apiKey.length > 0,
-      // Local engine lands in a later ticket; without a Modelo activo the
-      // local method stays gated (never silently falling back to remote).
-      localModelReady: hasActiveLocalModel(config),
+      localModelReady:
+        hasActiveLocalModel(config) && localEngineState.ready(config.localModelId as string),
     });
   const getConfig = (): AppSettings => config;
   const setConfig = (next: AppSettings): void => {
@@ -480,13 +487,26 @@ async function bootstrap(): Promise<void> {
     groq: groqClient,
     'cloudflare-whisper': workerClient,
   };
+  // Motor local (T4): third provider behind the same seam. Reads the active
+  // model + its download-engine record lazily; the worker (and therefore
+  // Transformers.js) only spawns on the first local transcription.
+  // `localModelsCaps` is hydrated by probeEnvironment below; until then no
+  // WebGPU is assumed (models requiring it fail honestly at transcribe time).
+  let localModelsCaps: ReturnType<typeof detectCapabilities> | null = null;
+  const localClient = new LocalWhisperProvider({
+    bus,
+    catalog: LOCAL_MODEL_CATALOG,
+    getActiveModelId: () => config.localModelId,
+    isModelReady: (modelId: string) => localEngineState.ready(modelId),
+    hasWebgpu: () => localModelsCaps?.webgpu === true,
+    workerFactory: createInferenceWorker,
+    decoder: decodeAudioTo16kMono,
+  });
   const getActiveTranscriptionClient = (): TranscriptionProvider => {
-    // The Motor local lands in a later ticket. The local method must never
-    // silently fall back to a remote provider — the UI gates dictation, and
-    // this guard keeps any path that slips through honest.
-    if (config.transcriptionMethod === 'local') {
-      throw new Error('Local transcription engine is not available yet.');
-    }
+    // Local never silently falls back to a remote provider — canDictate
+    // gates the UI and this branch returns the local engine (which itself
+    // fails loudly when the model is missing or incomplete).
+    if (config.transcriptionMethod === 'local') return localClient;
     return transcriptionClients[config.transcriptionProvider];
   };
   const visualizer = new WaveformVisualizer(
@@ -660,7 +680,7 @@ async function bootstrap(): Promise<void> {
 
   // Device summary for Ajustes › Modelos locales — async, best-effort, and
   // re-rendered on language change so it never stays in a stale language.
-  let localModelsCaps: ReturnType<typeof detectCapabilities> | null = null;
+  // (localModelsCaps itself is declared next to the local provider above.)
   const renderLocalModelsDevice = (): void => {
     if (!localModelsCaps) return;
     const caps = localModelsCaps;
@@ -682,10 +702,25 @@ async function bootstrap(): Promise<void> {
       // Capability probing is decorative here — silence leaves the line blank.
     });
 
-  // Motor local (T3): download engine behind the Local models cards. Fully
-  // independent of the transcription pipeline — downloads while transcribing
-  // with Groq/Cloudflare are allowed by design.
-  const localModels = wireLocalModelEngine(bus, elements);
+  // Motor local (T3+T4): download engine behind the Local models cards plus
+  // the Modelo activo selector. Fully independent of the transcription
+  // pipeline — downloads while transcribing with Groq/Cloudflare are
+  // allowed by design.
+  const localModels = wireLocalModelEngine(bus, elements, {
+    getActiveModelId: () => config.localModelId,
+    getMethod: () => config.transcriptionMethod,
+    onActiveModelChange: (modelId) => {
+      const next = { ...getConfig(), localModelId: modelId };
+      setConfig(next);
+      void platform.saveSettings(next);
+      bus.emit('settings:change', { localModelId: modelId });
+      refreshCredentialUi();
+    },
+    onReadyStateChange: (ready) => {
+      localEngineState.ready = ready;
+      refreshCredentialUi();
+    },
+  });
 
   wireTranscriptionPipeline(
     bus,
@@ -1148,6 +1183,9 @@ interface LocalCardRefs {
  * Wires the Motor local download engine to the Local models cards: one
  * download at a time, progress (percent + bytes + phase) on an aria-live
  * region, cancellation → Descarga parcial, advisory warnings as toasts.
+ * Also owns the Modelo activo slice: downloaded models populate the
+ * Ajustes selector and selecting one persists `localModelId` through the
+ * caller's change callback (never auto-switching anything else).
  *
  * Downloads are deliberately independent of the transcription pipeline —
  * a download while transcribing with Groq/Cloudflare is allowed by design.
@@ -1158,6 +1196,12 @@ interface LocalCardRefs {
 function wireLocalModelEngine(
   bus: EventBus<EventMap>,
   elements: AppElements,
+  deps: {
+    getActiveModelId: () => string | null;
+    onActiveModelChange: (modelId: string | null) => void;
+    onReadyStateChange: (ready: (modelId: string) => boolean) => void;
+    getMethod: () => TranscriptionMethod;
+  },
 ): { engine: LocalDownloadEngine | null; renderAll: () => void } {
   const artifactStore = createCacheArtifactStore();
 
@@ -1178,6 +1222,49 @@ function wireLocalModelEngine(
     states: logicalStateStore,
     storage: createBrowserStorageAdvisor(),
     bus,
+  });
+
+  // Expose readiness to the dictation gate as soon as records exist.
+  deps.onReadyStateChange((modelId) => engine.getRecord(modelId)?.state === 'downloaded');
+
+  /**
+   * Modelo activo selector refresh: only verified-complete models appear;
+   * the persisted selection survives while still downloaded. Under remote
+   * the select is disabled anyway (applyMethodConstraints).
+   */
+  const refreshLocalModelOptions = (): void => {
+    const downloaded = LOCAL_MODEL_CATALOG.filter(
+      (entry) => engine.getRecord(entry.id)?.state === 'downloaded',
+    );
+    const activeId = deps.getActiveModelId();
+    const select = elements.localModelSelect;
+    select.replaceChildren();
+    const noneOption = document.createElement('option');
+    noneOption.value = 'none';
+    noneOption.textContent = t('localModel.none');
+    select.appendChild(noneOption);
+    for (const entry of downloaded) {
+      const option = document.createElement('option');
+      option.value = entry.id;
+      option.textContent = entry.name;
+      select.appendChild(option);
+    }
+    select.disabled = deps.getMethod() !== 'local' || downloaded.length === 0;
+    select.value =
+      activeId && downloaded.some((entry) => entry.id === activeId) ? activeId : 'none';
+  };
+
+  elements.localModelSelect.addEventListener('change', () => {
+    const value = elements.localModelSelect.value;
+    const next = value === 'none' ? null : value;
+    if (next !== deps.getActiveModelId()) deps.onActiveModelChange(next);
+  });
+
+  // Method switches (remote ↔ local) re-apply constraints elsewhere; this
+  // keeps the selector's options/disabled/value in sync through the bus so
+  // ordering never matters.
+  bus.on('settings:change', (patch) => {
+    if ('transcriptionMethod' in patch) refreshLocalModelOptions();
   });
 
   const refsCache = new Map<string, LocalCardRefs>();
@@ -1237,6 +1324,7 @@ function wireLocalModelEngine(
 
   const renderAll = (): void => {
     for (const entry of LOCAL_MODEL_CATALOG) updateCard(entry.id);
+    refreshLocalModelOptions();
   };
 
   bus.on('localModel:progress', ({ modelId, phase, percent, receivedBytes, totalBytes }) => {
@@ -1256,6 +1344,7 @@ function wireLocalModelEngine(
 
   bus.on('localModel:state', ({ modelId, state }) => {
     updateCard(modelId);
+    refreshLocalModelOptions();
     if (state === 'partial') {
       showToast(elements.toastContainer, t('toast.localModel.cancelled'), 'warning');
     } else if (state === 'error') {
@@ -1333,8 +1422,10 @@ function wireMethodSelect(
  * Reflects the Método de transcripción in the transcription controls.
  *
  * Under the local method the Proveedor remoto selector and the remote-only
- * knobs are disabled and the (still empty) Modelo activo selector takes
- * over; under the remote method the existing provider constraints apply.
+ * knobs are disabled and the Modelo activo selector takes over; under the
+ * remote method the existing provider constraints apply. The Modelo activo
+ * options themselves are owned by the download engine (see
+ * `refreshLocalModelOptions`) — this only locks the selector under remote.
  */
 function applyMethodConstraints(
   elements: AppElements,
@@ -1345,10 +1436,12 @@ function applyMethodConstraints(
   const isLocal = method === 'local';
   elements.methodSelect.value = method;
   elements.providerSelect.disabled = isLocal;
-  // No downloadable models exist yet — the selector stays a read-only
-  // "no active model" placeholder until the local engine lands.
-  elements.localModelSelect.value = 'none';
-  elements.localModelSelect.disabled = true;
+  // Options/data come from the engine; only enable when a downloaded model
+  // exists (the engine refresh keeps this in sync).
+  elements.localModelSelect.disabled = isLocal
+    ? elements.localModelSelect.options.length <= 1
+    : true;
+  if (!isLocal) elements.localModelSelect.value = 'none';
   if (isLocal) {
     elements.modelSelect.disabled = true;
     const translateOption = elements.operationModeSelect.querySelector<HTMLOptionElement>(
@@ -1604,11 +1697,17 @@ function wireTranscriptionPipeline(
     void client.transcribe(audio, request).catch(() => {
       // Error already emitted on the bus via transcription:error
     });
+    const localEntry =
+      config.transcriptionMethod === 'local'
+        ? LOCAL_MODEL_CATALOG.find((entry) => entry.id === config.localModelId)
+        : undefined;
     setStatus(
       elements,
-      config.transcriptionProvider === 'cloudflare-whisper'
-        ? { message: 'Procesando con Cloudflare Whisper…', level: 'processing' }
-        : { message: `Procesando con ${options.model}...`, level: 'processing' },
+      localEntry
+        ? { message: `Procesando con ${localEntry.name} (local)…`, level: 'processing' }
+        : config.transcriptionProvider === 'cloudflare-whisper'
+          ? { message: 'Procesando con Cloudflare Whisper…', level: 'processing' }
+          : { message: `Procesando con ${options.model}...`, level: 'processing' },
     );
   });
 
@@ -1665,12 +1764,16 @@ function wireTranscriptionPipeline(
     const options = readTranscriptionOptions(elements);
     const mode = readOperationMode(elements);
     const isWorker = config.transcriptionProvider === 'cloudflare-whisper';
+    const isLocal = config.transcriptionMethod === 'local';
     const entry: HistoryEntry = {
       id: crypto.randomUUID(),
       text,
       language: result.language,
       model: isWorker ? CLOUDFLARE_WHISPER_MODEL : options.model,
-      // Provider is only stamped for non-default backends (Groq stays implicit).
+      // Provenance per method: the remote provider for remote backends, the
+      // catalog id of the Modelo activo for the Motor local (full model +
+      // revision provenance lands with T7).
+      ...(isLocal ? { localModelId: config.localModelId ?? undefined } : {}),
       provider: isWorker ? 'cloudflare-whisper' : undefined,
       duration: result.duration,
       createdAt: Date.now(),

@@ -28,7 +28,7 @@ function pick(entries: LocalCatalogEntry[], index: number): LocalCatalogEntry {
 
 describe('local model catalog', () => {
   it('ships a versioned stage-1 catalog with exactly Base, Small and Large v3 Turbo', () => {
-    expect(LOCAL_CATALOG_VERSION).toBe(1);
+    expect(LOCAL_CATALOG_VERSION).toBe(2);
     expect(LOCAL_MODEL_CATALOG.map((e) => e.id)).toEqual([
       'whisper-base',
       'whisper-small',

@@ -36,6 +36,11 @@ export default defineConfig({
         // Phase 3: Pluma writer — third-party DOM (Milkdown/ProseMirror) needs a
         // real browser; verified by the production build + runtime, not jsdom.
         'src/escritos/editor.ts',
+        // Local-model inference worker — imports Transformers.js / ORT wasm
+        // and only runs inside a real Web Worker (T4+ verified at runtime by
+        // the production build and browser smoke); the provider contract is
+        // covered through its fake-worker tests.
+        'src/local-models/inference-worker.ts',
       ],
       // Functions stays just under 90 because of inner callbacks in
       // integration code (IndexedDB transaction handlers, fetch/setTimeout

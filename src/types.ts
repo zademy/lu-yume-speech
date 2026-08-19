@@ -438,6 +438,8 @@ export interface HistoryEntry {
   language?: string;
   /** Whisper model used */
   model: WhisperModel;
+  /** Catalog id of the Modelo activo (local method provenance). */
+  localModelId?: string;
   /** Provider that produced this entry (omitted = Groq). */
   provider?: TranscriptionProviderId;
   /** Audio duration in seconds */
@@ -554,7 +556,9 @@ export type TranscriptionError =
   | ({ kind: 'rate-limit'; retryAfterMs?: number } & ErrorPayload)
   | ({ kind: 'network' } & ErrorPayload)
   | ({ kind: 'parse' } & ErrorPayload)
-  | ({ kind: 'server'; status: number } & ErrorPayload);
+  | ({ kind: 'server'; status: number } & ErrorPayload)
+  /** Request incompatible with the active model (local engine). */
+  | ({ kind: 'incompatible' } & ErrorPayload);
 
 interface ErrorPayload {
   message: string;

@@ -31,8 +31,11 @@ export interface TranscriptionRequest extends TranscriptionOptions {
 
 /** The seam every transcription backend implements. */
 export interface TranscriptionProvider {
-  /** Stable provider id (matches `AppSettings.transcriptionProvider`). */
-  readonly id: TranscriptionProviderId;
+  /**
+   * Stable provider id: a `TranscriptionProviderId` for remote backends or
+   * `'local'` for the Motor local.
+   */
+  readonly id: TranscriptionProviderId | 'local';
   /**
    * Send audio for transcription/translation. Emits `transcription:start`,
    * then `transcription:success` or `transcription:error` on the bus.

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   createBrowserStorageAdvisor,
   createCacheArtifactStore,
+  createInferenceWorker,
 } from '../../src/local-models/browser-ports';
 
 /** Install (or remove) a fake navigator.storage on the jsdom navigator. */
@@ -76,5 +77,53 @@ describe('createBrowserStorageAdvisor', () => {
 describe('createCacheArtifactStore', () => {
   it('returns null when the Cache API is unavailable (jsdom)', () => {
     expect(createCacheArtifactStore()).toBeNull();
+  });
+});
+
+describe('createInferenceWorker', () => {
+  it('returns null when Worker is unavailable', () => {
+    expect(createInferenceWorker()).toBeNull();
+  });
+
+  it('adapts a real Worker onto the InferenceWorkerLike port', async () => {
+    class FakeWorkerCtor {
+      static last: FakeWorkerCtor | null = null;
+      onmessage: ((event: { data: unknown }) => void) | null = null;
+      posted: unknown[] = [];
+      terminated = false;
+      constructor() {
+        FakeWorkerCtor.last = this;
+      }
+      postMessage(message: unknown): void {
+        this.posted.push(message);
+      }
+      terminate(): void {
+        this.terminated = true;
+      }
+    }
+    const original = (globalThis as Record<string, unknown>).Worker;
+    (globalThis as Record<string, unknown>).Worker = FakeWorkerCtor;
+    try {
+      const worker = createInferenceWorker();
+      expect(worker).not.toBeNull();
+
+      const received: unknown[] = [];
+      worker?.onMessage((data) => received.push(data));
+      FakeWorkerCtor.last?.onmessage?.({ data: { type: 'ready', requestId: 1 } });
+      expect(received).toEqual([{ type: 'ready', requestId: 1 }]);
+
+      worker?.postMessage({
+        type: 'load',
+        requestId: 2,
+        model: { repo: 'r', revision: 'v' },
+        device: 'wasm',
+      });
+      expect(FakeWorkerCtor.last?.posted.length).toBe(1);
+
+      worker?.terminate();
+      expect(FakeWorkerCtor.last?.terminated).toBe(true);
+    } finally {
+      (globalThis as Record<string, unknown>).Worker = original;
+    }
   });
 });

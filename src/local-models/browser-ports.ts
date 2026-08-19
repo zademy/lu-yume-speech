@@ -9,6 +9,8 @@
 
 import { CacheArtifactStore } from './artifact-store';
 import type { StorageAdvisorPort } from './download-engine';
+import type { InferenceWorkerFactory, InferenceWorkerLike } from './local-whisper-provider';
+import type { WorkerRequest, WorkerResponse } from './worker-protocol';
 
 /**
  * Cache API adapter, or `null` when the browser has no Cache Storage
@@ -18,6 +20,30 @@ export function createCacheArtifactStore(): CacheArtifactStore | null {
   if (typeof caches === 'undefined') return null;
   return new CacheArtifactStore({ cacheStorage: caches });
 }
+
+/**
+ * Inference-worker factory: bundles `inference-worker.ts` as a same-origin
+ * module worker (spec: `worker-src 'self'`, no blob workers). Returns null
+ * when `Worker` is unavailable so the provider can degrade honestly.
+ */
+export const createInferenceWorker: InferenceWorkerFactory = () => {
+  if (typeof Worker === 'undefined') return null;
+  const worker = new Worker(new URL('./inference-worker.ts', import.meta.url), {
+    type: 'module',
+  });
+  const adapter: InferenceWorkerLike = {
+    postMessage(message: WorkerRequest, transfer?: Transferable[]): void {
+      worker.postMessage(message, transfer ?? []);
+    },
+    terminate(): void {
+      worker.terminate();
+    },
+    onMessage(handler: (data: unknown) => void): void {
+      worker.onmessage = (event: MessageEvent) => handler(event.data as WorkerResponse);
+    },
+  };
+  return adapter;
+};
 
 /** `navigator.storage` advisor; every method degrades to null when absent. */
 export function createBrowserStorageAdvisor(): StorageAdvisorPort {

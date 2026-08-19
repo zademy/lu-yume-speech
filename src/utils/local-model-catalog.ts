@@ -15,7 +15,7 @@
 export const LOCAL_MODEL_MAX_BYTES = 2_000_000_000;
 
 /** Manifest version — bump whenever an entry is added, removed or repointed. */
-export const LOCAL_CATALOG_VERSION = 1;
+export const LOCAL_CATALOG_VERSION = 2;
 
 /** Memory-requirement tier (runtime footprint, NOT download size). */
 export type LocalModelMemoryTier = 'light' | 'medium' | 'high' | 'very-high';
@@ -106,11 +106,12 @@ export const LOCAL_MODEL_CATALOG: readonly LocalCatalogEntry[] = [
         { path: 'config.json', bytes: 2243 },
         { path: 'generation_config.json', bytes: 3832 },
         { path: 'preprocessor_config.json', bytes: 339 },
+        { path: 'special_tokens_map.json', bytes: 2194 },
         { path: 'tokenizer.json', bytes: 2480466 },
         { path: 'tokenizer_config.json', bytes: 282682 },
       ]),
     ],
-    downloadBytes: 145144432,
+    downloadBytes: 145146626,
     languages: ['es', 'en'],
     autoDetectLanguage: true,
     supportsTranslation: true,
@@ -135,11 +136,12 @@ export const LOCAL_MODEL_CATALOG: readonly LocalCatalogEntry[] = [
         { path: 'config.json', bytes: 2227 },
         { path: 'generation_config.json', bytes: 3893 },
         { path: 'preprocessor_config.json', bytes: 339 },
+        { path: 'special_tokens_map.json', bytes: 2194 },
         { path: 'tokenizer.json', bytes: 2480466 },
         { path: 'tokenizer_config.json', bytes: 282683 },
       ]),
     ],
-    downloadBytes: 302101039,
+    downloadBytes: 302103233,
     languages: ['es', 'en'],
     autoDetectLanguage: true,
     supportsTranslation: true,
@@ -164,11 +166,12 @@ export const LOCAL_MODEL_CATALOG: readonly LocalCatalogEntry[] = [
         { path: 'config.json', bytes: 1332 },
         { path: 'generation_config.json', bytes: 3897 },
         { path: 'preprocessor_config.json', bytes: 340 },
+        { path: 'special_tokens_map.json', bytes: 2186 },
         { path: 'tokenizer.json', bytes: 2480617 },
         { path: 'tokenizer_config.json', bytes: 282843 },
       ]),
     ],
-    downloadBytes: 761859026,
+    downloadBytes: 761861212,
     languages: ['es', 'en'],
     autoDetectLanguage: true,
     supportsTranslation: true,

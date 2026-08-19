@@ -29,7 +29,7 @@ These are the rules easy to violate silently. All four come from `ARCHITECTURE.m
 
 ## Credentials
 
-The Groq key is stored in browser `localStorage` under `stt_groq_api_key` via the `WebBridge` — **never** in the JS bundle or env vars shipped to the client. Network egress is `https://api.groq.com` only. See `SECURITY.md` before touching anything credential-, secret-, or network-related.
+The Groq key is stored in browser `localStorage` under `stt_groq_api_key` via the `WebBridge` — **never** in the JS bundle or env vars shipped to the client. Network egress: `https://api.groq.com`, the configured Cloudflare Whisper worker, and explicit Hugging Face model downloads (see `SECURITY.md`). See `SECURITY.md` before touching anything credential-, secret-, or network-related.
 
 ## Tests
 
