@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.7.0](https://github.com/zademy/lu-yume-speech/compare/v1.6.0...v1.7.0) (2026-08-20)
+
+
+### Features
+
+* **local-models:** add download engine with progress, cancellation and verification ([f2d4848](https://github.com/zademy/lu-yume-speech/commit/f2d4848271a7c342d78aa8a91e54ecca070fa6a1)), closes [#38](https://github.com/zademy/lu-yume-speech/issues/38)
+* **local-models:** add versioned read-only catalog and Models settings section ([6015d87](https://github.com/zademy/lu-yume-speech/commit/6015d87d6dbdd202f0f93af29a1011c954d7d147)), closes [#37](https://github.com/zademy/lu-yume-speech/issues/37)
+* **local-models:** automatic WebGPU→WASM backend, memory management and provenance ([b34946b](https://github.com/zademy/lu-yume-speech/commit/b34946b28c0cb38a8774e23a144d2fc0646bed1b)), closes [#40](https://github.com/zademy/lu-yume-speech/issues/40)
+* **local-models:** catalog stages 2-3 — Tiny, Medium, Large v3 + experimental Lite family ([526b1df](https://github.com/zademy/lu-yume-speech/commit/526b1dfca658e4d87c940dacb496829692b4e532))
+* **local-models:** first local transcription — Whisper Base on WASM end to end ([f026bab](https://github.com/zademy/lu-yume-speech/commit/f026baba4bc781f83d02e41050843dd656f70d5f)), closes [#39](https://github.com/zademy/lu-yume-speech/issues/39)
+* **local-models:** full lifecycle — delete, atomic update, reconcile, cross-tab locks ([884f202](https://github.com/zademy/lu-yume-speech/commit/884f202edcfa2b49d6d3bdd070b4e976bd23ddb5)), closes [#41](https://github.com/zademy/lu-yume-speech/issues/41)
+* **local-models:** measured benchmark — corpus, WER/RTF diagnostics, published results ([7241f34](https://github.com/zademy/lu-yume-speech/commit/7241f34d7f63a0c07f08082fe5438d7df60a48f3))
+* **local-models:** privacy, typed errors, failure recovery, migration, accessible progress ([823c36b](https://github.com/zademy/lu-yume-speech/commit/823c36b7033f2c5372cedfd743f30f750a37d7d2)), closes [#43](https://github.com/zademy/lu-yume-speech/issues/43)
+* **transcription:** add Metodo remoto/local hierarchy with independent preferences ([fac7ed6](https://github.com/zademy/lu-yume-speech/commit/fac7ed6108224671680e5b06b02d33cd55f3d759)), closes [#36](https://github.com/zademy/lu-yume-speech/issues/36)
+
+
+### Bug Fixes
+
+* **app:** dictation gate refresh + strict-CSP deployment readiness ([67690a9](https://github.com/zademy/lu-yume-speech/commit/67690a9ee6734b162284d4df48ede7f157723de3))
+
 ## [1.6.0](https://github.com/zademy/lu-yume-speech/compare/v1.5.0...v1.6.0) (2026-08-16)
 
 
