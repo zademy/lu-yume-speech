@@ -1,0 +1,91 @@
+{
+  "resultsVersion": 1,
+  "measured": {
+    "description": "Corpus sintetizado v1 (7 clips ES/EN, voces macOS say + ruido ffmpeg, 16 kHz mono) medido con el Diagnóstico in-app sobre Chrome 151 (WebGPU y WASM) en macOS, 16 GB de RAM. Método reproducible: docs/benchmark.md.",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36",
+    "deviceMemoryGb": 16,
+    "measuredAt": "2026-08-20T01:38:45.810Z"
+  },
+  "measurements": [
+    {
+      "modelId": "whisper-base",
+      "backend": "webgpu",
+      "corpusVersion": 1,
+      "clips": 7,
+      "languageWer": {
+        "es": 0.04378399378399378,
+        "en": 0.014705882352941176
+      },
+      "globalWer": 0.02716793010910658,
+      "loadMs": 1377.199999999255,
+      "audioSeconds": 63.759812499999995,
+      "inferenceSeconds": 3.766699999999255,
+      "rtf": 0.05907639706436175,
+      "peakMemoryBytes": 25169047
+    },
+    {
+      "modelId": "whisper-base",
+      "backend": "wasm",
+      "corpusVersion": 1,
+      "clips": 7,
+      "languageWer": {
+        "es": 0.04378399378399378,
+        "en": 0.014705882352941176
+      },
+      "globalWer": 0.02716793010910658,
+      "loadMs": 1138,
+      "audioSeconds": 63.759812499999995,
+      "inferenceSeconds": 20.62070000000298,
+      "rtf": 0.3234121806741979,
+      "peakMemoryBytes": 19913279
+    },
+    {
+      "modelId": "whisper-small",
+      "backend": "webgpu",
+      "corpusVersion": 1,
+      "clips": 7,
+      "languageWer": {
+        "es": 0.015151515151515152,
+        "en": 0.014705882352941176
+      },
+      "globalWer": 0.014896867838044309,
+      "loadMs": 3040.599999997765,
+      "audioSeconds": 63.759812499999995,
+      "inferenceSeconds": 6.106300000000745,
+      "rtf": 0.09577035691566291,
+      "peakMemoryBytes": 22082726
+    },
+    {
+      "modelId": "whisper-small",
+      "backend": "wasm",
+      "corpusVersion": 1,
+      "clips": 7,
+      "languageWer": {
+        "es": 0.015151515151515152,
+        "en": 0.014705882352941176
+      },
+      "globalWer": 0.014896867838044309,
+      "loadMs": 2192.2000000029802,
+      "audioSeconds": 63.759812499999995,
+      "inferenceSeconds": 84.1961000000015,
+      "rtf": 1.3205198807634746,
+      "peakMemoryBytes": 21125652
+    },
+    {
+      "modelId": "whisper-large-v3-turbo",
+      "backend": "webgpu",
+      "corpusVersion": 1,
+      "clips": 7,
+      "languageWer": {
+        "es": 0.015151515151515152,
+        "en": 0.029705882352941176
+      },
+      "globalWer": 0.02346829640947288,
+      "loadMs": 9033.099999997765,
+      "audioSeconds": 63.759812499999995,
+      "inferenceSeconds": 17.318599999997765,
+      "rtf": 0.2716225051633859,
+      "peakMemoryBytes": 21434357
+    }
+  ]
+}

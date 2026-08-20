@@ -72,3 +72,21 @@ export const logicalStateStore: LogicalStateStorePort = {
 export async function clearLocalPerfData(modelId: string): Promise<void> {
   await db().modelPerf.delete(modelId);
 }
+
+/**
+ * Append a benchmark/diagnostic measurement (spec T8) to the model's perf
+ * row, keeping the newest last and capping the history at 5 runs so the
+ * device store stays small. No telemetry — the row is only readable
+ * in-device or through the user's manual export.
+ */
+export async function appendPerfMeasurement(modelId: string, measurement: unknown): Promise<void> {
+  const existing = await db().modelPerf.get(modelId);
+  const history = [...(existing?.measurements ?? []), measurement].slice(-5);
+  await db().modelPerf.put({ modelId, measurements: history, updatedAt: Date.now() });
+}
+
+/** Read the stored measurement history for a model (newest last). */
+export async function readPerfMeasurements(modelId: string): Promise<unknown[]> {
+  const row = await db().modelPerf.get(modelId);
+  return row?.measurements ?? [];
+}

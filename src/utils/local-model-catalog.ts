@@ -91,8 +91,22 @@ function whisperConfigArtifacts(
  * Stage-1 catalog: Whisper Base (light), Small (recommended) and
  * Large v3 Turbo (high precision, WebGPU).
  */
+import { benchmarkLabels } from './benchmark/manifest';
+
+/**
+ * Catalog entries derive their precision/speed labels from the published
+ * benchmark manifest (T8) — the hardcoded guesses are gone. Entries keep
+ * the label fields so consumers (cards, filters) stay shape-compatible.
+ */
+function withBenchmarkLabels<
+  T extends { id: string; precision: LocalModelPrecision; speed: LocalModelSpeed },
+>(entry: T): T {
+  const labels = benchmarkLabels(entry.id);
+  return { ...entry, precision: labels.precision, speed: labels.speed };
+}
+
 export const LOCAL_MODEL_CATALOG: readonly LocalCatalogEntry[] = [
-  {
+  withBenchmarkLabels({
     id: 'whisper-base',
     name: 'Whisper Base',
     family: 'Whisper',
@@ -121,8 +135,8 @@ export const LOCAL_MODEL_CATALOG: readonly LocalCatalogEntry[] = [
     backend: 'wasm-compatible',
     license: 'mit',
     licenseUrl: 'https://huggingface.co/onnx-community/whisper-base',
-  },
-  {
+  }),
+  withBenchmarkLabels({
     id: 'whisper-small',
     name: 'Whisper Small',
     family: 'Whisper',
@@ -151,8 +165,8 @@ export const LOCAL_MODEL_CATALOG: readonly LocalCatalogEntry[] = [
     backend: 'wasm-compatible',
     license: 'mit',
     licenseUrl: 'https://huggingface.co/onnx-community/whisper-small',
-  },
-  {
+  }),
+  withBenchmarkLabels({
     id: 'whisper-large-v3-turbo',
     name: 'Whisper Large v3 Turbo',
     family: 'Whisper',
@@ -181,7 +195,7 @@ export const LOCAL_MODEL_CATALOG: readonly LocalCatalogEntry[] = [
     backend: 'webgpu-required',
     license: 'mit',
     licenseUrl: 'https://huggingface.co/onnx-community/whisper-large-v3-turbo',
-  },
+  }),
 ] as const;
 
 /** Validation issue kinds — each maps to a concrete catalog authoring error. */

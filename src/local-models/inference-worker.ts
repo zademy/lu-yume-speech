@@ -27,10 +27,10 @@ import type { WorkerRequest, WorkerResponse } from './worker-protocol';
 
 // Build-time asset URLs — same origin, hashed by Vite (spec: no CDN egress).
 // Subpaths follow onnxruntime-web's `exports` map (bare, no dist/).
+// Only the asyncify pair is imported: in ORT 1.26-dev it carries both the
+// WASM and the WebGPU glue (`webgpuInit`); the jsep pair no longer does.
 import ortWasmFactoryUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url';
 import ortWasmBinaryUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
-import ortJsepFactoryUrl from 'onnxruntime-web/ort-wasm-simd-threaded.jsep.mjs?url';
-import ortJsepBinaryUrl from 'onnxruntime-web/ort-wasm-simd-threaded.jsep.wasm?url';
 
 /**
  * Dedicated-worker scope, typed without pulling the WebWorker lib into a
@@ -74,16 +74,30 @@ function outputText(output: AsrPipelineOutput): string {
 }
 
 /**
+ * Revision pinned by the current load attempt. Transformers.js's progress
+ * metadata pre-flight (`get_file_metadata`) builds URLs with its own
+ * 'main' default instead of the requested revision — the rewriter below
+ * maps those back onto the pinned artifacts the engine actually cached.
+ */
+let activeRevision: string | null = null;
+
+/**
  * Cache-first fetch: every model file request goes through the download
  * engine's Cache API store. A miss means the browser evicted the artifacts
  * (or the record is stale) — surface a re-download error, never hit the
- * network behind the user's back.
+ * network behind the user's back. `/resolve/main/` URLs from revision-less
+ * internal pre-flights are retried against the active pinned revision.
  */
 async function cacheFirstFetch(input: RequestInfo | URL): Promise<Response> {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
   const cache = await caches.open(LOCAL_MODEL_CACHE_NAME);
   const cached = await cache.match(url);
   if (cached) return cached;
+  if (activeRevision && url.includes('/resolve/main/')) {
+    const pinned = url.replace('/resolve/main/', `/resolve/${activeRevision}/`);
+    const rewritten = await cache.match(pinned);
+    if (rewritten) return rewritten;
+  }
   throw new Error(
     `Artefacto no encontrado en el almacén local (${url}). Vuelve a descargar el modelo.`,
   );
@@ -92,7 +106,9 @@ async function cacheFirstFetch(input: RequestInfo | URL): Promise<Response> {
 /** WASM asset pair per backend (jsep carries the WebGPU JS glue). */
 const WASM_PAIRS: Record<LocalBackend, { mjs: string; wasm: string }> = {
   wasm: { mjs: ortWasmFactoryUrl, wasm: ortWasmBinaryUrl },
-  webgpu: { mjs: ortJsepFactoryUrl, wasm: ortJsepBinaryUrl },
+  // ORT 1.26-dev moved `webgpuInit` into the ASYNCIFY glue — the jsep pair
+  // no longer exports it, so WebGPU sessions must also boot from asyncify.
+  webgpu: { mjs: ortWasmFactoryUrl, wasm: ortWasmBinaryUrl },
 };
 
 let transformers: TransformersModule | null = null;
@@ -121,6 +137,7 @@ function resetPipeline(): void {
   pipelinePromise = null;
   pipelineKey = '';
   pipelineBackend = null;
+  activeRevision = null;
 }
 
 async function createPipeline(
@@ -130,6 +147,7 @@ async function createPipeline(
   onLoading: (note: string) => void,
 ): Promise<AsrPipeline> {
   const module = await loadTransformers();
+  activeRevision = revision;
   // ORT needs the matching wasm pair per backend (jsep = WebGPU glue).
   module.env.backends.onnx.wasm.wasmPaths = WASM_PAIRS[backend];
   return module.pipeline('automatic-speech-recognition', repo, {

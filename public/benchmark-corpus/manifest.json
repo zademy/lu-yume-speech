@@ -1,0 +1,98 @@
+{
+  "corpusVersion": 1,
+  "generator": "scripts/benchmark/generate-corpus.sh (macOS say + ffmpeg)",
+  "limitations": "Speech is macOS-synthesized (es-ES, es-MX, en-US, en-GB, en-AU, en-IN voices): reproducible and accent-varied, but cleaner than spontaneous human speech — treat WER as a lower bound. Noisy clips mix white noise at ≈10 dB SNR. Published labels derive from these numbers; thresholds are documented in src/utils/benchmark/thresholds.ts.",
+  "entries": [
+    {
+      "id": "en-accent-in-short",
+      "language": "en",
+      "condition": "clean",
+      "durationHint": "short",
+      "voice": "Aman",
+      "voiceLocale": "en-IN",
+      "text": "Our team completed the migration ahead of schedule and documented every step.",
+      "file": "en-accent-in-short.wav",
+      "bytes": 134436,
+      "durationSeconds": 4.2,
+      "sha256": "083a90147ad7099fa96eb41d5bf5e25a02fcf90b761c273b62f5355e25586fce"
+    },
+    {
+      "id": "en-clean-long",
+      "language": "en",
+      "condition": "clean",
+      "durationHint": "long",
+      "voice": "Daniel",
+      "voiceLocale": "en-GB",
+      "text": "Before we close the project we need to review three points. First, the delivery calendar moved by two weeks. Second, the client asked for a one page executive summary with total costs. Third, the design team will finish the prototypes on Friday, so Monday's demonstration will use the updated version.",
+      "file": "en-clean-long.wav",
+      "bytes": 604622,
+      "durationSeconds": 18.89,
+      "sha256": "a9138d24e5eee9aadd560a1a93c3bb4b9d1509e206d506102dd50dfd684c4921"
+    },
+    {
+      "id": "en-clean-short",
+      "language": "en",
+      "condition": "clean",
+      "durationHint": "short",
+      "voice": "Samantha",
+      "voiceLocale": "en-US",
+      "text": "The budget meeting starts at nine in the morning. Bring the sales report and next quarter projections.",
+      "file": "en-clean-short.wav",
+      "bytes": 168392,
+      "durationSeconds": 5.26,
+      "sha256": "3e1bad8f2d6017d52fe180c3700df5c6e1b67eec60140450b303cbcac1534d69"
+    },
+    {
+      "id": "en-noisy-short",
+      "language": "en",
+      "condition": "noisy",
+      "durationHint": "short",
+      "voice": "Karen",
+      "voiceLocale": "en-AU",
+      "text": "Please confirm the laboratory reservation for Thursday afternoon's experiment.",
+      "file": "en-noisy-short.wav",
+      "bytes": 140680,
+      "durationSeconds": 4.39,
+      "sha256": "6088e74ccaaf722571cf873f5ce90e0ad42e0e377199c33c46619036937320de"
+    },
+    {
+      "id": "es-clean-long",
+      "language": "es",
+      "condition": "clean",
+      "durationHint": "long",
+      "voice": "Mónica",
+      "voiceLocale": "es-ES",
+      "text": "Antes de cerrar el proyecto necesitamos revisar tres puntos. Primero, el calendario de entrega se movió dos semanas. Segundo, el cliente pidió un resumen ejecutivo de una página con los costos totales. Tercero, el equipo de diseño terminará los prototipos el viernes, así que la demostración del lunes usará la versión actualizada.",
+      "file": "es-clean-long.wav",
+      "bytes": 572862,
+      "durationSeconds": 17.9,
+      "sha256": "63b6b317173a2699c45e73401ca9038caeede95541c39b0855dc9c89116c7e44"
+    },
+    {
+      "id": "es-clean-short",
+      "language": "es",
+      "condition": "clean",
+      "durationHint": "short",
+      "voice": "Paulina",
+      "voiceLocale": "es-MX",
+      "text": "La reunión de presupuesto comienza a las nueve de la mañana. Trae el informe de ventas y las proyecciones del próximo trimestre.",
+      "file": "es-clean-short.wav",
+      "bytes": 251120,
+      "durationSeconds": 7.85,
+      "sha256": "46ee2bba278e56c703d7b6cc30770bc06c934160125e4f90809ed80850d11a2b"
+    },
+    {
+      "id": "es-noisy-short",
+      "language": "es",
+      "condition": "noisy",
+      "durationHint": "short",
+      "voice": "Paulina",
+      "voiceLocale": "es-MX",
+      "text": "Por favor confirma la reserva del laboratorio para el experimento del jueves por la tarde.",
+      "file": "es-noisy-short.wav",
+      "bytes": 168748,
+      "durationSeconds": 5.27,
+      "sha256": "d779c46cecc0f9957dfc82ca680d085b35d5940fbeef56b4d83eecf8c9baac75"
+    }
+  ]
+}

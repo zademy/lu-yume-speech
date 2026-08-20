@@ -53,6 +53,14 @@ import {
   type LocalRecoveryAction,
 } from './local-models/local-errors';
 import { createRecoveryController } from './ui/recovery-panel';
+import {
+  fetchCorpusClip,
+  loadCorpusManifest,
+  runModelDiagnostics,
+} from './local-models/diagnostics';
+import { appendPerfMeasurement, readPerfMeasurements } from './local-models/model-state-store';
+import { representativeMeasurement } from './utils/benchmark/manifest';
+import { planBackends } from './local-models/backend-decision';
 import { buildHistoryEntry } from './utils/history-entry';
 import { LocalWhisperProvider } from './local-models/local-whisper-provider';
 import { decodeAudioTo16kMono } from './local-models/audio-decode';
@@ -768,6 +776,7 @@ async function bootstrap(): Promise<void> {
       refreshCredentialUi();
     },
     canMutate: () => !localInference.running,
+    getPolicy: () => getConfig().localBackend,
     onDelete: async (modelId) => {
       const outcome = await engineRef.engine?.deleteModel(modelId);
       if (!outcome) return { ok: false, reason: 'unknown-model' };
@@ -1380,6 +1389,9 @@ interface LocalCardRefs {
   update: HTMLButtonElement;
   delete: HTMLButtonElement;
   perfClear: HTMLButtonElement;
+  diagnose: HTMLButtonElement;
+  perfExport: HTMLButtonElement;
+  measured: HTMLElement;
   progress: HTMLElement;
   bar: HTMLProgressElement;
   text: HTMLElement;
@@ -1411,6 +1423,8 @@ function wireLocalModelEngine(
     onDelete: (modelId: string) => Promise<{ ok: boolean; reason?: string }>;
     /** False while a local inference runs (blocks switch/delete/update). */
     canMutate: () => boolean;
+    /** Backend policy setting for diagnostics planning ('auto' default). */
+    getPolicy?: () => 'auto' | 'wasm';
   },
 ): { engine: LocalDownloadEngine | null; renderAll: () => void } {
   const artifactStore = createCacheArtifactStore();
@@ -1480,6 +1494,8 @@ function wireLocalModelEngine(
   });
 
   const refsCache = new Map<string, LocalCardRefs>();
+  /** Model id currently running diagnostics, or null (one at a time). */
+  const diagnosing: { current: string | null } = { current: null };
   const refsFor = (modelId: string): LocalCardRefs | null => {
     const cached = refsCache.get(modelId);
     if (cached) return cached;
@@ -1493,11 +1509,17 @@ function wireLocalModelEngine(
     const update = card.querySelector<HTMLButtonElement>(`[data-model-update="${modelId}"]`);
     const del = card.querySelector<HTMLButtonElement>(`[data-model-delete="${modelId}"]`);
     const perfClear = card.querySelector<HTMLButtonElement>(`[data-model-perf-clear="${modelId}"]`);
+    const diagnose = card.querySelector<HTMLButtonElement>(`[data-model-diagnose="${modelId}"]`);
+    const perfExport = card.querySelector<HTMLButtonElement>(
+      `[data-model-perf-export="${modelId}"]`,
+    );
+    const measured = card.querySelector<HTMLElement>(`[data-model-measured="${modelId}"]`);
     const progress = card.querySelector<HTMLElement>(`[data-model-progress="${modelId}"]`);
     const bar = card.querySelector<HTMLProgressElement>(`[data-model-progressbar="${modelId}"]`);
     const text = card.querySelector<HTMLElement>(`[data-model-progresstext="${modelId}"]`);
     if (!chip || !activeBadge || !download || !cancel || !activate || !update || !del) return null;
-    if (!perfClear || !progress || !bar || !text) return null;
+    if (!perfClear || !diagnose || !perfExport || !measured) return null;
+    if (!progress || !bar || !text) return null;
     const refs: LocalCardRefs = {
       chip,
       activeBadge,
@@ -1507,6 +1529,9 @@ function wireLocalModelEngine(
       update,
       delete: del,
       perfClear,
+      diagnose,
+      perfExport,
+      measured,
       progress,
       bar,
       text,
@@ -1559,6 +1584,23 @@ function wireLocalModelEngine(
 
     refs.perfClear.classList.toggle('hidden', state === 'not-downloaded' || busy);
     refs.perfClear.disabled = engineBusy;
+
+    // T8: diagnostics need a downloaded model and a quiet engine; export
+    // needs stored measurements (checked lazily on click). The measured row
+    // shows the PUBLISHED benchmark numbers — never a user estimate.
+    refs.diagnose.classList.toggle('hidden', state !== 'downloaded' || busy);
+    refs.diagnose.disabled = engineBusy || diagnosing.current !== null;
+    refs.perfExport.classList.toggle('hidden', state === 'not-downloaded' || busy);
+    refs.perfExport.disabled = engineBusy || diagnosing.current !== null;
+    const published = representativeMeasurement(modelId);
+    if (published) {
+      refs.measured.textContent = t('localModels.measuredValue', {
+        wer: `${Math.round(published.globalWer * 100)}%`,
+        rtf: published.rtf.toFixed(2),
+        backend: published.backend,
+      });
+      refs.measured.removeAttribute('data-i18n');
+    }
 
     // Stable focus: download start moves focus to Cancel; after cancel it
     // returns to the (re-enabled) Download button.
@@ -1707,6 +1749,84 @@ function wireLocalModelEngine(
         if (!modelId) return;
         void clearLocalPerfData(modelId).then(() => {
           showToast(elements.toastContainer, t('toast.localModel.perfCleared'), 'success');
+        });
+      });
+    }
+
+    // T8 diagnostics: run the versioned corpus through the downloaded
+    // model in a dedicated worker (dictation provider untouched), store the
+    // measurement on-device, and let the user export it manually. No
+    // telemetry — nothing leaves the device by itself.
+    for (const button of elements.root.querySelectorAll<HTMLButtonElement>(
+      '[data-model-diagnose]',
+    )) {
+      button.addEventListener('click', () => {
+        const modelId = button.dataset.modelDiagnose;
+        const entry = LOCAL_MODEL_CATALOG.find((candidate) => candidate.id === modelId);
+        if (!modelId || !entry) return;
+        if (diagnosing.current !== null) return;
+        const record = engine.getRecord(modelId);
+        if (!record || record.state !== 'downloaded') return;
+        const plan = planBackends({
+          policy: deps.getPolicy?.() ?? 'auto',
+          requirement: entry.backend,
+          hasWebgpu: typeof navigator !== 'undefined' && 'gpu' in navigator,
+        });
+        if (!plan.ok) {
+          showToast(elements.toastContainer, t('toast.localModel.diagNoBackend'), 'error');
+          return;
+        }
+        diagnosing.current = modelId;
+        updateCard(modelId);
+        setStatus(elements, { message: t('status.localModel.diagnosing'), level: 'processing' });
+        void (async () => {
+          try {
+            const corpus = await loadCorpusManifest();
+            const run = await runModelDiagnostics(entry, corpus, {
+              backends: plan.backends,
+              fetchClip: (file) => fetchCorpusClip(file),
+              workerFactory: createInferenceWorker,
+              now: () => performance.now(),
+            });
+            if (!run.ok) throw run.error;
+            await appendPerfMeasurement(modelId, run.measurement);
+            setStatus(elements, { message: t('status.localModel.diagnosed'), level: 'success' });
+            showToast(elements.toastContainer, t('toast.localModel.diagnosed'), 'success');
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            setStatus(elements, { message, level: 'error' });
+            showToast(elements.toastContainer, t('toast.localModel.diagFailed'), 'error');
+          } finally {
+            diagnosing.current = null;
+            updateCard(modelId);
+          }
+        })();
+      });
+    }
+
+    // Manual export (no telemetry): download the on-device measurement
+    // history as JSON for bug reports / published manifests.
+    for (const button of elements.root.querySelectorAll<HTMLButtonElement>(
+      '[data-model-perf-export]',
+    )) {
+      button.addEventListener('click', () => {
+        const modelId = button.dataset.modelPerfExport;
+        if (!modelId) return;
+        void readPerfMeasurements(modelId).then((measurements) => {
+          if (measurements.length === 0) {
+            showToast(elements.toastContainer, t('toast.localModel.noPerfData'), 'warning');
+            return;
+          }
+          const blob = new Blob([JSON.stringify({ modelId, measurements }, null, 2)], {
+            type: 'application/json',
+          });
+          const url = URL.createObjectURL(blob);
+          const anchor = document.createElement('a');
+          anchor.href = url;
+          anchor.download = `lu-yume-diagnostico-${modelId}.json`;
+          anchor.click();
+          URL.revokeObjectURL(url);
+          showToast(elements.toastContainer, t('toast.localModel.perfExported'), 'success');
         });
       });
     }

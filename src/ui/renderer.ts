@@ -932,8 +932,9 @@ function renderLocalModelField(): string {
  * One Modelo del catálogo card: metadata plus the download controls driven
  * by the Motor local (T3). Download starts the engine message; Cancel aborts
  * it; progress is exposed as text with bytes and phase on an aria-live
- * region (states are text-first — never color-only) and precision/speed
- * carry the "Estimación" tag until LU YUME's own benchmark replaces them.
+ * region (states are text-first — never color-only). Precision/speed labels
+ * and the Benchmark row derive from the published manifest (T8) — run the
+ * on-device diagnostics to reproduce them on your hardware.
  */
 function renderLocalModelCard(entry: (typeof LOCAL_MODEL_CATALOG)[number]): string {
   return `
@@ -953,7 +954,7 @@ function renderLocalModelCard(entry: (typeof LOCAL_MODEL_CATALOG)[number]): stri
         <div><dt class="text-[var(--color-text-muted)]" data-i18n="localModels.speed"></dt><dd data-i18n="localModels.speed.${entry.speed}"></dd></div>
         <div><dt class="text-[var(--color-text-muted)]" data-i18n="localModels.memory"></dt><dd data-i18n="localModels.memory.${entry.memoryTier}"></dd></div>
         <div><dt class="text-[var(--color-text-muted)]" data-i18n="localModels.backend"></dt><dd data-i18n="localModels.backend.${entry.backend}"></dd></div>
-        <div><dt class="text-[var(--color-text-muted)]" data-i18n="localModels.estimateTag"></dt><dd data-i18n="localModels.estimateValue"></dd></div>
+        <div><dt class="text-[var(--color-text-muted)]" data-i18n="localModels.measuredTag"></dt><dd data-model-measured="${entry.id}" data-i18n="localModels.measuredValue"></dd></div>
         <div><dt class="text-[var(--color-text-muted)]" data-i18n="localModels.license"></dt><dd><a class="underline" href="${entry.licenseUrl}" target="_blank" rel="noopener noreferrer">${entry.license}</a></dd></div>
       </dl>
       <div class="mt-3 flex flex-wrap items-center gap-2">
@@ -962,6 +963,8 @@ function renderLocalModelCard(entry: (typeof LOCAL_MODEL_CATALOG)[number]): stri
         <button type="button" class="secondary-action hidden" data-model-activate="${entry.id}" data-i18n="localModels.activate"></button>
         <button type="button" class="secondary-action hidden" data-model-update="${entry.id}" data-i18n="localModels.update"></button>
         <button type="button" class="secondary-action hidden" data-model-delete="${entry.id}" data-i18n="localModels.delete"></button>
+        <button type="button" class="secondary-action hidden" data-model-diagnose="${entry.id}" data-i18n="localModels.diagnose"></button>
+        <button type="button" class="secondary-action hidden" data-model-perf-export="${entry.id}" data-i18n="localModels.exportPerf"></button>
         <button type="button" class="secondary-action hidden" data-model-perf-clear="${entry.id}" data-i18n="localModels.clearPerf"></button>
       </div>
       <div class="mt-2 hidden" data-model-progress="${entry.id}">
