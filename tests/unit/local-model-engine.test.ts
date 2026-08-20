@@ -678,6 +678,49 @@ describe('LocalDownloadEngine — startup reconciliation (T6)', () => {
     expect(second.getRecord(MODEL.id)).toMatchObject({ state: 'downloaded' });
     expect(h.stateEvents).toEqual([]);
   });
+
+  it('keeps weights and record of a model withdrawn from the catalog (T9)', async () => {
+    const h = createHarness();
+    await h.engine.init();
+    await h.engine.requestDownload(MODEL.id);
+    const urlsBefore = [...h.artifacts.stored.keys()];
+
+    // A future manifest drops MODEL: the engine reconciles only what the
+    // catalog still lists — retired weights and the persisted record are
+    // never touched or deleted, so re-adding the entry restores the model.
+    const retired = new LocalDownloadEngine({
+      catalog: [OTHER],
+      artifacts: h.artifacts,
+      states: h.states,
+      storage: h.storage,
+      bus: h.bus,
+      now: () => 2,
+    });
+    h.stateEvents.length = 0;
+    await retired.init();
+
+    // Not surfaced through this engine's catalog…
+    expect(retired.getRecord(MODEL.id)).toBeNull();
+    // …but the persisted record and every cached artifact survive intact.
+    expect(h.states.records.get(MODEL.id)).toMatchObject({ state: 'downloaded' });
+    expect([...h.artifacts.stored.keys()]).toEqual(urlsBefore);
+    expect(h.stateEvents).toEqual([]);
+    // The retired model can no longer be operated through the engine.
+    const outcome = await retired.requestDownload(MODEL.id);
+    expect(outcome).toEqual({ ok: false, reason: 'unknown-model' });
+
+    // Re-adding the entry to a later manifest rehydrates the record as-is.
+    const restored = new LocalDownloadEngine({
+      catalog: [MODEL, OTHER],
+      artifacts: h.artifacts,
+      states: h.states,
+      storage: h.storage,
+      bus: h.bus,
+      now: () => 3,
+    });
+    await restored.init();
+    expect(restored.getRecord(MODEL.id)).toMatchObject({ state: 'downloaded' });
+  });
 });
 
 describe('LocalDownloadEngine — pre-flight warnings', () => {

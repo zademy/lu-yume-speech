@@ -8,6 +8,7 @@ import {
   type LocalCatalogEntry,
 } from '../../src/utils/local-model-catalog';
 import { translate } from '../../src/i18n/translations';
+import { representativeMeasurement } from '../../src/utils/benchmark/manifest';
 import type { AppLanguage } from '../../src/types';
 
 /** Deep-mutable copy of the shipped catalog for negative-case tests. */
@@ -27,13 +28,69 @@ function pick(entries: LocalCatalogEntry[], index: number): LocalCatalogEntry {
 }
 
 describe('local model catalog', () => {
-  it('ships a versioned stage-1 catalog with exactly Base, Small and Large v3 Turbo', () => {
-    expect(LOCAL_CATALOG_VERSION).toBe(2);
+  it('ships the versioned catalog: stages 1-3 (Base, Small, Turbo, Tiny, Medium, Large v3 + four Lite)', () => {
+    expect(LOCAL_CATALOG_VERSION).toBe(3);
     expect(LOCAL_MODEL_CATALOG.map((e) => e.id)).toEqual([
       'whisper-base',
       'whisper-small',
       'whisper-large-v3-turbo',
+      'whisper-tiny',
+      'whisper-medium',
+      'whisper-large-v3',
+      'whisper-large-v3-turbo-lite-fast',
+      'whisper-large-v3-turbo-lite-accurate',
+      'whisper-large-v3-lite-fast',
+      'whisper-large-v3-lite-accurate',
     ]);
+  });
+
+  it('marks exactly the four Lite entries as experimental', () => {
+    const experimental = LOCAL_MODEL_CATALOG.filter((e) => e.experimental === true).map(
+      (e) => e.id,
+    );
+    expect(experimental).toEqual([
+      'whisper-large-v3-turbo-lite-fast',
+      'whisper-large-v3-turbo-lite-accurate',
+      'whisper-large-v3-lite-fast',
+      'whisper-large-v3-lite-accurate',
+    ]);
+    for (const entry of experimental) {
+      const found = LOCAL_MODEL_CATALOG.find((e) => e.id === entry);
+      expect(found?.license).toBe('apache-2.0');
+    }
+  });
+
+  it('keeps experimental measurements out of published results (benchmarks separate)', () => {
+    // Stage-3 entries ship as estimates until their own measurements land.
+    for (const entry of LOCAL_MODEL_CATALOG) {
+      if (!entry.experimental) continue;
+      expect(representativeMeasurement(entry.id)).toBeNull();
+    }
+  });
+
+  it('assigns tiers and backend requirements per stage-2/3 policy', () => {
+    const byId = new Map(LOCAL_MODEL_CATALOG.map((e) => [e.id, e]));
+    expect(byId.get('whisper-tiny')).toMatchObject({
+      memoryTier: 'light',
+      backend: 'wasm-compatible',
+    });
+    expect(byId.get('whisper-medium')).toMatchObject({
+      memoryTier: 'high',
+      backend: 'wasm-compatible',
+    });
+    // Large v3 (full) requires WebGPU and a very-high tier, like every Lite.
+    expect(byId.get('whisper-large-v3')).toMatchObject({
+      memoryTier: 'very-high',
+      backend: 'webgpu-required',
+    });
+    expect(byId.get('whisper-large-v3-turbo-lite-fast')).toMatchObject({
+      memoryTier: 'high',
+      backend: 'webgpu-required',
+    });
+    expect(byId.get('whisper-large-v3-lite-accurate')).toMatchObject({
+      memoryTier: 'very-high',
+      backend: 'webgpu-required',
+    });
   });
 
   it('passes its own validation', () => {
@@ -62,9 +119,16 @@ describe('local model catalog', () => {
     }
   });
 
-  it('Large v3 Turbo is the only WebGPU-required entry', () => {
+  it('keeps WebGPU-required to the large-v3 family (Turbo, Large v3, Lite)', () => {
     const required = LOCAL_MODEL_CATALOG.filter((e) => e.backend === 'webgpu-required');
-    expect(required.map((e) => e.id)).toEqual(['whisper-large-v3-turbo']);
+    expect(required.map((e) => e.id)).toEqual([
+      'whisper-large-v3-turbo',
+      'whisper-large-v3',
+      'whisper-large-v3-turbo-lite-fast',
+      'whisper-large-v3-turbo-lite-accurate',
+      'whisper-large-v3-lite-fast',
+      'whisper-large-v3-lite-accurate',
+    ]);
   });
 
   describe('validateCatalog', () => {

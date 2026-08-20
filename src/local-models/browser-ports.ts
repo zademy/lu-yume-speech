@@ -55,6 +55,17 @@ export function readDeviceMemoryGb(): number | null {
   return typeof deviceMemory === 'number' && deviceMemory > 0 ? deviceMemory : null;
 }
 
+/**
+ * Coarse mobile detection (T9): the local Motor stays informational on
+ * phones — WebGPU/wasm footprints are not practical there. Trusts the
+ * UA-CH `mobile` flag when present, else the classic mobile UA pattern.
+ */
+export function isMobileDevice(): boolean {
+  const uaData = (navigator as { userAgentData?: { mobile?: boolean } }).userAgentData;
+  if (typeof uaData?.mobile === 'boolean') return uaData.mobile;
+  return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+}
+
 /** `navigator.storage` advisor; every method degrades to null when absent. */
 export function createBrowserStorageAdvisor(): StorageAdvisorPort {
   interface StorageLike {

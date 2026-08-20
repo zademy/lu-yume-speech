@@ -123,13 +123,24 @@ describe('renderApp application shell', () => {
     expect(elements.localReleaseBtn.classList.contains('hidden')).toBe(true);
     expect(elements.localResidentLine.getAttribute('aria-live')).toBe('polite');
 
-    // Stage-1 catalog cards, in catalog order.
+    // Stage 1-3 catalog cards, in catalog order.
     const cards = [...elements.root.querySelectorAll<HTMLElement>('.local-model-card')];
     expect(cards.map((c) => c.dataset.modelId)).toEqual([
       'whisper-base',
       'whisper-small',
       'whisper-large-v3-turbo',
+      'whisper-tiny',
+      'whisper-medium',
+      'whisper-large-v3',
+      'whisper-large-v3-turbo-lite-fast',
+      'whisper-large-v3-turbo-lite-accurate',
+      'whisper-large-v3-lite-fast',
+      'whisper-large-v3-lite-accurate',
     ]);
+
+    // Mobile note (T9) exists but stays hidden on desktop-class contexts.
+    expect(elements.localModelsMobileNote.classList.contains('hidden')).toBe(true);
+    expect(elements.localModelsMobileNote.textContent).toContain('móviles');
 
     // Every card: localized state text (not color-only) keyed for dynamic
     // updates, an enabled Download control, a hidden Cancel and a hidden
@@ -170,6 +181,21 @@ describe('renderApp application shell', () => {
     // Turbo declares its WebGPU requirement in text.
     const turbo = cards[2];
     expect(turbo?.textContent).toContain('Requiere WebGPU');
+
+    // Experimental semantics (T9): ONLY the four Lite cards carry the
+    // visible badge; every card's Benchmark row defaults to the localized
+    // Estimación marker (main.ts swaps in published numbers at runtime).
+    for (const card of cards) {
+      const badge = card.querySelector<HTMLElement>('[data-model-experimental]');
+      const isLite = card.dataset.modelId?.includes('-lite-') ?? false;
+      expect(!!badge).toBe(isLite);
+      if (badge) expect(badge.textContent).toBe('Experimental');
+      const measured = card.querySelector<HTMLElement>('[data-model-measured]');
+      expect(measured?.getAttribute('data-i18n')).toBe('localModels.estimate');
+    }
+    // After translateTree('es'), unmeasured rows read Estimación.
+    expect(cards[3]?.querySelector('[data-model-measured]')?.textContent).toBe('Estimación');
+    expect(cards[0]?.querySelector('[data-model-measured]')?.textContent).toBe('Estimación');
   });
 
   it('renders the Puerta de acceso visible with the shell inert by default', () => {

@@ -258,6 +258,12 @@ const en: Dictionary = {
   'localModels.backend.webgpu-required': 'Requires WebGPU',
   'localModels.measuredTag': 'Benchmark',
   'localModels.measuredValue': 'WER {wer} · RTF {rtf} ({backend})',
+  'localModels.estimate': 'Estimate',
+  'localModels.experimental': 'Experimental',
+  'localModels.confirmExperimental':
+    'This model is experimental: it may be less stable, its benchmark is measured separately, and it can be withdrawn from the catalog in a future version (already-downloaded weights are never deleted). Download it anyway?',
+  'localModels.mobileNote':
+    'Local execution is not supported on mobile — this catalog is informational.',
   'localModels.diagnose': 'Run diagnostics',
   'localModels.exportPerf': 'Export measurements',
   'localModels.license': 'License',
@@ -691,6 +697,12 @@ const es: Dictionary = {
   'localModels.backend.webgpu-required': 'Requiere WebGPU',
   'localModels.measuredTag': 'Benchmark',
   'localModels.measuredValue': 'WER {wer} · RTF {rtf} ({backend})',
+  'localModels.estimate': 'Estimación',
+  'localModels.experimental': 'Experimental',
+  'localModels.confirmExperimental':
+    'Este modelo es experimental: puede ser menos estable, su benchmark se mide por separado y puede retirarse del catálogo en una versión futura (los pesos ya descargados nunca se borran). ¿Descargarlo de todos modos?',
+  'localModels.mobileNote':
+    'La ejecución local no está soportada en móviles; este catálogo es informativo.',
   'localModels.diagnose': 'Ejecutar diagnóstico',
   'localModels.exportPerf': 'Exportar mediciones',
   'localModels.license': 'Licencia',

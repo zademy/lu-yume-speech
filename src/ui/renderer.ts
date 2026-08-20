@@ -106,6 +106,7 @@ export interface AppElements {
   providerSelect: HTMLSelectElement;
   localModelSelect: HTMLSelectElement;
   localModelsDevice: HTMLParagraphElement;
+  localModelsMobileNote: HTMLParagraphElement;
   localBackendSelect: HTMLSelectElement;
   localIdleMinutes: HTMLInputElement;
   localReleaseBtn: HTMLButtonElement;
@@ -256,6 +257,7 @@ export function renderApp(): AppElements {
     providerSelect: getRequiredElement(root, '#providerSelect', HTMLSelectElement),
     localModelSelect: getRequiredElement(root, '#localModelSelect', HTMLSelectElement),
     localModelsDevice: getRequiredElement(root, '#localModelsDevice', HTMLParagraphElement),
+    localModelsMobileNote: getRequiredElement(root, '#localModelsMobileNote', HTMLParagraphElement),
     localBackendSelect: getRequiredElement(root, '#localBackendSelect', HTMLSelectElement),
     localIdleMinutes: getRequiredElement(root, '#localIdleMinutes', HTMLInputElement),
     localReleaseBtn: getRequiredElement(root, '#localReleaseBtn', HTMLButtonElement),
@@ -608,6 +610,7 @@ function renderSettingsView(): string {
             <div><h3 id="localModelsTitle" data-i18n="settings.localModels.title">Local models</h3><p data-i18n="settings.localModels.description"></p></div>
           </div>
           <p id="localModelsDevice" class="text-[11px] text-[var(--color-text-muted)]" aria-live="polite">&nbsp;</p>
+          <p id="localModelsMobileNote" class="mt-1 hidden text-[11px] font-semibold" data-i18n="localModels.mobileNote"></p>
           <div class="mt-2 flex flex-wrap items-end gap-3 text-[11px]">
             <div>
               <label for="localBackendSelect" class="field-label" data-i18n="localModels.backendMode"></label>
@@ -946,6 +949,7 @@ function renderLocalModelCard(entry: (typeof LOCAL_MODEL_CATALOG)[number]): stri
         </div>
         <div class="flex items-center gap-1.5">
           <span class="hidden rounded-full border border-[var(--color-border-strong)] px-2 py-0.5 text-[10.5px] font-semibold" data-model-active-badge="${entry.id}" data-i18n="localModels.activeBadge"></span>
+          ${entry.experimental ? `<span class="rounded-full border border-[var(--color-border-strong)] px-2 py-0.5 text-[10.5px] font-semibold" data-model-experimental="${entry.id}" data-i18n="localModels.experimental"></span>` : ''}
           <span class="local-model-state rounded-full border border-[var(--color-border-subtle)] px-2 py-0.5 text-[10.5px]" data-state="not-downloaded" data-model-state="${entry.id}" data-i18n="localModels.state.notDownloaded"></span>
         </div>
       </div>
@@ -954,7 +958,7 @@ function renderLocalModelCard(entry: (typeof LOCAL_MODEL_CATALOG)[number]): stri
         <div><dt class="text-[var(--color-text-muted)]" data-i18n="localModels.speed"></dt><dd data-i18n="localModels.speed.${entry.speed}"></dd></div>
         <div><dt class="text-[var(--color-text-muted)]" data-i18n="localModels.memory"></dt><dd data-i18n="localModels.memory.${entry.memoryTier}"></dd></div>
         <div><dt class="text-[var(--color-text-muted)]" data-i18n="localModels.backend"></dt><dd data-i18n="localModels.backend.${entry.backend}"></dd></div>
-        <div><dt class="text-[var(--color-text-muted)]" data-i18n="localModels.measuredTag"></dt><dd data-model-measured="${entry.id}" data-i18n="localModels.measuredValue"></dd></div>
+        <div><dt class="text-[var(--color-text-muted)]" data-i18n="localModels.measuredTag"></dt><dd data-model-measured="${entry.id}" data-i18n="localModels.estimate"></dd></div>
         <div><dt class="text-[var(--color-text-muted)]" data-i18n="localModels.license"></dt><dd><a class="underline" href="${entry.licenseUrl}" target="_blank" rel="noopener noreferrer">${entry.license}</a></dd></div>
       </dl>
       <div class="mt-3 flex flex-wrap items-center gap-2">

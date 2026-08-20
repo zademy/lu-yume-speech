@@ -44,6 +44,7 @@ import {
   createCacheArtifactStore,
   createInferenceWorker,
   readDeviceMemoryGb,
+  isMobileDevice,
 } from './local-models/browser-ports';
 import { createCrossTabLock } from './local-models/cross-tab-lock';
 import {
@@ -1440,6 +1441,18 @@ function wireLocalModelEngine(
     return { engine: null, renderAll: () => undefined };
   }
 
+  // Mobile (T9): same informational treatment — the catalog is browsable,
+  // execution is explicitly marked unsupported and downloads never start.
+  if (isMobileDevice()) {
+    elements.localModelsMobileNote.classList.remove('hidden');
+    for (const button of elements.root.querySelectorAll<HTMLButtonElement>(
+      '[data-model-download]',
+    )) {
+      button.disabled = true;
+    }
+    return { engine: null, renderAll: () => undefined };
+  }
+
   const engine = new LocalDownloadEngine({
     catalog: LOCAL_MODEL_CATALOG,
     artifacts: artifactStore,
@@ -1472,7 +1485,11 @@ function wireLocalModelEngine(
     for (const entry of downloaded) {
       const option = document.createElement('option');
       option.value = entry.id;
-      option.textContent = entry.name;
+      // Experimental entries opt in manually — the suffix keeps the choice
+      // explicit; nothing ever selects them automatically.
+      option.textContent = entry.experimental
+        ? `${entry.name} (${t('localModels.experimental')})`
+        : entry.name;
       select.appendChild(option);
     }
     select.disabled = deps.getMethod() !== 'local' || downloaded.length === 0;
@@ -1684,6 +1701,16 @@ function wireLocalModelEngine(
       button.addEventListener('click', () => {
         const modelId = button.dataset.modelDownload;
         if (!modelId) return;
+        // Experimental (stage 3): warn before the FIRST download — declined
+        // means no download at all; resumes of a partial start never re-confirm.
+        const entry = LOCAL_MODEL_CATALOG.find((candidate) => candidate.id === modelId);
+        if (
+          entry?.experimental &&
+          (engine.getRecord(modelId)?.state ?? 'not-downloaded') === 'not-downloaded' &&
+          !window.confirm(t('localModels.confirmExperimental'))
+        ) {
+          return;
+        }
         void engine.requestDownload(modelId).then((outcome) => {
           if (outcome.ok) return;
           if (outcome.reason === 'busy') {
