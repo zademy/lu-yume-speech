@@ -24,26 +24,9 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>LU YUME — Dictado por Voz</title>
 
-    <!-- No-flash dark mode bootstrap: apply class before first paint -->
-    <script>
-      (function () {
-        try {
-          var stored = JSON.parse(localStorage.getItem('stt_theme'));
-          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-          var theme = stored || 'system';
-          var isDark = theme === 'dark' || (theme === 'system' && prefersDark);
-          if (isDark) document.documentElement.classList.add('dark');
-        } catch (e) {}
-      })();
-    </script>
-
-    <!-- Fonts: Inter (body) + JetBrains Mono (code/mono) — preconnect for performance -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
-      rel="stylesheet"
-    />
+    <!-- No-flash dark mode bootstrap: external same-origin file so a strict
+         CSP (script-src 'self') never blocks it -->
+    <script src="/theme-bootstrap.js"></script>
   </head>
   <body class="min-h-screen font-sans antialiased">
     <div id="app"></div>

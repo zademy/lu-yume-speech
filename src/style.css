@@ -4,10 +4,13 @@
  * - Imports Tailwind CSS v4 (build-time, no CDN)
  * - Semantic color tokens (light + dark)
  * - GitHub-inspired monochrome surfaces and layered shadows
- * - Inter font family (loaded via Google Fonts in index.html)
+ * - Inter + JetBrains Mono self-hosted via @fontsource-variable (same-origin,
+ *   no third-party egress — CSP-friendly)
  * - Accessible contrast (WCAG AA+), respects prefers-reduced-motion
  */
 
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/jetbrains-mono';
 @import 'tailwindcss';
 
 /* -----------------------------------------------------------------------
@@ -16,8 +19,8 @@
  * ----------------------------------------------------------------------- */
 
 @theme {
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-sans: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, monospace;
 
   --color-canvas: #f6f8fa;
   --color-surface: #ffffff;

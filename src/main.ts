@@ -1463,8 +1463,13 @@ function wireLocalModelEngine(
     lock: createCrossTabLock(),
   });
 
-  // Expose readiness to the dictation gate as soon as records exist.
-  deps.onReadyStateChange((modelId) => engine.getRecord(modelId)?.state === 'downloaded');
+  // Expose readiness to the dictation gate as soon as records exist. The
+  // closure reads the engine records live, so re-publishing it is a cheap
+  // idempotent way to force the gate to re-evaluate canDictate.
+  const publishReadiness = (): void => {
+    deps.onReadyStateChange((modelId) => engine.getRecord(modelId)?.state === 'downloaded');
+  };
+  publishReadiness();
 
   /**
    * Modelo activo selector refresh: only verified-complete models appear;
@@ -1505,9 +1510,11 @@ function wireLocalModelEngine(
 
   // Method switches (remote ↔ local) re-apply constraints elsewhere; this
   // keeps the selector's options/disabled/value in sync through the bus so
-  // ordering never matters.
+  // ordering never matters. Active-model changes (select or card button)
+  // repaint every card so the single Active badge follows (T10).
   bus.on('settings:change', (patch) => {
     if ('transcriptionMethod' in patch) refreshLocalModelOptions();
+    if ('localModelId' in patch) renderAll();
   });
 
   const refsCache = new Map<string, LocalCardRefs>();
@@ -1658,6 +1665,9 @@ function wireLocalModelEngine(
   bus.on('localModel:state', ({ modelId, state, previous }) => {
     updateCard(modelId);
     refreshLocalModelOptions();
+    // A state transition may flip the active model's readiness — the
+    // dictation gate must re-evaluate right away.
+    publishReadiness();
     if (previous === 'downloaded' && (state === 'partial' || state === 'not-downloaded')) {
       // Reconciliation found lost artifacts — instructions, not a technical
       // error (the browser evicted files under storage pressure).
@@ -1695,6 +1705,10 @@ function wireLocalModelEngine(
   // then attach click handlers so no click can race an uninitialized record.
   void engine.init().then(() => {
     renderAll();
+    // Records are hydrated now. A reload with every model already intact
+    // emits NO state event (reconcile only speaks on loss), so readiness
+    // must be re-published explicitly or the dictation gate stays closed.
+    publishReadiness();
     for (const button of elements.root.querySelectorAll<HTMLButtonElement>(
       '[data-model-download]',
     )) {
@@ -1712,6 +1726,10 @@ function wireLocalModelEngine(
           return;
         }
         void engine.requestDownload(modelId).then((outcome) => {
+          // The state event paints while the engine is still busy (the
+          // download promise resolves after it); repaint so the mutating
+          // controls re-enable (T10).
+          updateCard(modelId);
           if (outcome.ok) return;
           if (outcome.reason === 'busy') {
             showToast(elements.toastContainer, t('toast.localModel.busy'), 'warning');
@@ -1742,6 +1760,7 @@ function wireLocalModelEngine(
         const modelId = button.dataset.modelUpdate;
         if (!modelId || !deps.canMutate()) return;
         void engine.requestUpdate(modelId).then((outcome) => {
+          updateCard(modelId);
           if (outcome.ok) {
             showToast(elements.toastContainer, t('toast.localModel.updated'), 'success');
           } else if (outcome.reason === 'busy-other-tab') {
@@ -1758,6 +1777,7 @@ function wireLocalModelEngine(
         if (!modelId || !deps.canMutate()) return;
         if (!window.confirm(t('localModels.confirmDelete'))) return;
         void deps.onDelete(modelId).then((outcome) => {
+          updateCard(modelId);
           if (outcome.ok) {
             showToast(elements.toastContainer, t('toast.localModel.deleted'), 'success');
           } else if (outcome.reason === 'busy-other-tab') {
