@@ -14,14 +14,14 @@
 import type {
   EventMap,
   OperationMode,
-  TranscriptionApiError,
   TranscriptionError,
   TranscriptionOptions,
   TranscriptionProviderId,
   TranscriptionResult,
 } from '../types';
-import { TranscriptionApiError as ApiError } from '../types';
+import { TranscriptionApiError } from '../types';
 import type { EventBus } from '../core/event-bus';
+import { fail } from '../core/transcription-fail';
 
 /** Parameters for one transcription request, provider-agnostic. */
 export interface TranscriptionRequest extends TranscriptionOptions {
@@ -31,8 +31,11 @@ export interface TranscriptionRequest extends TranscriptionOptions {
 
 /** The seam every transcription backend implements. */
 export interface TranscriptionProvider {
-  /** Stable provider id (matches `AppSettings.transcriptionProvider`). */
-  readonly id: TranscriptionProviderId;
+  /**
+   * Stable provider id: a `TranscriptionProviderId` for remote backends or
+   * `'local'` for the Motor local.
+   */
+  readonly id: TranscriptionProviderId | 'local';
   /**
    * Send audio for transcription/translation. Emits `transcription:start`,
    * then `transcription:success` or `transcription:error` on the bus.
@@ -111,7 +114,7 @@ export async function runTranscriptionFetch(
             : { kind, message: msg };
       throw fail(bus, err);
     } catch (e) {
-      if (e instanceof ApiError) throw e;
+      if (e instanceof TranscriptionApiError) throw e;
       if (e instanceof DOMException && e.name === 'AbortError') {
         if (externalSignal?.aborted) {
           throw fail(bus, { kind: 'network', message: 'Transcripción cancelada.', cause: e });
@@ -127,14 +130,4 @@ export async function runTranscriptionFetch(
 
   // Unreachable — loop either returns or throws
   throw fail(bus, { kind: 'network', message: 'Reintentos agotados.' });
-}
-
-/**
- * Emit the error on the bus and return a `TranscriptionApiError` for the
- * caller to throw.
- */
-export function fail(bus: EventBus<EventMap>, detail: TranscriptionError): TranscriptionApiError {
-  const error = new ApiError(detail);
-  bus.emit('transcription:error', error);
-  return error;
 }

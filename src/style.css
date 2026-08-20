@@ -4,10 +4,13 @@
  * - Imports Tailwind CSS v4 (build-time, no CDN)
  * - Semantic color tokens (light + dark)
  * - GitHub-inspired monochrome surfaces and layered shadows
- * - Inter font family (loaded via Google Fonts in index.html)
+ * - Inter + JetBrains Mono self-hosted via @fontsource-variable (same-origin,
+ *   no third-party egress — CSP-friendly)
  * - Accessible contrast (WCAG AA+), respects prefers-reduced-motion
  */
 
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/jetbrains-mono';
 @import 'tailwindcss';
 
 /* -----------------------------------------------------------------------
@@ -16,8 +19,8 @@
  * ----------------------------------------------------------------------- */
 
 @theme {
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-sans: 'Inter Variable', 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, monospace;
 
   --color-canvas: #f6f8fa;
   --color-surface: #ffffff;
@@ -966,6 +969,28 @@ textarea:disabled {
 ::selection {
   background-color: var(--color-selection);
   color: var(--color-text-primary);
+}
+
+/* -----------------------------------------------------------------------
+ * Local model cards — first-download guidance highlight (spec story 25).
+ * Applied by the Dictar gate CTA: scroll to Ajustes › Modelos locales and
+ * ring the recommended pick for a few seconds. Reduced motion keeps the
+ * static ring (animation only is disabled by the global rule below).
+ * ----------------------------------------------------------------------- */
+.local-model-card.card-guidance-highlight {
+  border-color: var(--color-accent-emphasis, #1f6feb);
+  box-shadow: 0 0 0 3px var(--color-accent-muted, rgba(31, 111, 235, 0.25));
+  animation: card-guidance-pulse 1.2s ease-in-out 3;
+}
+
+@keyframes card-guidance-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px var(--color-accent-muted, rgba(31, 111, 235, 0.25));
+  }
+  50% {
+    box-shadow: 0 0 0 6px var(--color-accent-muted, rgba(31, 111, 235, 0.4));
+  }
 }
 
 /* Reduced motion — respect user preference */

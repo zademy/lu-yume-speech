@@ -93,6 +93,22 @@ describe('WebBridge', () => {
     expect(await bridge.loadSettings()).toEqual(settings);
   });
 
+  it('roundtrips the transcription method selections independently', async () => {
+    const settings = {
+      transcriptionMethod: 'local',
+      transcriptionProvider: 'cloudflare-whisper',
+      localModelId: 'whisper-base',
+    } as never;
+    await bridge.saveSettings(settings);
+    expect(await bridge.loadSettings()).toEqual(settings);
+  });
+
+  it('roundtrips a null active local model', async () => {
+    const settings = { transcriptionMethod: 'remote', localModelId: null } as never;
+    await bridge.saveSettings(settings);
+    expect(await bridge.loadSettings()).toEqual(settings);
+  });
+
   it('uses stt_ prefix via storage utils', () => {
     save('groq_api_key', 'test-value');
     expect(load<string | null>('groq_api_key', null)).toBe('test-value');

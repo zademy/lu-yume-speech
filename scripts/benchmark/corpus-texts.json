@@ -1,0 +1,69 @@
+{
+  "corpusVersion": 1,
+  "limitations": "Speech is macOS-synthesized (es-ES, es-MX, en-US, en-GB, en-AU, en-IN voices): reproducible and accent-varied, but cleaner than spontaneous human speech — treat WER as a lower bound. Noisy clips mix white noise at ≈10 dB SNR. Published labels derive from these numbers; thresholds are documented in src/utils/benchmark/thresholds.ts.",
+  "clips": [
+    {
+      "id": "es-clean-short",
+      "language": "es",
+      "condition": "clean",
+      "durationHint": "short",
+      "voice": "Paulina",
+      "voiceLocale": "es-MX",
+      "text": "La reunión de presupuesto comienza a las nueve de la mañana. Trae el informe de ventas y las proyecciones del próximo trimestre."
+    },
+    {
+      "id": "es-clean-long",
+      "language": "es",
+      "condition": "clean",
+      "durationHint": "long",
+      "voice": "Mónica",
+      "voiceLocale": "es-ES",
+      "text": "Antes de cerrar el proyecto necesitamos revisar tres puntos. Primero, el calendario de entrega se movió dos semanas. Segundo, el cliente pidió un resumen ejecutivo de una página con los costos totales. Tercero, el equipo de diseño terminará los prototipos el viernes, así que la demostración del lunes usará la versión actualizada."
+    },
+    {
+      "id": "es-noisy-short",
+      "language": "es",
+      "condition": "noisy",
+      "durationHint": "short",
+      "voice": "Paulina",
+      "voiceLocale": "es-MX",
+      "text": "Por favor confirma la reserva del laboratorio para el experimento del jueves por la tarde."
+    },
+    {
+      "id": "en-clean-short",
+      "language": "en",
+      "condition": "clean",
+      "durationHint": "short",
+      "voice": "Samantha",
+      "voiceLocale": "en-US",
+      "text": "The budget meeting starts at nine in the morning. Bring the sales report and next quarter projections."
+    },
+    {
+      "id": "en-clean-long",
+      "language": "en",
+      "condition": "clean",
+      "durationHint": "long",
+      "voice": "Daniel",
+      "voiceLocale": "en-GB",
+      "text": "Before we close the project we need to review three points. First, the delivery calendar moved by two weeks. Second, the client asked for a one page executive summary with total costs. Third, the design team will finish the prototypes on Friday, so Monday's demonstration will use the updated version."
+    },
+    {
+      "id": "en-noisy-short",
+      "language": "en",
+      "condition": "noisy",
+      "durationHint": "short",
+      "voice": "Karen",
+      "voiceLocale": "en-AU",
+      "text": "Please confirm the laboratory reservation for Thursday afternoon's experiment."
+    },
+    {
+      "id": "en-accent-in-short",
+      "language": "en",
+      "condition": "clean",
+      "durationHint": "short",
+      "voice": "Aman",
+      "voiceLocale": "en-IN",
+      "text": "Our team completed the migration ahead of schedule and documented every step."
+    }
+  ]
+}

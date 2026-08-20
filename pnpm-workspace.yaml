@@ -1,2 +1,7 @@
 allowBuilds:
   msw: true
+  # Native builds of transformers.js' node-side optional deps are never used
+  # (browser-only app) — explicitly skipped so pnpm stops warning.
+  onnxruntime-node: false
+  protobufjs: false
+  sharp: false

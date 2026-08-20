@@ -70,8 +70,13 @@ export function createHistoryCard(
     meta.appendChild(createBadge(entry.language.toUpperCase(), 'primary'));
   }
 
-  // Model badge
-  const modelLabel = entry.model === 'whisper-large-v3-turbo' ? 'turbo' : 'v3';
+  // Model badge — remote backends show their Whisper variant; local entries
+  // show they came from the Motor local (model/revision detail lands with T7).
+  const modelLabel = entry.localModelId
+    ? 'local'
+    : entry.model === 'whisper-large-v3-turbo'
+      ? 'turbo'
+      : 'v3';
   meta.appendChild(createBadge(modelLabel, 'muted'));
 
   // Provider badge — only non-default providers are surfaced (Groq stays implicit)

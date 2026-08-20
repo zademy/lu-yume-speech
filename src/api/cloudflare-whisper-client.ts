@@ -18,11 +18,11 @@ import type { EventBus } from '../core/event-bus';
 import type { EventMap, TranscriptionResult } from '../types';
 import { CLOUDFLARE_WHISPER_MODEL } from '../types';
 import {
-  fail as sharedFail,
   runTranscriptionFetch,
   type TranscriptionProvider,
   type TranscriptionRequest,
 } from './transcription-provider';
+import { fail as sharedFail } from '../core/transcription-fail';
 import type { TranscriptionError } from '../types';
 
 export class CloudflareWhisperClient implements TranscriptionProvider {

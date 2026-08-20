@@ -10,7 +10,7 @@
  */
 
 import type { TextPostProcessConfig } from './text-postprocess';
-import type { AppSettings } from '../types';
+import type { AppSettings, TranscriptionMethod } from '../types';
 
 /** Groq Whisper enforces a prompt token budget; keep the vocab well under it. */
 const MAX_PROMPT_CHARS = 1024;
@@ -42,4 +42,20 @@ export function toPostProcessConfig(settings: AppSettings): TextPostProcessConfi
     wordCorrectionThreshold: settings.wordCorrectionThreshold,
     customFillerWords: settings.customFillerWords,
   };
+}
+
+/**
+ * Privacy gate for the LLM post-processing pass (spec T7).
+ *
+ * With Método Local nothing leaves the device by default: the pass runs
+ * only when the user explicitly authorized sending the TEXT to Groq via
+ * the explanatory checkbox. Audio never leaves under any setting, and
+ * remote methods keep their plain toggle.
+ */
+export function shouldRunLlmPostProcess(
+  config: Pick<AppSettings, 'enableLlmPostProcess' | 'localLlmAuthorized'>,
+  method: TranscriptionMethod,
+): boolean {
+  if (!config.enableLlmPostProcess) return false;
+  return method !== 'local' || config.localLlmAuthorized;
 }
