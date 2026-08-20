@@ -25,8 +25,46 @@ import type {
   HistoryEntry,
   AppSettings,
   TranscriptionProviderId,
+  TranscriptionMethod,
+  LocalModelState,
+  LocalRecoveryAction,
 } from './types';
-import { CLOUDFLARE_WHISPER_MODEL, DEFAULT_SETTINGS } from './types';
+import { DEFAULT_SETTINGS } from './types';
+import {
+  methodChangePatch,
+  hasActiveLocalModel,
+  resolveCanDictate,
+  remoteKnobsLocked,
+} from './utils/transcription-method';
+import { LOCAL_MODEL_CATALOG, formatDownloadSize } from './utils/local-model-catalog';
+import { detectCapabilities, probeEnvironment } from './utils/local-model-capabilities';
+import { LocalDownloadEngine } from './local-models/download-engine';
+import { clearLocalPerfData, logicalStateStore } from './local-models/model-state-store';
+import {
+  createBrowserStorageAdvisor,
+  createCacheArtifactStore,
+  createInferenceWorker,
+  readDeviceMemoryGb,
+  isMobileDevice,
+} from './local-models/browser-ports';
+import { createCrossTabLock, type CrossTabLockPort } from './local-models/cross-tab-lock';
+import {
+  buildTechnicalReport,
+  classifyLocalFailure,
+  fromTranscriptionError,
+} from './local-models/local-errors';
+import { createRecoveryController } from './ui/recovery-panel';
+import {
+  fetchCorpusClip,
+  loadCorpusManifest,
+  runModelDiagnostics,
+} from './local-models/diagnostics';
+import { appendPerfMeasurement, readPerfMeasurements } from './local-models/model-state-store';
+import { representativeMeasurement } from './utils/benchmark/manifest';
+import { planBackends } from './local-models/backend-decision';
+import { buildHistoryEntry } from './utils/history-entry';
+import { LocalWhisperProvider } from './local-models/local-whisper-provider';
+import { decodeAudioTo16kMono } from './local-models/audio-decode';
 
 import { Recorder } from './audio/recorder';
 import { AudioAnalyzer } from './audio/audio-analyzer';
@@ -59,7 +97,11 @@ import { renderSummaryHistory, summaryToText } from './ui/summary-panel';
 import { ThemeManager } from './utils/theme';
 import { createSidebar, populateEntries } from './ui/sidebar';
 import { calculateHistoryStats } from './utils/history-stats';
-import { buildPrompt, toPostProcessConfig } from './utils/transcription-config';
+import {
+  buildPrompt,
+  shouldRunLlmPostProcess,
+  toPostProcessConfig,
+} from './utils/transcription-config';
 import { postProcessText } from './utils/text-postprocess';
 
 import { registerKeyboardShortcuts } from './utils/keyboard';
@@ -151,11 +193,22 @@ async function bootstrap(): Promise<void> {
   } else if (config.transcriptionProvider === 'groq' && !apiKey && workerToken) {
     config.transcriptionProvider = 'cloudflare-whisper';
   }
-  /** True when the ACTIVE provider has its credential configured. */
+  /** True when the active method allows dictation (see resolveCanDictate). */
+  // The Motor local readiness is decided by the download engine's records
+  // (hydrated after engine.init); until then no local model is ready.
+  const localEngineState: { ready: (modelId: string) => boolean } = {
+    ready: () => false,
+  };
   const canDictate = (): boolean =>
-    config.transcriptionProvider === 'cloudflare-whisper'
-      ? workerToken.length > 0
-      : apiKey.length > 0;
+    resolveCanDictate({
+      method: config.transcriptionMethod,
+      remoteCredentialOk:
+        config.transcriptionProvider === 'cloudflare-whisper'
+          ? workerToken.length > 0
+          : apiKey.length > 0,
+      localModelReady:
+        hasActiveLocalModel(config) && localEngineState.ready(config.localModelId as string),
+    });
   const getConfig = (): AppSettings => config;
   const setConfig = (next: AppSettings): void => {
     config = next;
@@ -166,6 +219,7 @@ async function bootstrap(): Promise<void> {
   activeLang = config.appLanguage;
 
   const elements = renderApp();
+  elements.methodSelect.value = config.transcriptionMethod;
   elements.providerSelect.value = config.transcriptionProvider;
   elements.workerBaseUrlInput.value = config.workerBaseUrl;
   translateTree(elements.root, config.appLanguage);
@@ -280,6 +334,13 @@ async function bootstrap(): Promise<void> {
   const dictationController = createDictationController({
     bus,
     startRecorder: async () => {
+      // Gate Pluma dictation the same way the Dictar view is gated — a
+      // blocked method must record nothing rather than silently transcribe
+      // through a remote provider.
+      if (!canDictate()) {
+        showToast(elements.toastContainer, t('toast.needLocalModel'), 'warning');
+        return;
+      }
       await ensureAudioReady();
       recorder.start();
     },
@@ -449,8 +510,34 @@ async function bootstrap(): Promise<void> {
     groq: groqClient,
     'cloudflare-whisper': workerClient,
   };
-  const getActiveTranscriptionClient = (): TranscriptionProvider =>
-    transcriptionClients[config.transcriptionProvider];
+  // Motor local (T4): third provider behind the same seam. Reads the active
+  // model + its download-engine record lazily; the worker (and therefore
+  // Transformers.js) only spawns on the first local transcription.
+  // `localModelsCaps` is hydrated by probeEnvironment below; until then no
+  // WebGPU is assumed (models requiring it fail honestly at transcribe time).
+  let localModelsCaps: ReturnType<typeof detectCapabilities> | null = null;
+  // One lock instance shared by the download engine and the provider so
+  // inference, downloads, deletes and updates serialize across tabs.
+  const localWorkLock = createCrossTabLock();
+  const localClient = new LocalWhisperProvider({
+    bus,
+    catalog: LOCAL_MODEL_CATALOG,
+    getActiveModelId: () => config.localModelId,
+    isModelReady: (modelId: string) => localEngineState.ready(modelId),
+    hasWebgpu: () => localModelsCaps?.webgpu === true,
+    getBackendPolicy: () => config.localBackend,
+    getDeviceMemoryGb: () => readDeviceMemoryGb(),
+    workerFactory: createInferenceWorker,
+    decoder: decodeAudioTo16kMono,
+    lock: localWorkLock,
+  });
+  const getActiveTranscriptionClient = (): TranscriptionProvider => {
+    // Local never silently falls back to a remote provider — canDictate
+    // gates the UI and this branch returns the local engine (which itself
+    // fails loudly when the model is missing or incomplete).
+    if (config.transcriptionMethod === 'local') return localClient;
+    return transcriptionClients[config.transcriptionProvider];
+  };
   const visualizer = new WaveformVisualizer(
     elements.waveformCanvas,
     resolveWaveformStyle(elements.waveformCanvas),
@@ -531,12 +618,37 @@ async function bootstrap(): Promise<void> {
       }
     },
   );
-  // Credential + provider wiring: badges, gates, and the provider selector.
+  // Credential + provider wiring: badges, gates, and the method/provider selectors.
   const refreshCredentialUi = (): void => {
+    const localBlocked = config.transcriptionMethod === 'local' && !hasActiveLocalModel(config);
     updateApiKeyState(elements, apiKey, canDictate());
     updateWorkerTokenState(elements, workerToken);
-    applyProviderConstraints(elements, config.transcriptionProvider, workerToken.length > 0);
+    // Under a blocked local method the key gate is irrelevant — the local
+    // model gate below owns the Dictar view instead.
+    if (localBlocked) elements.dictationKeyGate.hidden = true;
+    elements.dictationLocalGate.hidden = !localBlocked;
+    applyMethodConstraints(
+      elements,
+      config.transcriptionMethod,
+      config.transcriptionProvider,
+      workerToken.length > 0,
+    );
+    updateLocalLlmAuthVisibility();
   };
+
+  /**
+   * The explicit text-egress authorization for the LLM pass is only
+   * relevant (and only shown) with Método Local AND the pass enabled —
+   * remote methods never gate the pass behind it.
+   */
+  const updateLocalLlmAuthVisibility = (): void => {
+    elements.localLlmAuthRow.classList.toggle(
+      'hidden',
+      !(getConfig().transcriptionMethod === 'local' && elements.llmToggle.checked),
+    );
+  };
+  elements.llmToggle.addEventListener('change', updateLocalLlmAuthVisibility);
+  updateLocalLlmAuthVisibility();
   /** Switch the active transcription provider and persist the choice. */
   const switchProvider = (provider: TranscriptionProviderId): void => {
     const patch: Partial<AppSettings> = { transcriptionProvider: provider };
@@ -546,6 +658,20 @@ async function bootstrap(): Promise<void> {
     bus.emit('settings:change', patch);
     refreshCredentialUi();
   };
+  /**
+   * Switch the Método de transcripción and persist the choice.
+   * The patch carries ONLY the method — the last Proveedor remoto and the
+   * last Modelo activo persist independently.
+   */
+  const switchMethod = (method: TranscriptionMethod): void => {
+    const patch = methodChangePatch(method);
+    const next: AppSettings = { ...getConfig(), ...patch };
+    setConfig(next);
+    void platform.saveSettings(next);
+    bus.emit('settings:change', patch);
+    refreshCredentialUi();
+  };
+  wireMethodSelect(elements, () => config.transcriptionMethod, switchMethod);
   wireProviderSelect(elements, () => config.transcriptionProvider, switchProvider);
   wireApiKeySettings(
     elements,
@@ -553,8 +679,15 @@ async function bootstrap(): Promise<void> {
     () => apiKey,
     (next) => {
       apiKey = next;
-      // Deleting the active Groq key with a worker token available: auto-switch.
-      if (!next && config.transcriptionProvider === 'groq' && workerToken) {
+      // Deleting the active Groq key with a worker token available:
+      // auto-switch — only under the remote method (under local the provider
+      // selection is parked and must not be mutated).
+      if (
+        !next &&
+        config.transcriptionMethod === 'remote' &&
+        config.transcriptionProvider === 'groq' &&
+        workerToken
+      ) {
         switchProvider('cloudflare-whisper');
         return;
       }
@@ -570,8 +703,14 @@ async function bootstrap(): Promise<void> {
     () => workerToken,
     (next) => {
       workerToken = next;
-      // Deleting the active worker token with a Groq key available: auto-switch.
-      if (!next && config.transcriptionProvider === 'cloudflare-whisper' && apiKey) {
+      // Deleting the active worker token with a Groq key available:
+      // auto-switch — only under the remote method (see wireApiKeySettings).
+      if (
+        !next &&
+        config.transcriptionMethod === 'remote' &&
+        config.transcriptionProvider === 'cloudflare-whisper' &&
+        apiKey
+      ) {
         switchProvider('groq');
         return;
       }
@@ -583,6 +722,215 @@ async function bootstrap(): Promise<void> {
   wireGate(elements, platform, bus);
   wireGatePhraseSettings(elements, platform);
 
+  // Device summary for Ajustes › Modelos locales — async, best-effort, and
+  // re-rendered on language change so it never stays in a stale language.
+  // (localModelsCaps itself is declared next to the local provider above.)
+  const renderLocalModelsDevice = (): void => {
+    if (!localModelsCaps) return;
+    const caps = localModelsCaps;
+    const backend = t(`localModels.device.${caps.backendKey}`);
+    if (caps.storageQuotaBytes === null || !caps.localInferenceSupported) {
+      elements.localModelsDevice.textContent = backend;
+      return;
+    }
+    const usage = formatDownloadSize(caps.storageUsageBytes ?? 0);
+    const quota = formatDownloadSize(caps.storageQuotaBytes);
+    elements.localModelsDevice.textContent = `${backend} · ${t('localModels.device.storage')}: ${usage} / ${quota}`;
+  };
+  probeEnvironment()
+    .then((probe) => {
+      localModelsCaps = detectCapabilities(probe);
+      renderLocalModelsDevice();
+    })
+    .catch(() => {
+      // Capability probing is decorative here — silence leaves the line blank.
+    });
+
+  // Local-inference flight tracking: switch/delete/update are blocked while
+  // a local transcription runs (spec story 23) — read off the existing bus
+  // events, no new coupling.
+  const localInference: { running: boolean } = { running: false };
+  bus.on('transcription:start', () => {
+    if (getConfig().transcriptionMethod === 'local') localInference.running = true;
+  });
+  const markInferenceDone = (): void => {
+    localInference.running = false;
+  };
+  bus.on('transcription:success', markInferenceDone);
+  bus.on('transcription:error', markInferenceDone);
+
+  // Motor local (T3+T4+T6): download engine behind the Local models cards
+  // plus the Modelo activo selector and the full lifecycle actions. Fully
+  // independent of the transcription pipeline — downloads while transcribing
+  // with Groq/Cloudflare are allowed by design.
+  // The delete dep needs the engine the wiring is about to create — a small
+  // holder breaks the circle (populated right after, used only on clicks).
+  const engineRef: { engine: LocalDownloadEngine | null } = { engine: null };
+  const localModels = wireLocalModelEngine(bus, elements, {
+    getActiveModelId: () => config.localModelId,
+    getMethod: () => config.transcriptionMethod,
+    onActiveModelChange: (modelId) => {
+      const next = { ...getConfig(), localModelId: modelId };
+      setConfig(next);
+      void platform.saveSettings(next);
+      bus.emit('settings:change', { localModelId: modelId });
+      refreshCredentialUi();
+    },
+    onReadyStateChange: (ready) => {
+      localEngineState.ready = ready;
+      refreshCredentialUi();
+    },
+    canMutate: () => !localInference.running,
+    lock: localWorkLock,
+    getPolicy: () => getConfig().localBackend,
+    onDelete: async (modelId) => {
+      const outcome = await engineRef.engine?.deleteModel(modelId);
+      if (!outcome) return { ok: false, reason: 'unknown-model' };
+      if (!outcome.ok) return outcome;
+      // Deleting the Modelo activo leaves Local with NO active model —
+      // never auto-switching to another model or a remote provider.
+      if (getConfig().localModelId === modelId) {
+        localClient.release();
+        const next = { ...getConfig(), localModelId: null };
+        setConfig(next);
+        await platform.saveSettings(next);
+        bus.emit('settings:change', { localModelId: null });
+        refreshCredentialUi();
+      }
+      return outcome;
+    },
+  });
+  engineRef.engine = localModels.engine;
+
+  // Motor local advanced controls (T5): backend policy, idle release,
+  // resident-model line and manual memory release.
+  const renderLocalResident = (): void => {
+    const resident = localClient.getResident();
+    if (!resident) {
+      elements.localResidentLine.textContent = t('localModels.resident.none');
+      elements.localReleaseBtn.classList.add('hidden');
+      return;
+    }
+    const entry = LOCAL_MODEL_CATALOG.find((candidate) => candidate.id === resident.modelId);
+    elements.localResidentLine.textContent = t('localModels.resident', {
+      name: entry?.name ?? resident.modelId,
+      backend: t(`localModels.backendName.${resident.backend}`),
+    });
+    elements.localReleaseBtn.classList.remove('hidden');
+  };
+  bus.on('localModel:memory', renderLocalResident);
+
+  const persistLocalSetting = (patch: Partial<AppSettings>): void => {
+    const next = { ...getConfig(), ...patch };
+    setConfig(next);
+    void platform.saveSettings(next);
+    bus.emit('settings:change', patch);
+  };
+  elements.localBackendSelect.value = config.localBackend;
+  elements.localBackendSelect.addEventListener('change', () => {
+    persistLocalSetting({
+      localBackend: elements.localBackendSelect.value as 'auto' | 'wasm',
+    });
+    showToast(elements.toastContainer, t('toast.localModel.backendMode'), 'info');
+  });
+  elements.localIdleMinutes.value = String(config.localIdleReleaseMinutes);
+  elements.localIdleMinutes.addEventListener('change', () => {
+    const minutes = Math.max(0, Math.floor(Number(elements.localIdleMinutes.value) || 0));
+    elements.localIdleMinutes.value = String(minutes);
+    persistLocalSetting({ localIdleReleaseMinutes: minutes });
+  });
+  elements.localReleaseBtn.addEventListener('click', () => {
+    localClient.release();
+    showToast(elements.toastContainer, t('toast.localModel.released'), 'success');
+  });
+  renderLocalResident();
+
+  // Idle release: the resident model frees after configurable minutes with
+  // no user interaction (download kept; the model reloads on next use).
+  let lastUserActivity = Date.now();
+  const onUserActivity = (): void => {
+    lastUserActivity = Date.now();
+  };
+  window.addEventListener('pointerdown', onUserActivity, { passive: true });
+  window.addEventListener('keydown', onUserActivity);
+  const idleTimer = window.setInterval(() => {
+    const minutes = getConfig().localIdleReleaseMinutes;
+    if (minutes <= 0 || !localClient.getResident()) return;
+    if (Date.now() - lastUserActivity >= minutes * 60_000) {
+      localClient.release();
+      setStatus(elements, { message: t('status.localModel.idleReleased'), level: 'idle' });
+    }
+  }, 30_000);
+
+  // Recovery panel (T7): local failures keep the recording and offer ONLY
+  // manual actions. Retry re-enters the pipeline with the kept blob; every
+  // explicit remote choice persists the switch first (the click IS the
+  // authorization to send), then retries — nothing is ever auto-sent.
+  const retryRunner: { run: ((blob: Blob) => void) | null } = { run: null };
+  const applyRecoveryAction = (action: LocalRecoveryAction, kept: { blob: Blob }): void => {
+    switch (action) {
+      case 'retry':
+        retryRunner.run?.(kept.blob);
+        break;
+      case 'smaller-model':
+      case 're-download':
+      case 'free-space':
+        navigate('settings');
+        showToast(elements.toastContainer, t(`recovery.hint.${action}`), 'info');
+        break;
+      case 'switch-backend': {
+        if (getConfig().localBackend === 'auto') {
+          const patch = { localBackend: 'wasm' as const };
+          const next = { ...getConfig(), ...patch };
+          setConfig(next);
+          void platform.saveSettings(next);
+          bus.emit('settings:change', patch);
+          elements.localBackendSelect.value = 'wasm';
+          showToast(elements.toastContainer, t('recovery.hint.switch-backend'), 'info');
+        }
+        retryRunner.run?.(kept.blob);
+        break;
+      }
+      case 'remote-groq':
+      case 'remote-cloudflare': {
+        const provider =
+          action === 'remote-groq' ? ('groq' as const) : ('cloudflare-whisper' as const);
+        const patch =
+          getConfig().transcriptionProvider === provider
+            ? { transcriptionMethod: 'remote' as const }
+            : { transcriptionMethod: 'remote' as const, transcriptionProvider: provider };
+        const next = { ...getConfig(), ...patch };
+        setConfig(next);
+        void platform.saveSettings(next);
+        bus.emit('settings:change', patch);
+        elements.methodSelect.value = 'remote';
+        elements.providerSelect.value = provider;
+        refreshCredentialUi();
+        retryRunner.run?.(kept.blob);
+        break;
+      }
+      case 'update-browser':
+      case 'wait-other-tab':
+        showToast(elements.toastContainer, t(`recovery.hint.${action}`), 'info');
+        break;
+    }
+  };
+  const recovery = createRecoveryController(
+    {
+      root: elements.localRecovery,
+      message: elements.localRecoveryMessage,
+      actions: elements.localRecoveryActions,
+      detail: elements.localRecoveryDetail,
+      copy: elements.localRecoveryCopy,
+      dismiss: elements.localRecoveryDismiss,
+    },
+    {
+      lang: () => getConfig().appLanguage,
+      onAction: applyRecoveryAction,
+      copyText: copyToClipboard,
+    },
+  );
+
   wireTranscriptionPipeline(
     bus,
     getActiveTranscriptionClient,
@@ -591,7 +939,10 @@ async function bootstrap(): Promise<void> {
     getApiKey,
     renderHistory,
     () => dictationTarget.current,
+    recovery,
+    retryRunner,
   );
+
   wireRecordingHandlers(
     bus,
     elements,
@@ -613,6 +964,9 @@ async function bootstrap(): Promise<void> {
     await platform.saveSettings(next);
     bus.emit('settings:change', { appLanguage: lang });
     translateTree(elements.root, lang);
+    renderLocalModelsDevice();
+    renderLocalResident();
+    localModels.renderAll();
     metricsPanel.setLanguage(lang);
     plumaPanel.setLanguage(lang);
     sidebar._lang = lang;
@@ -629,11 +983,13 @@ async function bootstrap(): Promise<void> {
         navigate('settings');
         showToast(
           elements.toastContainer,
-          t(
-            config.transcriptionProvider === 'cloudflare-whisper'
-              ? 'toast.needWorkerToken'
-              : 'toast.needApiKey',
-          ),
+          config.transcriptionMethod === 'local'
+            ? t('toast.needLocalModel')
+            : t(
+                config.transcriptionProvider === 'cloudflare-whisper'
+                  ? 'toast.needWorkerToken'
+                  : 'toast.needApiKey',
+              ),
           'warning',
         );
         return;
@@ -651,6 +1007,9 @@ async function bootstrap(): Promise<void> {
 
   window.addEventListener('unload', () => {
     cleanup();
+    window.clearInterval(idleTimer);
+    window.removeEventListener('pointerdown', onUserActivity);
+    window.removeEventListener('keydown', onUserActivity);
     resizeObserver?.disconnect();
     if (onResize) window.removeEventListener('resize', onResize);
     visualizer.stop();
@@ -746,6 +1105,22 @@ function wireNavigation(
     });
   });
   elements.dictationKeyGateButton.addEventListener('click', () => navigate('settings'));
+  // First-local guidance (spec story 25): land on Ajustes › Modelos locales
+  // and ring the recommended pick — Whisper Small carries the Recomendado
+  // chip, Whisper Base the "modest hardware" hint on its own card.
+  elements.dictationLocalGateButton.addEventListener('click', () => {
+    navigate('settings');
+    window.requestAnimationFrame(() => {
+      document.getElementById('localModelsTitle')?.scrollIntoView({ block: 'start' });
+      const recommended = LOCAL_MODEL_CATALOG.find((entry) => entry.recommended);
+      const card = recommended
+        ? elements.root.querySelector(`[data-model-id="${recommended.id}"]`)
+        : null;
+      if (!card) return;
+      card.classList.add('card-guidance-highlight');
+      window.setTimeout(() => card.classList.remove('card-guidance-highlight'), 4500);
+    });
+  });
   elements.mobileMenuButton.addEventListener('click', () => {
     const open = elements.navigation.dataset.open !== 'true';
     elements.navigation.dataset.open = String(open);
@@ -1011,6 +1386,524 @@ function gateErrorMessages(): Partial<Record<GateError, string>> {
   };
 }
 
+// ===========================================================================
+// Motor local — download engine (T3)
+// ===========================================================================
+
+/** i18n suffix per logical state ('not-downloaded' → 'notDownloaded', …). */
+const LOCAL_STATE_I18N_KEY: Record<LocalModelState, string> = {
+  'not-downloaded': 'notDownloaded',
+  downloading: 'downloading',
+  preparing: 'preparing',
+  downloaded: 'downloaded',
+  partial: 'partial',
+  error: 'error',
+};
+
+/** Cached DOM handles for one Modelo del catálogo card. */
+interface LocalCardRefs {
+  chip: HTMLElement;
+  activeBadge: HTMLElement;
+  download: HTMLButtonElement;
+  cancel: HTMLButtonElement;
+  activate: HTMLButtonElement;
+  update: HTMLButtonElement;
+  delete: HTMLButtonElement;
+  perfClear: HTMLButtonElement;
+  diagnose: HTMLButtonElement;
+  perfExport: HTMLButtonElement;
+  measured: HTMLElement;
+  progress: HTMLElement;
+  bar: HTMLProgressElement;
+  text: HTMLElement;
+}
+
+/**
+ * Wires the Motor local download engine to the Local models cards: one
+ * download at a time, progress (percent + bytes + phase) on an aria-live
+ * region, cancellation → Descarga parcial, advisory warnings as toasts.
+ * Also owns the Modelo activo slice: downloaded models populate the
+ * Ajustes selector and selecting one persists `localModelId` through the
+ * caller's change callback (never auto-switching anything else).
+ *
+ * Downloads are deliberately independent of the transcription pipeline —
+ * a download while transcribing with Groq/Cloudflare is allowed by design.
+ *
+ * @returns `renderAll()` — re-renders every card's dynamic texts (called on
+ * language change); the engine instance for later lifecycle tickets.
+ */
+function wireLocalModelEngine(
+  bus: EventBus<EventMap>,
+  elements: AppElements,
+  deps: {
+    getActiveModelId: () => string | null;
+    onActiveModelChange: (modelId: string | null) => void;
+    onReadyStateChange: (ready: (modelId: string) => boolean) => void;
+    getMethod: () => TranscriptionMethod;
+    /** Delete via the engine (returns its outcome for toasts). */
+    onDelete: (modelId: string) => Promise<{ ok: boolean; reason?: string }>;
+    /** False while a local inference runs (blocks switch/delete/update). */
+    canMutate: () => boolean;
+    /** Backend policy setting for diagnostics planning ('auto' default). */
+    getPolicy?: () => 'auto' | 'wasm';
+    /** Shared cross-tab lock (same instance the provider holds, story 44). */
+    lock?: CrossTabLockPort;
+  },
+): { engine: LocalDownloadEngine | null; renderAll: () => void } {
+  const artifactStore = createCacheArtifactStore();
+
+  // No Cache Storage (insecure context / old browser): the section stays
+  // informational — download controls remain disabled, nothing is wired.
+  if (!artifactStore) {
+    for (const button of elements.root.querySelectorAll<HTMLButtonElement>(
+      '[data-model-download]',
+    )) {
+      button.disabled = true;
+    }
+    return { engine: null, renderAll: () => undefined };
+  }
+
+  // Mobile (T9): same informational treatment — the catalog is browsable,
+  // execution is explicitly marked unsupported and downloads never start.
+  if (isMobileDevice()) {
+    elements.localModelsMobileNote.classList.remove('hidden');
+    for (const button of elements.root.querySelectorAll<HTMLButtonElement>(
+      '[data-model-download]',
+    )) {
+      button.disabled = true;
+    }
+    return { engine: null, renderAll: () => undefined };
+  }
+
+  const engine = new LocalDownloadEngine({
+    catalog: LOCAL_MODEL_CATALOG,
+    artifacts: artifactStore,
+    states: logicalStateStore,
+    storage: createBrowserStorageAdvisor(),
+    bus,
+    deviceMemoryGb: readDeviceMemoryGb(),
+    lock: deps.lock ?? createCrossTabLock(),
+  });
+
+  // Expose readiness to the dictation gate as soon as records exist. The
+  // closure reads the engine records live, so re-publishing it is a cheap
+  // idempotent way to force the gate to re-evaluate canDictate.
+  const publishReadiness = (): void => {
+    deps.onReadyStateChange((modelId) => engine.getRecord(modelId)?.state === 'downloaded');
+  };
+  publishReadiness();
+
+  /**
+   * Modelo activo selector refresh: only verified-complete models appear;
+   * the persisted selection survives while still downloaded. Under remote
+   * the select is disabled anyway (applyMethodConstraints).
+   */
+  const refreshLocalModelOptions = (): void => {
+    const downloaded = LOCAL_MODEL_CATALOG.filter(
+      (entry) => engine.getRecord(entry.id)?.state === 'downloaded',
+    );
+    const activeId = deps.getActiveModelId();
+    const select = elements.localModelSelect;
+    select.replaceChildren();
+    const noneOption = document.createElement('option');
+    noneOption.value = 'none';
+    noneOption.textContent = t('localModel.none');
+    select.appendChild(noneOption);
+    for (const entry of downloaded) {
+      const option = document.createElement('option');
+      option.value = entry.id;
+      // Experimental entries opt in manually — the suffix keeps the choice
+      // explicit; nothing ever selects them automatically.
+      option.textContent = entry.experimental
+        ? `${entry.name} (${t('localModels.experimental')})`
+        : entry.name;
+      select.appendChild(option);
+    }
+    select.disabled = deps.getMethod() !== 'local' || downloaded.length === 0;
+    select.value =
+      activeId && downloaded.some((entry) => entry.id === activeId) ? activeId : 'none';
+  };
+
+  elements.localModelSelect.addEventListener('change', () => {
+    const value = elements.localModelSelect.value;
+    const next = value === 'none' ? null : value;
+    if (next !== deps.getActiveModelId()) deps.onActiveModelChange(next);
+  });
+
+  // Method switches (remote ↔ local) re-apply constraints elsewhere; this
+  // keeps the selector's options/disabled/value in sync through the bus so
+  // ordering never matters. Active-model changes (select or card button)
+  // repaint every card so the single Active badge follows (T10).
+  bus.on('settings:change', (patch) => {
+    if ('transcriptionMethod' in patch) refreshLocalModelOptions();
+    if ('localModelId' in patch) renderAll();
+  });
+
+  const refsCache = new Map<string, LocalCardRefs>();
+  /** Model id currently running diagnostics, or null (one at a time). */
+  const diagnosing: { current: string | null } = { current: null };
+  const refsFor = (modelId: string): LocalCardRefs | null => {
+    const cached = refsCache.get(modelId);
+    if (cached) return cached;
+    const card = elements.root.querySelector(`[data-model-id="${modelId}"]`);
+    if (!card) return null;
+    const chip = card.querySelector<HTMLElement>(`[data-model-state="${modelId}"]`);
+    const activeBadge = card.querySelector<HTMLElement>(`[data-model-active-badge="${modelId}"]`);
+    const download = card.querySelector<HTMLButtonElement>(`[data-model-download="${modelId}"]`);
+    const cancel = card.querySelector<HTMLButtonElement>(`[data-model-cancel="${modelId}"]`);
+    const activate = card.querySelector<HTMLButtonElement>(`[data-model-activate="${modelId}"]`);
+    const update = card.querySelector<HTMLButtonElement>(`[data-model-update="${modelId}"]`);
+    const del = card.querySelector<HTMLButtonElement>(`[data-model-delete="${modelId}"]`);
+    const perfClear = card.querySelector<HTMLButtonElement>(`[data-model-perf-clear="${modelId}"]`);
+    const diagnose = card.querySelector<HTMLButtonElement>(`[data-model-diagnose="${modelId}"]`);
+    const perfExport = card.querySelector<HTMLButtonElement>(
+      `[data-model-perf-export="${modelId}"]`,
+    );
+    const measured = card.querySelector<HTMLElement>(`[data-model-measured="${modelId}"]`);
+    const progress = card.querySelector<HTMLElement>(`[data-model-progress="${modelId}"]`);
+    const bar = card.querySelector<HTMLProgressElement>(`[data-model-progressbar="${modelId}"]`);
+    const text = card.querySelector<HTMLElement>(`[data-model-progresstext="${modelId}"]`);
+    if (!chip || !activeBadge || !download || !cancel || !activate || !update || !del) return null;
+    if (!perfClear || !diagnose || !perfExport || !measured) return null;
+    if (!progress || !bar || !text) return null;
+    const refs: LocalCardRefs = {
+      chip,
+      activeBadge,
+      download,
+      cancel,
+      activate,
+      update,
+      delete: del,
+      perfClear,
+      diagnose,
+      perfExport,
+      measured,
+      progress,
+      bar,
+      text,
+    };
+    refsCache.set(modelId, refs);
+    return refs;
+  };
+
+  let pendingFocusModel: string | null = null;
+
+  const updateCard = (modelId: string): void => {
+    const refs = refsFor(modelId);
+    const record = engine.getRecord(modelId);
+    if (!refs || !record) return;
+    const state = record.state;
+    const busy = state === 'downloading' || state === 'preparing';
+    const engineBusy = engine.activeModelId !== null;
+    const active = deps.getActiveModelId() === modelId && state === 'downloaded';
+    const updateAvailable = state === 'downloaded' && engine.isUpdateAvailable(modelId);
+    const mutable = deps.canMutate();
+
+    refs.chip.dataset.state = updateAvailable ? 'update-available' : state;
+    refs.chip.textContent = updateAvailable
+      ? t('localModels.state.updateAvailable')
+      : t(`localModels.state.${LOCAL_STATE_I18N_KEY[state]}`);
+
+    // Exactly one card carries the Active badge.
+    refs.activeBadge.classList.toggle('hidden', !active);
+
+    // One operation at a time: every mutating control disables while any
+    // runs; switch/delete/update also lock while a local inference runs.
+    refs.download.disabled = engineBusy;
+    refs.download.textContent = t(
+      state === 'partial' || state === 'error'
+        ? 'localModels.downloadAgain'
+        : 'localModels.download',
+    );
+    refs.download.classList.toggle('hidden', busy || state === 'downloaded');
+    refs.cancel.classList.toggle('hidden', !busy);
+
+    refs.activate.classList.toggle('hidden', state !== 'downloaded' || active);
+    refs.activate.disabled = !mutable || engineBusy;
+
+    refs.update.classList.toggle('hidden', !updateAvailable || busy);
+    refs.update.disabled = !mutable || engineBusy;
+
+    const deletable = state === 'downloaded' || state === 'partial' || state === 'error';
+    refs.delete.classList.toggle('hidden', !deletable || busy);
+    refs.delete.disabled = !mutable || engineBusy;
+
+    refs.perfClear.classList.toggle('hidden', state === 'not-downloaded' || busy);
+    refs.perfClear.disabled = engineBusy;
+
+    // T8: diagnostics need a downloaded model and a quiet engine; export
+    // needs stored measurements (checked lazily on click). The measured row
+    // shows the PUBLISHED benchmark numbers — never a user estimate.
+    refs.diagnose.classList.toggle('hidden', state !== 'downloaded' || busy);
+    refs.diagnose.disabled = engineBusy || diagnosing.current !== null;
+    refs.perfExport.classList.toggle('hidden', state === 'not-downloaded' || busy);
+    refs.perfExport.disabled = engineBusy || diagnosing.current !== null;
+    const published = representativeMeasurement(modelId);
+    if (published) {
+      refs.measured.textContent = t('localModels.measuredValue', {
+        wer: `${Math.round(published.globalWer * 100)}%`,
+        rtf: published.rtf.toFixed(2),
+        backend: published.backend,
+      });
+      refs.measured.removeAttribute('data-i18n');
+    }
+
+    // Stable focus: download start moves focus to Cancel; after cancel it
+    // returns to the (re-enabled) Download button.
+    if (busy && document.activeElement === refs.download) refs.cancel.focus();
+    if (!busy && pendingFocusModel === modelId) {
+      pendingFocusModel = null;
+      refs.download.focus();
+    }
+
+    if (!busy) {
+      refs.progress.classList.add('hidden');
+      refs.bar.value = 0;
+      refs.text.textContent = '';
+    }
+  };
+
+  const renderAll = (): void => {
+    for (const entry of LOCAL_MODEL_CATALOG) updateCard(entry.id);
+    refreshLocalModelOptions();
+  };
+
+  bus.on('localModel:progress', (event) => {
+    const { modelId, phase, percent, receivedBytes, totalBytes } = event;
+    const refs = refsFor(modelId);
+    if (!refs) return;
+    refs.progress.classList.remove('hidden');
+    refs.bar.value = percent;
+    refs.text.textContent =
+      phase === 'downloading'
+        ? t('localModels.progress.downloading', {
+            percent,
+            received: formatDownloadSize(receivedBytes),
+            total: formatDownloadSize(totalBytes),
+          }) + (event.isUpdate ? ` · ${t('localModels.progress.updating')}` : '')
+        : t('localModels.progress.preparing');
+  });
+
+  bus.on('localModel:state', ({ modelId, state, previous }) => {
+    updateCard(modelId);
+    refreshLocalModelOptions();
+    // A state transition may flip the active model's readiness — the
+    // dictation gate must re-evaluate right away.
+    publishReadiness();
+    if (previous === 'downloaded' && (state === 'partial' || state === 'not-downloaded')) {
+      // Reconciliation found lost artifacts — instructions, not a technical
+      // error (the browser evicted files under storage pressure).
+      showToast(elements.toastContainer, t('toast.localModel.reconciled'), 'warning');
+      return;
+    }
+    if (state === 'partial') {
+      showToast(elements.toastContainer, t('toast.localModel.cancelled'), 'warning');
+    } else if (state === 'error') {
+      showToast(elements.toastContainer, t('toast.localModel.failed'), 'error');
+    }
+  });
+
+  bus.on('localModel:warning', (warning) => {
+    const message =
+      warning.kind === 'space-insufficient'
+        ? t('localModels.warn.spaceInsufficient', {
+            available: formatDownloadSize(warning.availableBytes),
+            needed: formatDownloadSize(warning.neededBytes),
+          })
+        : warning.kind === 'memory-tier'
+          ? t('localModels.warn.memory-tier', {
+              tier: warning.tier,
+              gb: warning.deviceMemoryGb,
+            })
+          : t(
+              warning.kind === 'space-unreliable'
+                ? 'localModels.warn.spaceUnreliable'
+                : 'localModels.warn.persistenceDenied',
+            );
+    showToast(elements.toastContainer, message, 'warning');
+  });
+
+  // Hydrate persisted records (a previous Descarga parcial shows as such),
+  // then attach click handlers so no click can race an uninitialized record.
+  void engine.init().then(() => {
+    renderAll();
+    // Records are hydrated now. A reload with every model already intact
+    // emits NO state event (reconcile only speaks on loss), so readiness
+    // must be re-published explicitly or the dictation gate stays closed.
+    publishReadiness();
+    for (const button of elements.root.querySelectorAll<HTMLButtonElement>(
+      '[data-model-download]',
+    )) {
+      button.addEventListener('click', () => {
+        const modelId = button.dataset.modelDownload;
+        if (!modelId) return;
+        // Experimental (stage 3): warn before the FIRST download — declined
+        // means no download at all; resumes of a partial start never re-confirm.
+        const entry = LOCAL_MODEL_CATALOG.find((candidate) => candidate.id === modelId);
+        if (
+          entry?.experimental &&
+          (engine.getRecord(modelId)?.state ?? 'not-downloaded') === 'not-downloaded' &&
+          !window.confirm(t('localModels.confirmExperimental'))
+        ) {
+          return;
+        }
+        void engine.requestDownload(modelId).then((outcome) => {
+          // The state event paints while the engine is still busy (the
+          // download promise resolves after it); repaint so the mutating
+          // controls re-enable (T10).
+          updateCard(modelId);
+          if (outcome.ok) return;
+          if (outcome.reason === 'busy') {
+            showToast(elements.toastContainer, t('toast.localModel.busy'), 'warning');
+          }
+        });
+      });
+    }
+    for (const button of elements.root.querySelectorAll<HTMLButtonElement>('[data-model-cancel]')) {
+      button.addEventListener('click', () => {
+        const modelId = button.dataset.modelCancel;
+        if (!modelId) return;
+        pendingFocusModel = modelId;
+        engine.cancelDownload(modelId);
+      });
+    }
+    for (const button of elements.root.querySelectorAll<HTMLButtonElement>(
+      '[data-model-activate]',
+    )) {
+      button.addEventListener('click', () => {
+        const modelId = button.dataset.modelActivate;
+        if (!modelId || !deps.canMutate()) return;
+        deps.onActiveModelChange(modelId);
+        renderAll();
+      });
+    }
+    for (const button of elements.root.querySelectorAll<HTMLButtonElement>('[data-model-update]')) {
+      button.addEventListener('click', () => {
+        const modelId = button.dataset.modelUpdate;
+        if (!modelId || !deps.canMutate()) return;
+        void engine.requestUpdate(modelId).then((outcome) => {
+          updateCard(modelId);
+          if (outcome.ok) {
+            showToast(elements.toastContainer, t('toast.localModel.updated'), 'success');
+          } else if (outcome.reason === 'busy-other-tab') {
+            showToast(elements.toastContainer, t('toast.localModel.busyOtherTab'), 'warning');
+          } else if (outcome.reason !== 'busy') {
+            showToast(elements.toastContainer, t('toast.localModel.updateFailed'), 'error');
+          }
+        });
+      });
+    }
+    for (const button of elements.root.querySelectorAll<HTMLButtonElement>('[data-model-delete]')) {
+      button.addEventListener('click', () => {
+        const modelId = button.dataset.modelDelete;
+        if (!modelId || !deps.canMutate()) return;
+        if (!window.confirm(t('localModels.confirmDelete'))) return;
+        void deps.onDelete(modelId).then((outcome) => {
+          updateCard(modelId);
+          if (outcome.ok) {
+            showToast(elements.toastContainer, t('toast.localModel.deleted'), 'success');
+          } else if (outcome.reason === 'busy-other-tab') {
+            showToast(elements.toastContainer, t('toast.localModel.busyOtherTab'), 'warning');
+          } else if (outcome.reason !== 'busy') {
+            showToast(elements.toastContainer, t('toast.localModel.deleteFailed'), 'error');
+          }
+        });
+      });
+    }
+    for (const button of elements.root.querySelectorAll<HTMLButtonElement>(
+      '[data-model-perf-clear]',
+    )) {
+      button.addEventListener('click', () => {
+        const modelId = button.dataset.modelPerfClear;
+        if (!modelId) return;
+        void clearLocalPerfData(modelId).then(() => {
+          showToast(elements.toastContainer, t('toast.localModel.perfCleared'), 'success');
+        });
+      });
+    }
+
+    // T8 diagnostics: run the versioned corpus through the downloaded
+    // model in a dedicated worker (dictation provider untouched), store the
+    // measurement on-device, and let the user export it manually. No
+    // telemetry — nothing leaves the device by itself.
+    for (const button of elements.root.querySelectorAll<HTMLButtonElement>(
+      '[data-model-diagnose]',
+    )) {
+      button.addEventListener('click', () => {
+        const modelId = button.dataset.modelDiagnose;
+        const entry = LOCAL_MODEL_CATALOG.find((candidate) => candidate.id === modelId);
+        if (!modelId || !entry) return;
+        if (diagnosing.current !== null) return;
+        const record = engine.getRecord(modelId);
+        if (!record || record.state !== 'downloaded') return;
+        const plan = planBackends({
+          policy: deps.getPolicy?.() ?? 'auto',
+          requirement: entry.backend,
+          hasWebgpu: typeof navigator !== 'undefined' && 'gpu' in navigator,
+        });
+        if (!plan.ok) {
+          showToast(elements.toastContainer, t('toast.localModel.diagNoBackend'), 'error');
+          return;
+        }
+        diagnosing.current = modelId;
+        updateCard(modelId);
+        setStatus(elements, { message: t('status.localModel.diagnosing'), level: 'processing' });
+        void (async () => {
+          try {
+            const corpus = await loadCorpusManifest();
+            const run = await runModelDiagnostics(entry, corpus, {
+              backends: plan.backends,
+              fetchClip: (file) => fetchCorpusClip(file),
+              workerFactory: createInferenceWorker,
+              now: () => performance.now(),
+            });
+            if (!run.ok) throw run.error;
+            await appendPerfMeasurement(modelId, run.measurement);
+            setStatus(elements, { message: t('status.localModel.diagnosed'), level: 'success' });
+            showToast(elements.toastContainer, t('toast.localModel.diagnosed'), 'success');
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            setStatus(elements, { message, level: 'error' });
+            showToast(elements.toastContainer, t('toast.localModel.diagFailed'), 'error');
+          } finally {
+            diagnosing.current = null;
+            updateCard(modelId);
+          }
+        })();
+      });
+    }
+
+    // Manual export (no telemetry): download the on-device measurement
+    // history as JSON for bug reports / published manifests.
+    for (const button of elements.root.querySelectorAll<HTMLButtonElement>(
+      '[data-model-perf-export]',
+    )) {
+      button.addEventListener('click', () => {
+        const modelId = button.dataset.modelPerfExport;
+        if (!modelId) return;
+        void readPerfMeasurements(modelId).then((measurements) => {
+          if (measurements.length === 0) {
+            showToast(elements.toastContainer, t('toast.localModel.noPerfData'), 'warning');
+            return;
+          }
+          const blob = new Blob([JSON.stringify({ modelId, measurements }, null, 2)], {
+            type: 'application/json',
+          });
+          const url = URL.createObjectURL(blob);
+          const anchor = document.createElement('a');
+          anchor.href = url;
+          anchor.download = `lu-yume-diagnostico-${modelId}.json`;
+          anchor.click();
+          URL.revokeObjectURL(url);
+          showToast(elements.toastContainer, t('toast.localModel.perfExported'), 'success');
+        });
+      });
+    }
+  });
+
+  return { engine, renderAll };
+}
+
 /** Wires the provider `<select>`: manual activation of the active backend. */
 function wireProviderSelect(
   elements: AppElements,
@@ -1021,6 +1914,71 @@ function wireProviderSelect(
     const next = elements.providerSelect.value as TranscriptionProviderId;
     if (next !== getProvider()) onChange(next);
   });
+}
+
+/** Wires the Método de transcripción `<select>`. */
+function wireMethodSelect(
+  elements: AppElements,
+  getMethod: () => TranscriptionMethod,
+  onChange: (method: TranscriptionMethod) => void,
+): void {
+  elements.methodSelect.addEventListener('change', () => {
+    const next = elements.methodSelect.value as TranscriptionMethod;
+    if (next !== getMethod()) onChange(next);
+  });
+}
+
+/**
+ * Lock or unlock the remote-only transcription knobs (model, translation,
+ * prompt, temperature, response format). Shared shape behind both the method
+ * switch (Método Local locks everything remote) and the provider switch
+ * (Cloudflare's fixed worker model locks the Groq-only knobs). The timestamp
+ * toggle stays with the callers — it also depends on the selected response
+ * format.
+ */
+function setRemoteKnobsLocked(elements: AppElements, locked: boolean): void {
+  elements.modelSelect.disabled = locked;
+  const translateOption = elements.operationModeSelect.querySelector<HTMLOptionElement>(
+    'option[value="translate"]',
+  );
+  if (translateOption) translateOption.disabled = locked;
+  // A disabled option must not stay selected.
+  if (locked) elements.operationModeSelect.value = 'transcribe';
+  elements.promptInput.disabled = locked;
+  elements.temperatureSlider.disabled = locked;
+  elements.responseFormatSelect.disabled = locked;
+}
+
+/**
+ * Reflects the Método de transcripción in the transcription controls.
+ *
+ * Under the local method the Proveedor remoto selector and the remote-only
+ * knobs are disabled and the Modelo activo selector takes over; under the
+ * remote method the existing provider constraints apply. The Modelo activo
+ * options themselves are owned by the download engine (see
+ * `refreshLocalModelOptions`) — this only locks the selector under remote.
+ */
+function applyMethodConstraints(
+  elements: AppElements,
+  method: TranscriptionMethod,
+  provider: TranscriptionProviderId,
+  hasWorkerToken: boolean,
+): void {
+  const isLocal = method === 'local';
+  elements.methodSelect.value = method;
+  elements.providerSelect.disabled = isLocal;
+  // Options/data come from the engine; only enable when a downloaded model
+  // exists (the engine refresh keeps this in sync).
+  elements.localModelSelect.disabled = isLocal
+    ? elements.localModelSelect.options.length <= 1
+    : true;
+  if (!isLocal) elements.localModelSelect.value = 'none';
+  if (isLocal) {
+    setRemoteKnobsLocked(elements, true);
+    elements.timestampToggle.disabled = true;
+  } else {
+    applyProviderConstraints(elements, provider, hasWorkerToken);
+  }
 }
 
 /**
@@ -1036,21 +1994,13 @@ function applyProviderConstraints(
   provider: TranscriptionProviderId,
   hasWorkerToken: boolean,
 ): void {
-  const isWorker = provider === 'cloudflare-whisper';
+  const isWorker = remoteKnobsLocked('remote', provider);
   elements.providerSelect.value = provider;
   const workerOption = elements.providerSelect.querySelector<HTMLOptionElement>(
     'option[value="cloudflare-whisper"]',
   );
   if (workerOption) workerOption.disabled = !hasWorkerToken;
-  elements.modelSelect.disabled = isWorker;
-  const translateOption = elements.operationModeSelect.querySelector<HTMLOptionElement>(
-    'option[value="translate"]',
-  );
-  if (translateOption) translateOption.disabled = isWorker;
-  if (isWorker) elements.operationModeSelect.value = 'transcribe';
-  elements.promptInput.disabled = isWorker;
-  elements.temperatureSlider.disabled = isWorker;
-  elements.responseFormatSelect.disabled = isWorker;
+  setRemoteKnobsLocked(elements, isWorker);
   elements.timestampToggle.disabled =
     isWorker || elements.responseFormatSelect.value !== 'verbose_json';
 }
@@ -1227,6 +2177,8 @@ function wireTranscriptionPipeline(
   getApiKey: () => string,
   refreshHistory: () => Promise<void>,
   getDictationTarget: () => 'output' | 'pluma',
+  recovery: ReturnType<typeof createRecoveryController>,
+  retryRunner: { run: ((blob: Blob) => void) | null },
 ): void {
   // Named pipeline state — replaces the former `lastBlob` closure so a failed
   // take can never leak into a later success, and a rapid re-record surfaces
@@ -1235,19 +2187,23 @@ function wireTranscriptionPipeline(
 
   bus.on('recording:start', () => session.startRecording());
 
-  bus.on('audio:blob-ready', async (blob) => {
+  /**
+   * One transcription take: trim (fail-open), build the request from the
+   * live controls, dispatch to the active client and set the processing
+   * status. Shared by the live recording flow and manual recovery retries.
+   */
+  const runTranscription = async (rawBlob: Blob): Promise<void> => {
     const config = getConfig();
-    session.submit(blob, blob.type);
 
     // Optionally strip leading/trailing silence before transcription. Fail-open:
     // if decoding is unavailable or the clip is silent, trimSilence returns the
     // original blob so transcription still proceeds.
     const audio = config.enableSilenceTrim
-      ? await trimSilence(blob, {
+      ? await trimSilence(rawBlob, {
           thresholdDb: config.silenceThresholdDb,
           paddingMs: config.silencePaddingMs,
         })
-      : blob;
+      : rawBlob;
 
     const base = readTranscriptionOptions(elements);
     const options: TranscriptionOptions =
@@ -1261,13 +2217,29 @@ function wireTranscriptionPipeline(
     void client.transcribe(audio, request).catch(() => {
       // Error already emitted on the bus via transcription:error
     });
+    const localEntry =
+      config.transcriptionMethod === 'local'
+        ? LOCAL_MODEL_CATALOG.find((entry) => entry.id === config.localModelId)
+        : undefined;
     setStatus(
       elements,
-      config.transcriptionProvider === 'cloudflare-whisper'
-        ? { message: 'Procesando con Cloudflare Whisper…', level: 'processing' }
-        : { message: `Procesando con ${options.model}...`, level: 'processing' },
+      localEntry
+        ? { message: `Procesando con ${localEntry.name} (local)…`, level: 'processing' }
+        : config.transcriptionProvider === 'cloudflare-whisper'
+          ? { message: 'Procesando con Cloudflare Whisper…', level: 'processing' }
+          : { message: `Procesando con ${options.model}...`, level: 'processing' },
     );
+  };
+
+  bus.on('audio:blob-ready', async (blob) => {
+    session.submit(blob, blob.type);
+    recovery.hide();
+    await runTranscription(blob);
   });
+
+  // Manual recovery retries re-enter the exact same pipeline with the kept
+  // blob (the composition root registered this hook when wiring the panel).
+  retryRunner.run = (blob) => void runTranscription(blob);
 
   bus.on('transcription:success', async (result) => {
     renderMetadata(elements.metadataPanel, result);
@@ -1286,7 +2258,7 @@ function wireTranscriptionPipeline(
     const lang = result.language ?? (config.language === 'auto' ? 'en' : config.language);
     let text = postProcessText(result.text, toPostProcessConfig(config), lang);
 
-    if (config.enableLlmPostProcess && text.trim()) {
+    if (shouldRunLlmPostProcess(config, config.transcriptionMethod) && text.trim()) {
       setStatus(elements, { message: 'Refinando con LLM…', level: 'processing' });
       text = await postProcessWithLlm(text, getApiKey(), {
         model: config.llmModel,
@@ -1321,18 +2293,14 @@ function wireTranscriptionPipeline(
     // Save to history
     const options = readTranscriptionOptions(elements);
     const mode = readOperationMode(elements);
-    const isWorker = config.transcriptionProvider === 'cloudflare-whisper';
-    const entry: HistoryEntry = {
-      id: crypto.randomUUID(),
+    const entry = buildHistoryEntry({
+      config,
+      options,
+      result,
       text,
-      language: result.language,
-      model: isWorker ? CLOUDFLARE_WHISPER_MODEL : options.model,
-      // Provider is only stamped for non-default backends (Groq stays implicit).
-      provider: isWorker ? 'cloudflare-whisper' : undefined,
-      duration: result.duration,
-      createdAt: Date.now(),
-      operationMode: mode,
-    };
+      mode,
+      now: Date.now(),
+    });
     const pending = session.complete();
     const blob = pending?.blob ?? new Blob([], { type: 'audio/webm' });
     const mimeType = pending?.mimeType ?? 'audio/webm';
@@ -1356,8 +2324,39 @@ function wireTranscriptionPipeline(
   });
 
   bus.on('transcription:error', (error) => {
-    session.fail();
     console.error('[App] Transcription error:', error);
+    const config = getConfig();
+
+    // Local failures keep the Grabación and offer ONLY manual actions —
+    // nothing is ever re-sent automatically (spec T7). A cancelled run is
+    // not a failure to recover from.
+    if (config.transcriptionMethod === 'local') {
+      const kept = session.failKeepingAudio();
+      const input = fromTranscriptionError(error);
+      const classification = classifyLocalFailure(input);
+      const cancelled = input.code === 'cancelled';
+      if (!cancelled && kept) {
+        recovery.offer(
+          kept,
+          classification,
+          buildTechnicalReport(input, {
+            at: new Date().toISOString(),
+            method: 'local',
+            modelId: config.localModelId ?? undefined,
+            userAgent: navigator.userAgent,
+            deviceMemoryGb: readDeviceMemoryGb(),
+          }),
+        );
+        setStatus(elements, {
+          message: t(`recovery.category.${classification.category}`),
+          level: 'error',
+        });
+        showToast(elements.toastContainer, t('recovery.kept'), 'warning');
+        return;
+      }
+      session.discardKept();
+    }
+    session.fail();
     showToast(elements.toastContainer, error.message, 'error');
     setStatus(elements, { message: `Error: ${error.message}`, level: 'error' });
   });

@@ -29,6 +29,7 @@ function qualityElements(): AppElements {
     customFillerWordsInput: make('customFillerWordsInput', 'input') as HTMLInputElement,
     silenceTrimToggle: checkbox('silenceTrimToggle', false),
     llmToggle: checkbox('llmToggle', false),
+    localLlmAuth: checkbox('localLlmAuth', false),
     llmModelInput: make('llmModelInput', 'input') as HTMLInputElement,
     llmInstructionsInput: make('llmInstructionsInput', 'textarea') as HTMLTextAreaElement,
   } as unknown as AppElements;

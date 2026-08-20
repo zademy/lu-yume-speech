@@ -19,6 +19,8 @@ import {
   TRANSCRIPTION_PROVIDERS,
   WHISPER_MODELS,
 } from '../types';
+import { TRANSCRIPTION_METHODS } from '../utils/transcription-method';
+import { LOCAL_MODEL_CATALOG, formatDownloadSize } from '../utils/local-model-catalog';
 
 /**
  * Replaces the children of {@link el} with nodes parsed from {@link html}.
@@ -89,6 +91,8 @@ export interface AppElements {
   audioMinutesMetric: HTMLSpanElement;
   dictationKeyGate: HTMLElement;
   dictationKeyGateButton: HTMLButtonElement;
+  dictationLocalGate: HTMLElement;
+  dictationLocalGateButton: HTMLButtonElement;
   dictationWorkspace: HTMLDivElement;
   appLanguageSelect: HTMLSelectElement;
   apiKeyForm: HTMLFormElement;
@@ -98,7 +102,15 @@ export interface AppElements {
   apiKeyDeleteButton: HTMLButtonElement;
   apiKeyError: HTMLParagraphElement;
   apiKeyStatus: HTMLSpanElement;
+  methodSelect: HTMLSelectElement;
   providerSelect: HTMLSelectElement;
+  localModelSelect: HTMLSelectElement;
+  localModelsDevice: HTMLParagraphElement;
+  localModelsMobileNote: HTMLParagraphElement;
+  localBackendSelect: HTMLSelectElement;
+  localIdleMinutes: HTMLInputElement;
+  localReleaseBtn: HTMLButtonElement;
+  localResidentLine: HTMLParagraphElement;
   workerTokenForm: HTMLFormElement;
   workerTokenInput: HTMLInputElement;
   workerTokenToggle: HTMLButtonElement;
@@ -140,6 +152,14 @@ export interface AppElements {
   llmToggle: HTMLInputElement;
   llmModelInput: HTMLInputElement;
   llmInstructionsInput: HTMLTextAreaElement;
+  localLlmAuth: HTMLInputElement;
+  localLlmAuthRow: HTMLElement;
+  localRecovery: HTMLElement;
+  localRecoveryDismiss: HTMLButtonElement;
+  localRecoveryMessage: HTMLElement;
+  localRecoveryActions: HTMLElement;
+  localRecoveryDetail: HTMLElement;
+  localRecoveryCopy: HTMLButtonElement;
   gateOverlay: HTMLDivElement;
   gateLockedForm: HTMLFormElement;
   gateLockedInput: HTMLInputElement;
@@ -218,6 +238,12 @@ export function renderApp(): AppElements {
     audioMinutesMetric: getRequiredElement(root, '#audioMinutesMetric', HTMLSpanElement),
     dictationKeyGate: getRequiredElement(root, '#dictationKeyGate', HTMLElement),
     dictationKeyGateButton: getRequiredElement(root, '#dictationKeyGateButton', HTMLButtonElement),
+    dictationLocalGate: getRequiredElement(root, '#dictationLocalGate', HTMLElement),
+    dictationLocalGateButton: getRequiredElement(
+      root,
+      '#dictationLocalGateButton',
+      HTMLButtonElement,
+    ),
     dictationWorkspace: getRequiredElement(root, '#dictationWorkspace', HTMLDivElement),
     appLanguageSelect: getRequiredElement(root, '#appLanguageSelect', HTMLSelectElement),
     apiKeyForm: getRequiredElement(root, '#apiKeyForm', HTMLFormElement),
@@ -227,7 +253,15 @@ export function renderApp(): AppElements {
     apiKeyDeleteButton: getRequiredElement(root, '#apiKeyDeleteButton', HTMLButtonElement),
     apiKeyError: getRequiredElement(root, '#apiKeyError', HTMLParagraphElement),
     apiKeyStatus: getRequiredElement(root, '#apiKeyStatus', HTMLSpanElement),
+    methodSelect: getRequiredElement(root, '#methodSelect', HTMLSelectElement),
     providerSelect: getRequiredElement(root, '#providerSelect', HTMLSelectElement),
+    localModelSelect: getRequiredElement(root, '#localModelSelect', HTMLSelectElement),
+    localModelsDevice: getRequiredElement(root, '#localModelsDevice', HTMLParagraphElement),
+    localModelsMobileNote: getRequiredElement(root, '#localModelsMobileNote', HTMLParagraphElement),
+    localBackendSelect: getRequiredElement(root, '#localBackendSelect', HTMLSelectElement),
+    localIdleMinutes: getRequiredElement(root, '#localIdleMinutes', HTMLInputElement),
+    localReleaseBtn: getRequiredElement(root, '#localReleaseBtn', HTMLButtonElement),
+    localResidentLine: getRequiredElement(root, '#localResidentLine', HTMLParagraphElement),
     workerTokenForm: getRequiredElement(root, '#workerTokenForm', HTMLFormElement),
     workerTokenInput: getRequiredElement(root, '#workerTokenInput', HTMLInputElement),
     workerTokenToggle: getRequiredElement(root, '#workerTokenToggle', HTMLButtonElement),
@@ -281,6 +315,14 @@ export function renderApp(): AppElements {
     llmToggle: getRequiredElement(root, '#llmToggle', HTMLInputElement),
     llmModelInput: getRequiredElement(root, '#llmModelInput', HTMLInputElement),
     llmInstructionsInput: getRequiredElement(root, '#llmInstructionsInput', HTMLTextAreaElement),
+    localLlmAuth: getRequiredElement(root, '#localLlmAuth', HTMLInputElement),
+    localLlmAuthRow: getRequiredElement(root, '#localLlmAuthRow', HTMLElement),
+    localRecovery: getRequiredElement(root, '#localRecovery', HTMLElement),
+    localRecoveryDismiss: getRequiredElement(root, '#localRecoveryDismiss', HTMLButtonElement),
+    localRecoveryMessage: getRequiredElement(root, '#localRecoveryMessage', HTMLElement),
+    localRecoveryActions: getRequiredElement(root, '#localRecoveryActions', HTMLElement),
+    localRecoveryDetail: getRequiredElement(root, '#localRecoveryDetail', HTMLElement),
+    localRecoveryCopy: getRequiredElement(root, '#localRecoveryCopy', HTMLButtonElement),
     gateOverlay: getRequiredElement(root, '#gateOverlay', HTMLDivElement),
     gateLockedForm: getRequiredElement(root, '#gateLockedForm', HTMLFormElement),
     gateLockedInput: getRequiredElement(root, '#gateLockedInput', HTMLInputElement),
@@ -435,6 +477,15 @@ function renderDictationView(modifierLabel: string): string {
         </div>
         <button id="dictationKeyGateButton" type="button" class="primary-action"><span data-i18n="dictation.gate.cta"></span></button>
       </section>
+      <section id="dictationLocalGate" class="credential-gate" aria-labelledby="localGateTitle" hidden>
+        <span class="credential-gate-icon">${icons.sliders}</span>
+        <div>
+          <p class="eyebrow" data-i18n="dictation.localGate.eyebrow">Local model required</p>
+          <h3 id="localGateTitle" data-i18n="dictation.localGate.title">Download a local model</h3>
+          <p data-i18n="dictation.localGate.body"></p>
+        </div>
+        <button id="dictationLocalGateButton" type="button" class="primary-action"><span data-i18n="dictation.localGate.cta"></span></button>
+      </section>
       <div id="dictationWorkspace" class="dictation-workspace" hidden>
         ${renderStatusBar(modifierLabel)}
         ${renderVisualizerArea()}
@@ -500,6 +551,7 @@ function renderSettingsView(): string {
             <div><h3 id="transcriptionSettingsTitle" data-i18n="settings.transcription.title">Transcription</h3><p data-i18n="settings.transcription.description"></p></div>
           </div>
           <div class="settings-grid">
+            ${renderMethodField()}
             ${renderSelectField(
               'providerSelect',
               'field.provider',
@@ -509,6 +561,7 @@ function renderSettingsView(): string {
                 selected: provider.value === DEFAULT_SETTINGS.transcriptionProvider,
               })),
             )}
+            ${renderLocalModelField()}
             ${renderSelectField(
               'modelSelect',
               'field.model',
@@ -550,6 +603,33 @@ function renderSettingsView(): string {
             <div class="settings-grid-span">${renderTextareaField('promptInput', 'field.context', 'field.context.placeholder', 2)}</div>
             <div class="settings-grid-span">${renderTemperatureControl()}</div>
           </div>
+        </section>
+        <section class="settings-card" aria-labelledby="localModelsTitle">
+          <div class="settings-card-heading">
+            <span class="settings-icon">${icons.sliders}</span>
+            <div><h3 id="localModelsTitle" data-i18n="settings.localModels.title">Local models</h3><p data-i18n="settings.localModels.description"></p></div>
+          </div>
+          <p id="localModelsDevice" class="text-[11px] text-[var(--color-text-muted)]" aria-live="polite">&nbsp;</p>
+          <p id="localModelsMobileNote" class="mt-1 hidden text-[11px] font-semibold" data-i18n="localModels.mobileNote"></p>
+          <div class="mt-2 flex flex-wrap items-end gap-3 text-[11px]">
+            <div>
+              <label for="localBackendSelect" class="field-label" data-i18n="localModels.backendMode"></label>
+              <select id="localBackendSelect" class="form-control">
+                <option value="auto" data-i18n="localModels.backend.auto"></option>
+                <option value="wasm" data-i18n="localModels.backend.wasm"></option>
+              </select>
+            </div>
+            <div>
+              <label for="localIdleMinutes" class="field-label" data-i18n="localModels.idleRelease"></label>
+              <input id="localIdleMinutes" type="number" min="0" step="5" class="form-control w-24" aria-describedby="localIdleHelp" />
+              <p id="localIdleHelp" class="mt-1 text-[10.5px] text-[var(--color-text-muted)]" data-i18n="localModels.idleRelease.hint"></p>
+            </div>
+            <button type="button" id="localReleaseBtn" class="secondary-action hidden" data-i18n="localModels.release"></button>
+          </div>
+          <p id="localResidentLine" class="mt-2 text-[11px] text-[var(--color-text-muted)]" aria-live="polite" data-i18n="localModels.resident.none"></p>
+          <ul id="localModelsList" class="mt-2 flex flex-col gap-3">
+            ${LOCAL_MODEL_CATALOG.map((entry) => renderLocalModelCard(entry)).join('')}
+          </ul>
         </section>
         <section class="settings-card" aria-labelledby="qualitySettingsTitle">
           <div class="settings-card-heading">
@@ -784,6 +864,19 @@ function renderOutputSection(): string {
           ${renderToolbarButton('clearBtn', icons.trash, 'output.clear')}
         </div>
       </div>
+      <div id="localRecovery" hidden role="alert" aria-labelledby="localRecoveryTitle" class="rounded-xl border border-[var(--color-status-error)] bg-[var(--color-surface-muted)] p-3">
+        <div class="flex items-start justify-between gap-2">
+          <h3 id="localRecoveryTitle" class="text-sm font-bold text-[var(--color-status-error)]" data-i18n="recovery.title"></h3>
+          <button type="button" id="localRecoveryDismiss" class="secondary-action shrink-0" data-i18n="recovery.dismiss"></button>
+        </div>
+        <p id="localRecoveryMessage" class="mt-1 text-[12px] leading-4 text-[var(--color-text-secondary)]"></p>
+        <div id="localRecoveryActions" class="mt-2 flex flex-wrap items-center gap-2"></div>
+        <details class="mt-2">
+          <summary class="cursor-pointer text-[11px] text-[var(--color-text-muted)]" data-i18n="recovery.technical"></summary>
+          <pre id="localRecoveryDetail" class="mt-1 max-h-40 overflow-auto whitespace-pre-wrap rounded-lg border border-[var(--color-border-subtle)] p-2 font-mono text-[10.5px] text-[var(--color-text-secondary)]"></pre>
+          <button type="button" id="localRecoveryCopy" class="secondary-action mt-1" data-i18n="recovery.copyTechnical"></button>
+        </details>
+      </div>
       <textarea id="output" class="output-area" data-i18n-placeholder="output.placeholder" spellcheck="true"></textarea>
       <div id="metadataPanel" class="hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3 text-xs text-[var(--color-text-secondary)]"></div>
       <div class="flex items-center justify-between gap-3 pt-2">
@@ -819,6 +912,72 @@ function renderSelectField(
     )
     .join('');
   return `<div><label for="${id}" class="field-label" data-i18n="${labelKey}"></label><select id="${id}" class="form-control">${renderedOptions}</select></div>`;
+}
+
+/** Método de transcripción selector — options are i18n-keyed (remote / local). */
+function renderMethodField(): string {
+  const renderedOptions = TRANSCRIPTION_METHODS.map(
+    (o) =>
+      `<option value="${o.value}" data-i18n="${o.labelKey}" ${o.value === DEFAULT_SETTINGS.transcriptionMethod ? 'selected' : ''}></option>`,
+  ).join('');
+  return `<div><label for="methodSelect" class="field-label" data-i18n="field.method"></label><select id="methodSelect" class="form-control">${renderedOptions}</select></div>`;
+}
+
+/**
+ * Modelo activo selector. Ships with a single "no active model" option —
+ * downloaded models populate it once the local engine lands.
+ */
+function renderLocalModelField(): string {
+  return `<div><label for="localModelSelect" class="field-label" data-i18n="field.localModel"></label><select id="localModelSelect" class="form-control"><option value="none" data-i18n="localModel.none" selected></option></select></div>`;
+}
+
+/**
+ * One Modelo del catálogo card: metadata plus the download controls driven
+ * by the Motor local (T3). Download starts the engine message; Cancel aborts
+ * it; progress is exposed as text with bytes and phase on an aria-live
+ * region (states are text-first — never color-only). Precision/speed labels
+ * and the Benchmark row derive from the published manifest (T8) — run the
+ * on-device diagnostics to reproduce them on your hardware.
+ */
+function renderLocalModelCard(entry: (typeof LOCAL_MODEL_CATALOG)[number]): string {
+  return `
+    <li class="local-model-card rounded-lg border border-[var(--color-border-subtle)] p-4" data-model-id="${entry.id}">
+      <div class="flex items-center justify-between gap-2">
+        <div>
+          <h4 class="text-[13px] font-semibold">${entry.name} <span class="text-[var(--color-text-muted)]">(${entry.dtype})</span></h4>
+          <p class="text-[10.5px] text-[var(--color-text-muted)]">${formatDownloadSize(entry.downloadBytes)} · <span data-i18n="localModels.languages.${entry.autoDetectLanguage ? 'auto' : 'manual'}"></span></p>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <span class="hidden rounded-full border border-[var(--color-border-strong)] px-2 py-0.5 text-[10.5px] font-semibold" data-model-active-badge="${entry.id}" data-i18n="localModels.activeBadge"></span>
+          ${entry.recommended ? `<span class="rounded-full border border-[var(--color-accent-strong,#1f6feb)] px-2 py-0.5 text-[10.5px] font-semibold" data-model-recommended="${entry.id}" data-i18n="localModels.recommended"></span>` : ''}
+          ${entry.modestHardware ? `<span class="rounded-full border border-[var(--color-border-strong)] px-2 py-0.5 text-[10.5px] font-semibold" data-model-modest="${entry.id}" data-i18n="localModels.modestHardware"></span>` : ''}
+          ${entry.experimental ? `<span class="rounded-full border border-[var(--color-border-strong)] px-2 py-0.5 text-[10.5px] font-semibold" data-model-experimental="${entry.id}" data-i18n="localModels.experimental"></span>` : ''}
+          <span class="local-model-state rounded-full border border-[var(--color-border-subtle)] px-2 py-0.5 text-[10.5px]" data-state="not-downloaded" data-model-state="${entry.id}" data-i18n="localModels.state.notDownloaded"></span>
+        </div>
+      </div>
+      <dl class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px] sm:grid-cols-3">
+        <div><dt class="text-[var(--color-text-muted)]" data-i18n="localModels.precision"></dt><dd data-i18n="localModels.precision.${entry.precision}"></dd></div>
+        <div><dt class="text-[var(--color-text-muted)]" data-i18n="localModels.speed"></dt><dd data-i18n="localModels.speed.${entry.speed}"></dd></div>
+        <div><dt class="text-[var(--color-text-muted)]" data-i18n="localModels.memory"></dt><dd data-i18n="localModels.memory.${entry.memoryTier}"></dd></div>
+        <div><dt class="text-[var(--color-text-muted)]" data-i18n="localModels.backend"></dt><dd data-i18n="localModels.backend.${entry.backend}"></dd></div>
+        <div><dt class="text-[var(--color-text-muted)]" data-i18n="localModels.measuredTag"></dt><dd data-model-measured="${entry.id}" data-i18n="localModels.estimate"></dd></div>
+        <div><dt class="text-[var(--color-text-muted)]" data-i18n="localModels.license"></dt><dd><a class="underline" href="${entry.licenseUrl}" target="_blank" rel="noopener noreferrer">${entry.license}</a></dd></div>
+      </dl>
+      <div class="mt-3 flex flex-wrap items-center gap-2">
+        <button type="button" class="primary-action" data-model-download="${entry.id}" data-i18n="localModels.download"></button>
+        <button type="button" class="secondary-action hidden" data-model-cancel="${entry.id}" data-i18n="localModels.cancel"></button>
+        <button type="button" class="secondary-action hidden" data-model-activate="${entry.id}" data-i18n="localModels.activate"></button>
+        <button type="button" class="secondary-action hidden" data-model-update="${entry.id}" data-i18n="localModels.update"></button>
+        <button type="button" class="secondary-action hidden" data-model-delete="${entry.id}" data-i18n="localModels.delete"></button>
+        <button type="button" class="secondary-action hidden" data-model-diagnose="${entry.id}" data-i18n="localModels.diagnose"></button>
+        <button type="button" class="secondary-action hidden" data-model-perf-export="${entry.id}" data-i18n="localModels.exportPerf"></button>
+        <button type="button" class="secondary-action hidden" data-model-perf-clear="${entry.id}" data-i18n="localModels.clearPerf"></button>
+      </div>
+      <div class="mt-2 hidden" data-model-progress="${entry.id}">
+        <progress class="h-1.5 w-full" max="100" value="0" data-model-progressbar="${entry.id}"></progress>
+        <p class="mt-1 text-[10.5px] text-[var(--color-text-muted)]" role="status" aria-live="polite" data-model-progresstext="${entry.id}"></p>
+      </div>
+    </li>`;
 }
 
 /** Noise-reduction selector — options are i18n-keyed (off / DSP / RNNoise). */
@@ -875,6 +1034,13 @@ function renderQualitySection(): string {
       <div class="settings-grid-span">${renderTextField('customFillerWordsInput', 'field.fillerWords', 'field.fillerWords.placeholder')}</div>
       ${renderToggleField('silenceTrimToggle', 'field.silenceTrim', 'field.silenceTrim.hint', DEFAULT_SETTINGS.enableSilenceTrim)}
       ${renderToggleField('llmToggle', 'field.llmToggle', 'field.llmToggle.hint', DEFAULT_SETTINGS.enableLlmPostProcess)}
+      <div id="localLlmAuthRow" class="settings-grid-span hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-muted)] p-3">
+        <label class="flex items-start gap-2 text-xs text-[var(--color-text-secondary)]">
+          <input id="localLlmAuth" type="checkbox" class="mt-0.5 accent-[var(--color-control-emphasis)]" />
+          <span data-i18n="field.localLlmAuth"></span>
+        </label>
+        <p class="mt-1.5 text-[11px] leading-4 text-[var(--color-text-muted)]" data-i18n="field.localLlmAuth.explain"></p>
+      </div>
       ${renderTextField('llmModelInput', 'field.llmModel', 'field.llmModel')}
       <div class="settings-grid-span">${renderTextareaField('llmInstructionsInput', 'field.llmInstructions', 'field.llmInstructions.placeholder', 2)}</div>
     </div>`;

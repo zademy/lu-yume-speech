@@ -38,6 +38,8 @@ export interface TranscriptionResult {
   segments?: TranscriptionSegment[];
   /** Word-level timestamps (only with verbose_json + word granularity) */
   words?: TranscriptionWord[];
+  /** Motor-local provenance (model + revision + effective backend). */
+  provenance?: LocalInferenceProvenance;
 }
 
 /** Single transcription segment with timing and confidence metadata. */
@@ -84,8 +86,15 @@ export type WhisperModel = 'whisper-large-v3' | 'whisper-large-v3-turbo';
 export const WHISPER_MODELS: WhisperModel[] = ['whisper-large-v3', 'whisper-large-v3-turbo'];
 
 // ---------------------------------------------------------------------------
-// Transcription providers
+// Transcription methods and providers
 // ---------------------------------------------------------------------------
+
+/**
+ * Método de transcripción: how a Transcripción is produced.
+ * - 'remote' → a Proveedor remoto (Groq / Cloudflare Whisper)
+ * - 'local'  → a Modelo local executed in the browser (Motor local)
+ */
+export type TranscriptionMethod = 'remote' | 'local';
 
 /** Identifier of an installed transcription provider. */
 export type TranscriptionProviderId = 'groq' | 'cloudflare-whisper';
@@ -169,8 +178,12 @@ export const APP_LANGUAGES: readonly { value: AppLanguage; label: string }[] = [
 export interface AppSettings {
   /** Interface language (English by default). */
   appLanguage: AppLanguage;
-  /** Active transcription provider (manual selection; only one active). */
+  /** Método de transcripción activo. Independent from the selections below. */
+  transcriptionMethod: TranscriptionMethod;
+  /** Last Proveedor remoto used when the method is remote (manual selection). */
   transcriptionProvider: TranscriptionProviderId;
+  /** Last Modelo activo used when the method is local. `null` = none. */
+  localModelId: string | null;
   /** Base URL of the Cloudflare Whisper worker. */
   workerBaseUrl: string;
   model: WhisperModel;
@@ -196,16 +209,35 @@ export interface AppSettings {
   silencePaddingMs: number;
   /** Run an optional LLM pass (Groq chat completions) to polish raw transcription text. */
   enableLlmPostProcess: boolean;
+  /**
+   * Explicit authorization to send locally transcribed TEXT to the Groq LLM
+   * post-processor. With Método Local the pass stays off until this is set
+   * through the explanatory checkbox (privacy default: nothing leaves the
+   * device). Audio never leaves under any setting.
+   */
+  localLlmAuthorized: boolean;
   /** Groq chat model used for LLM post-processing. */
   llmModel: string;
   /** Extra user instructions appended to the built-in LLM post-processing system prompt. */
   llmInstructions: string;
+  /**
+   * Motor local backend policy: 'auto' = try WebGPU, fall back to WASM only
+   * for models that permit it; 'wasm' = force CPU (advanced diagnostic).
+   */
+  localBackend: 'auto' | 'wasm';
+  /**
+   * Minutes of tab inactivity after which the resident local model is freed
+   * from memory (download kept). 0 = never release on idle.
+   */
+  localIdleReleaseMinutes: number;
 }
 
 /** Sensible defaults so the app works without any stored preferences. */
 export const DEFAULT_SETTINGS: Readonly<AppSettings> = {
   appLanguage: 'en',
+  transcriptionMethod: 'remote',
   transcriptionProvider: 'groq',
+  localModelId: null,
   workerBaseUrl: 'https://worker-ia-whisper.zadot911218.workers.dev',
   model: 'whisper-large-v3-turbo',
   operationMode: 'transcribe',
@@ -223,8 +255,11 @@ export const DEFAULT_SETTINGS: Readonly<AppSettings> = {
   silenceThresholdDb: -40,
   silencePaddingMs: 250,
   enableLlmPostProcess: false,
+  localLlmAuthorized: false,
   llmModel: 'llama-3.3-70b-versatile',
   llmInstructions: '',
+  localBackend: 'auto',
+  localIdleReleaseMinutes: 30,
 };
 
 // ---------------------------------------------------------------------------
@@ -238,6 +273,116 @@ export type StatusLevel = 'idle' | 'recording' | 'processing' | 'success' | 'err
 export interface StatusUpdate {
   message: string;
   level: StatusLevel;
+}
+
+// ---------------------------------------------------------------------------
+// Local models (Motor local)
+// ---------------------------------------------------------------------------
+
+/** Memory-requirement tier (runtime footprint, NOT download size). */
+export type LocalModelMemoryTier = 'light' | 'medium' | 'high' | 'very-high';
+
+/**
+ * Logical lifecycle state of a Modelo del catálogo (Motor local).
+ *
+ * T3 subset of the full spec lifecycle — 'active' and 'update-available'
+ * land with the lifecycle/inference tickets.
+ */
+export type LocalModelState =
+  'not-downloaded' | 'downloading' | 'preparing' | 'downloaded' | 'partial' | 'error';
+
+/** Progress phase reported while a model download runs. */
+export type LocalModelProgressPhase = 'downloading' | 'preparing';
+
+/** `localModel:progress` payload — percentage, bytes and phase. */
+export interface LocalModelProgressEvent {
+  /** Catalog entry the download belongs to. */
+  modelId: string;
+  /** Current phase: fetching artifacts or verifying them. */
+  phase: LocalModelProgressPhase;
+  /** Bytes received so far (complete cached artifacts count). */
+  receivedBytes: number;
+  /** Total declared bytes (`downloadBytes`). */
+  totalBytes: number;
+  /** Integer 0–100 progress (100 only once verified). */
+  percent: number;
+  /** Whether the transfer is an explicit model update (old revision stays active). */
+  isUpdate?: boolean;
+}
+
+/** `localModel:state` payload — fired on every logical state transition. */
+export interface LocalModelStateEvent {
+  modelId: string;
+  state: LocalModelState;
+  /** State before the transition (null when the record is first created). */
+  previous: LocalModelState | null;
+}
+
+/**
+ * `localModel:warning` payload — advisory only; downloads proceed.
+ * Space and persistence warnings are warnings by spec, never blockers.
+ */
+export type LocalModelWarningEvent =
+  | { kind: 'space-insufficient'; modelId: string; neededBytes: number; availableBytes: number }
+  | { kind: 'space-unreliable'; modelId: string }
+  | { kind: 'persistence-denied'; modelId: string }
+  | {
+      kind: 'memory-tier';
+      modelId: string;
+      tier: LocalModelMemoryTier;
+      deviceMemoryGb: number;
+    };
+
+/** Inference backend the Motor local actually runs on. */
+export type LocalBackend = 'webgpu' | 'wasm';
+
+/** `localModel:memory` payload — residency of the loaded model in the worker. */
+export interface LocalModelMemoryEvent {
+  /** Catalog id of the resident model; null = nothing resident. */
+  modelId: string | null;
+  /** Backend the resident model runs on; null = nothing resident. */
+  backend: LocalBackend | null;
+}
+
+/**
+ * How a Transcripción was produced when extra provenance applies (Motor
+ * local). Remote providers leave this undefined — their provenance is the
+ * provider id stored alongside the entry.
+ */
+export interface LocalInferenceProvenance {
+  modelId: string;
+  revision: string;
+  backend: LocalBackend;
+}
+
+/** The nine actionable local-failure categories (spec T7). */
+export type LocalErrorCategory =
+  | 'browser-not-supported'
+  | 'webgpu-unavailable'
+  | 'insufficient-memory'
+  | 'insufficient-space'
+  | 'download-interrupted'
+  | 'integrity-invalid'
+  | 'model-incompatible'
+  | 'inference-failed'
+  | 'busy-other-tab';
+
+/** Manual recovery actions the UI can offer (never automatic sending). */
+export type LocalRecoveryAction =
+  | 'retry'
+  | 'smaller-model'
+  | 'switch-backend'
+  | 'remote-groq'
+  | 'remote-cloudflare'
+  | 're-download'
+  | 'update-browser'
+  | 'wait-other-tab'
+  | 'free-space';
+
+/** Classified local failure: category plus ordered manual actions. */
+export interface LocalFailureClassification {
+  category: LocalErrorCategory;
+  actions: readonly LocalRecoveryAction[];
 }
 
 // ---------------------------------------------------------------------------
@@ -301,6 +446,14 @@ export interface EventMap {
   'escrito:updated': Escrito[];
   /** Puerta de acceso state changed (setup → locked → open) */
   'gate:change': GateState;
+  /** Local model download progress (percent, bytes, phase). */
+  'localModel:progress': LocalModelProgressEvent;
+  /** Local model logical state changed (Motor local). */
+  'localModel:state': LocalModelStateEvent;
+  /** Advisory warning from the Motor local (space / persistence / memory). */
+  'localModel:warning': LocalModelWarningEvent;
+  /** Resident local model in the worker changed (loaded / released). */
+  'localModel:memory': LocalModelMemoryEvent;
 }
 
 // ---------------------------------------------------------------------------
@@ -372,6 +525,14 @@ export interface HistoryEntry {
   language?: string;
   /** Whisper model used */
   model: WhisperModel;
+  /** Método de transcripción that produced this entry (audit provenance). */
+  method?: TranscriptionMethod;
+  /** Catalog id of the Modelo activo (local method provenance). */
+  localModelId?: string;
+  /** Pinned revision of the local model (local method provenance). */
+  localModelRevision?: string;
+  /** Backend the local inference actually ran on (local method provenance). */
+  backend?: LocalBackend;
   /** Provider that produced this entry (omitted = Groq). */
   provider?: TranscriptionProviderId;
   /** Audio duration in seconds */
@@ -488,11 +649,36 @@ export type TranscriptionError =
   | ({ kind: 'rate-limit'; retryAfterMs?: number } & ErrorPayload)
   | ({ kind: 'network' } & ErrorPayload)
   | ({ kind: 'parse' } & ErrorPayload)
-  | ({ kind: 'server'; status: number } & ErrorPayload);
+  | ({ kind: 'server'; status: number } & ErrorPayload)
+  /** Request incompatible with the active model (local engine). */
+  | ({ kind: 'incompatible' } & ErrorPayload);
+
+/**
+ * Structured failure code attached to local-engine `TranscriptionError`s so
+ * recovery classification never depends on parsing human messages.
+ */
+export type LocalFailureCode =
+  | 'no-active-model'
+  | 'model-not-in-catalog'
+  | 'model-not-downloaded'
+  | 'memory-blocked'
+  | 'webgpu-required'
+  | 'wasm-not-supported'
+  | 'request-incompatible'
+  | 'browser-not-supported'
+  | 'audio-decode'
+  | 'load-failed'
+  | 'weights-missing'
+  | 'memory-inference'
+  | 'inference-failed'
+  | 'inference-busy-other-tab'
+  | 'cancelled';
 
 interface ErrorPayload {
   message: string;
   cause?: unknown;
+  /** Structured local-engine failure code (never set by remote providers). */
+  code?: LocalFailureCode;
 }
 
 /**

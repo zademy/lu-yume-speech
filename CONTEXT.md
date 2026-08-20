@@ -8,9 +8,49 @@ Este contexto describe las grabaciones de audio, los textos que el usuario obtie
 Una captura de audio junto con su transcripción y sus metadatos (fecha, duración, idiomas de origen y destino). Es la unidad raíz que el usuario graba y conserva. Los resúmenes no forman parte de la Grabación: se asocian al texto visible, que puede provenir de varias grabaciones.
 _Avoid_: Clip, audio, nota, item, registro
 
-**Proveedor**:
-Servicio externo que produce la Transcripción de una Grabación. Puede haber varios configurados, pero solo uno está activo a la vez.
+**Proveedor remoto**:
+Servicio externo que produce la Transcripción de una Grabación. Groq y Cloudflare Whisper son Proveedores remotos. Puede haber varios configurados, pero solo uno se usa para cada Transcripción remota.
 _Avoid_: Cliente, motor, backend, API
+
+**Método de transcripción**:
+Modalidad elegida para producir una Transcripción: mediante un Proveedor remoto o mediante procesamiento local en el navegador.
+_Avoid_: Proveedor, modelo, modo
+
+**Transcripción local**:
+Transcripción cuya Grabación y texto se procesan dentro del navegador sin enviarse a un Proveedor remoto. No implica por sí sola que la aplicación pueda abrirse sin conexión.
+_Avoid_: Aplicación offline, transcripción privada
+
+**Aplicación sin conexión**:
+Aplicación cuya interfaz puede abrirse y funcionar sin acceso a la red. Es una capacidad distinta de la Transcripción local.
+_Avoid_: Transcripción local, modo local
+
+**Motor local**:
+Software que ejecuta un Modelo local en el navegador para producir una Transcripción sin enviar la Grabación a un Proveedor remoto.
+_Avoid_: Proveedor local, API local, modelo
+
+**Modelo local**:
+Artefacto descargable que contiene los parámetros necesarios para que un Motor local produzca Transcripciones.
+_Avoid_: Motor, proveedor, servicio
+
+**Modelo del catálogo**:
+Modelo local aprobado por LU YUME para su descarga, con revisión, artefactos, tamaño, licencia y capacidades declaradas.
+_Avoid_: Modelo disponible, modelo soportado
+
+**Modelo descargado**:
+Modelo del catálogo cuyos artefactos están completos y verificados en el almacenamiento privado del navegador. El navegador puede eliminarlo bajo presión de espacio.
+_Avoid_: Modelo instalado, modelo disponible
+
+**Modelo activo**:
+Modelo descargado que se usará para la siguiente Transcripción local. Solo puede haber uno activo a la vez.
+_Avoid_: Modelo predeterminado, modelo instalado, proveedor activo
+
+**Descarga parcial**:
+Datos incompletos de un Modelo del catálogo que todavía no pueden activarse.
+_Avoid_: Modelo descargado, modelo dañado
+
+**Actualización de modelo**:
+Revisión aprobada de un Modelo del catálogo posterior a la revisión descargada. Requiere confirmación del usuario y verificación antes de sustituir la revisión anterior.
+_Avoid_: Actualización automática, modelo nuevo
 
 **Transcripción**:
 Texto obtenido al convertir una grabación de audio en lenguaje escrito.

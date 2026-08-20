@@ -111,4 +111,41 @@ describe('TranscriptionSession', () => {
     expect(pending).not.toBeNull();
     expect(await pending!.blob.text()).toBe('good-take');
   });
+
+  it('failKeepingAudio returns to idle but keeps the clip for manual recovery (T7)', async () => {
+    const s = new TranscriptionSession();
+    s.startRecording();
+    s.submit(blob('failed-local-take'), 'audio/webm');
+
+    const kept = s.failKeepingAudio();
+    expect(kept).not.toBeNull();
+    expect(await kept!.blob.text()).toBe('failed-local-take');
+    // Session is reusable — a retry completes and TAKES the kept clip.
+    expect(s.getStage()).toBe('idle');
+    const taken = s.complete();
+    expect(await taken!.blob.text()).toBe('failed-local-take');
+    expect(s.peekPending()).toBeNull();
+  });
+
+  it('a new recording after failKeepingAudio overwrites the kept clip (surfaced)', async () => {
+    const s = new TranscriptionSession();
+    s.startRecording();
+    s.submit(blob('old-failed'), 'audio/webm');
+    s.failKeepingAudio();
+
+    s.startRecording();
+    const previous = s.submit(blob('new-take'), 'audio/webm');
+    expect(previous).not.toBeNull();
+    expect(await previous!.blob.text()).toBe('old-failed');
+    expect(await s.complete()!.blob.text()).toBe('new-take');
+  });
+
+  it('discardKept drops recovery audio without touching the stage', () => {
+    const s = new TranscriptionSession();
+    s.startRecording();
+    s.submit(blob('stale'), 'audio/webm');
+    s.failKeepingAudio();
+    s.discardKept();
+    expect(s.peekPending()).toBeNull();
+  });
 });

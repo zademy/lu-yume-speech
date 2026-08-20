@@ -19,7 +19,8 @@ import type { TranscriptionResult } from '../types';
  * Hides the panel when no metadata is available.
  */
 export function renderMetadata(panel: HTMLDivElement, result: TranscriptionResult): void {
-  const hasMetadata = result.language || result.duration || result.segments?.length;
+  const hasMetadata =
+    result.language || result.duration || result.segments?.length || result.provenance;
 
   // Clear via DOM API (no innerHTML).
   panel.replaceChildren();
@@ -52,6 +53,17 @@ export function renderMetadata(panel: HTMLDivElement, result: TranscriptionResul
 
   if (result.words?.length) {
     summary.appendChild(createChip('Palabras', String(result.words.length), 'muted'));
+  }
+
+  // Effective backend of a local transcription (spec: always visible).
+  if (result.provenance) {
+    summary.appendChild(
+      createChip(
+        'Backend',
+        result.provenance.backend === 'webgpu' ? 'WebGPU' : 'CPU (WASM)',
+        'accent',
+      ),
+    );
   }
 
   panel.appendChild(summary);
