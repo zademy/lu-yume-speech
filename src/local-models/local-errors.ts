@@ -7,37 +7,14 @@
  * build the exportable technical report. Pure module — no DOM, no bus.
  */
 
-import type { LocalFailureCode, LocalModelState, TranscriptionError } from '../types';
-
-/** The nine actionable categories (spec T7). */
-export type LocalErrorCategory =
-  | 'browser-not-supported'
-  | 'webgpu-unavailable'
-  | 'insufficient-memory'
-  | 'insufficient-space'
-  | 'download-interrupted'
-  | 'integrity-invalid'
-  | 'model-incompatible'
-  | 'inference-failed'
-  | 'busy-other-tab';
-
-/** Manual recovery actions the UI can offer (never automatic sending). */
-export type LocalRecoveryAction =
-  | 'retry'
-  | 'smaller-model'
-  | 'switch-backend'
-  | 'remote-groq'
-  | 'remote-cloudflare'
-  | 're-download'
-  | 'update-browser'
-  | 'wait-other-tab'
-  | 'free-space';
-
-/** Classified failure: category plus ordered manual actions. */
-export interface LocalFailureClassification {
-  category: LocalErrorCategory;
-  actions: readonly LocalRecoveryAction[];
-}
+import type {
+  LocalErrorCategory,
+  LocalFailureClassification,
+  LocalFailureCode,
+  LocalModelState,
+  LocalRecoveryAction,
+  TranscriptionError,
+} from '../types';
 
 /** Input accepted by the classifier — any local failure shape. */
 export interface LocalFailureInput {
@@ -75,6 +52,7 @@ const CODE_CATEGORY: Readonly<Record<LocalFailureCode, LocalErrorCategory>> = {
   'weights-missing': 'integrity-invalid',
   'memory-inference': 'insufficient-memory',
   'inference-failed': 'inference-failed',
+  'inference-busy-other-tab': 'busy-other-tab',
   cancelled: 'download-interrupted',
 };
 

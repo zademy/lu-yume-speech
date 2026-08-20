@@ -11,7 +11,7 @@
 
 import type { AppLanguage } from '../types';
 import { translate } from '../i18n/translations';
-import type { LocalRecoveryAction, LocalFailureClassification } from '../local-models/local-errors';
+import type { LocalFailureClassification, LocalRecoveryAction } from '../types';
 
 /** The conserved recording awaiting a manual decision. */
 export interface KeptRecording {

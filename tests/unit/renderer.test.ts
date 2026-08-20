@@ -196,6 +196,17 @@ describe('renderApp application shell', () => {
     // After translateTree('es'), unmeasured rows read Estimación.
     expect(cards[3]?.querySelector('[data-model-measured]')?.textContent).toBe('Estimación');
     expect(cards[0]?.querySelector('[data-model-measured]')?.textContent).toBe('Estimación');
+
+    // First-download guidance (story 25): exactly one Recommended chip
+    // (Whisper Small) and one For-modest-hardware chip (Whisper Base).
+    for (const card of cards) {
+      const recommended = card.querySelector<HTMLElement>('[data-model-recommended]');
+      const modest = card.querySelector<HTMLElement>('[data-model-modest]');
+      expect(!!recommended).toBe(card.dataset.modelId === 'whisper-small');
+      expect(!!modest).toBe(card.dataset.modelId === 'whisper-base');
+      if (recommended) expect(recommended.textContent).toBe('Recomendado');
+      if (modest) expect(modest.textContent).toBe('Para hardware modesto');
+    }
   });
 
   it('renders the Puerta de acceso visible with the shell inert by default', () => {

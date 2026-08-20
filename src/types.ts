@@ -10,8 +10,6 @@
  * - SRP: This module only declares types, nothing else.
  */
 
-import type { LocalModelMemoryTier } from './utils/local-model-catalog';
-
 // ---------------------------------------------------------------------------
 // Audio
 // ---------------------------------------------------------------------------
@@ -281,8 +279,8 @@ export interface StatusUpdate {
 // Local models (Motor local)
 // ---------------------------------------------------------------------------
 
-/** Memory-requirement tier (re-exported catalog type for event payloads). */
-export type { LocalModelMemoryTier } from './utils/local-model-catalog';
+/** Memory-requirement tier (runtime footprint, NOT download size). */
+export type LocalModelMemoryTier = 'light' | 'medium' | 'high' | 'very-high';
 
 /**
  * Logical lifecycle state of a Modelo del catálogo (Motor local).
@@ -355,6 +353,36 @@ export interface LocalInferenceProvenance {
   modelId: string;
   revision: string;
   backend: LocalBackend;
+}
+
+/** The nine actionable local-failure categories (spec T7). */
+export type LocalErrorCategory =
+  | 'browser-not-supported'
+  | 'webgpu-unavailable'
+  | 'insufficient-memory'
+  | 'insufficient-space'
+  | 'download-interrupted'
+  | 'integrity-invalid'
+  | 'model-incompatible'
+  | 'inference-failed'
+  | 'busy-other-tab';
+
+/** Manual recovery actions the UI can offer (never automatic sending). */
+export type LocalRecoveryAction =
+  | 'retry'
+  | 'smaller-model'
+  | 'switch-backend'
+  | 'remote-groq'
+  | 'remote-cloudflare'
+  | 're-download'
+  | 'update-browser'
+  | 'wait-other-tab'
+  | 'free-space';
+
+/** Classified local failure: category plus ordered manual actions. */
+export interface LocalFailureClassification {
+  category: LocalErrorCategory;
+  actions: readonly LocalRecoveryAction[];
 }
 
 // ---------------------------------------------------------------------------
@@ -643,6 +671,7 @@ export type LocalFailureCode =
   | 'weights-missing'
   | 'memory-inference'
   | 'inference-failed'
+  | 'inference-busy-other-tab'
   | 'cancelled';
 
 interface ErrorPayload {

@@ -949,6 +949,8 @@ function renderLocalModelCard(entry: (typeof LOCAL_MODEL_CATALOG)[number]): stri
         </div>
         <div class="flex items-center gap-1.5">
           <span class="hidden rounded-full border border-[var(--color-border-strong)] px-2 py-0.5 text-[10.5px] font-semibold" data-model-active-badge="${entry.id}" data-i18n="localModels.activeBadge"></span>
+          ${entry.recommended ? `<span class="rounded-full border border-[var(--color-accent-strong,#1f6feb)] px-2 py-0.5 text-[10.5px] font-semibold" data-model-recommended="${entry.id}" data-i18n="localModels.recommended"></span>` : ''}
+          ${entry.modestHardware ? `<span class="rounded-full border border-[var(--color-border-strong)] px-2 py-0.5 text-[10.5px] font-semibold" data-model-modest="${entry.id}" data-i18n="localModels.modestHardware"></span>` : ''}
           ${entry.experimental ? `<span class="rounded-full border border-[var(--color-border-strong)] px-2 py-0.5 text-[10.5px] font-semibold" data-model-experimental="${entry.id}" data-i18n="localModels.experimental"></span>` : ''}
           <span class="local-model-state rounded-full border border-[var(--color-border-subtle)] px-2 py-0.5 text-[10.5px]" data-state="not-downloaded" data-model-state="${entry.id}" data-i18n="localModels.state.notDownloaded"></span>
         </div>

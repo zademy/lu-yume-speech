@@ -60,6 +60,16 @@ describe('local model catalog', () => {
     }
   });
 
+  it('guides the first download: Small recommended, Base for modest hardware', () => {
+    // Exactly one of each — the story-25 guidance must stay unambiguous.
+    expect(LOCAL_MODEL_CATALOG.filter((e) => e.recommended === true).map((e) => e.id)).toEqual([
+      'whisper-small',
+    ]);
+    expect(LOCAL_MODEL_CATALOG.filter((e) => e.modestHardware === true).map((e) => e.id)).toEqual([
+      'whisper-base',
+    ]);
+  });
+
   it('keeps experimental measurements out of published results (benchmarks separate)', () => {
     // Stage-3 entries ship as estimates until their own measurements land.
     for (const entry of LOCAL_MODEL_CATALOG) {

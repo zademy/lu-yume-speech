@@ -9,6 +9,7 @@ import {
   LocalWhisperProvider,
   type InferenceWorkerLike,
 } from '../../src/local-models/local-whisper-provider';
+import type { CrossTabLockPort } from '../../src/local-models/cross-tab-lock';
 import type { WorkerRequest, WorkerResponse } from '../../src/local-models/worker-protocol';
 
 // ---------------------------------------------------------------------------
@@ -105,6 +106,7 @@ function createProvider(
     policy?: 'auto' | 'wasm';
     deviceMemoryGb?: number | null;
     effectiveBackend?: 'webgpu' | 'wasm';
+    lock?: CrossTabLockPort;
   } = {},
 ) {
   const bus = new EventBus<EventMap>();
@@ -129,6 +131,7 @@ function createProvider(
       over.workerFactory ??
       (() => new FakeWorker(over.autoLoad ?? true, over.effectiveBackend ?? 'wasm')),
     decoder: async () => ({ audio: new Float32Array([0, 0.5, 1]), duration: 2.5 }),
+    lock: over.lock,
   });
   return { provider, bus, events };
 }
@@ -295,6 +298,36 @@ describe('LocalWhisperProvider — contract: typed failures', () => {
     await expect(h.provider.transcribe(blob(), REQUEST)).rejects.toMatchObject({
       detail: { kind: 'network' },
     });
+  });
+
+  it('fails incompatible when another tab holds the cross-tab lock', async () => {
+    const busyLock: CrossTabLockPort = {
+      withLock: async () => ({ ok: false, reason: 'busy-other-tab' }),
+    };
+    const h = createProvider({ lock: busyLock });
+    await expect(h.provider.transcribe(blob(), REQUEST)).rejects.toMatchObject({
+      detail: { kind: 'incompatible', code: 'inference-busy-other-tab' },
+    });
+    expect(h.events.at(-1)?.event).toBe('error');
+    // The lock is checked before any worker is spawned — no GPU work leaks.
+    expect(FakeWorker.instances).toHaveLength(0);
+  });
+
+  it('runs inference under the lock when it is granted', async () => {
+    const held: string[] = [];
+    const grantedLock: CrossTabLockPort = {
+      withLock: async <T>(name: string, work: () => Promise<T>) => {
+        held.push(name);
+        return { ok: true as const, value: await work() };
+      },
+    };
+    const h = createProvider({ lock: grantedLock });
+    const pending = h.provider.transcribe(blob(), REQUEST);
+    const worker = await awaitWorker();
+    await vi.waitFor(() => expect(worker.posted.some((m) => m.type === 'transcribe')).toBe(true));
+    worker.respond({ type: 'result', requestId: worker.lastTranscribe.requestId, text: 'ok' });
+    await expect(pending).resolves.toMatchObject({ text: 'ok' });
+    expect(held).toEqual(['lu-yume-local-models']);
   });
 
   it('fails network when the worker reports a load error and drops the worker', async () => {

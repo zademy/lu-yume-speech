@@ -97,10 +97,14 @@ describe('classifyLocalFailure — the nine categories', () => {
     expect(classify({ code: 'inference-failed' }).actions[0]).toBe('retry');
   });
 
-  it('busy-other-tab: cross-tab lock refusal', () => {
+  it('busy-other-tab: cross-tab lock refusal (download and inference)', () => {
     const out = classify({ downloadReason: 'busy-other-tab' });
     expect(out.category).toBe('busy-other-tab');
     expect(out.actions).toEqual(['wait-other-tab']);
+    // Inference denial carries its own code but lands in the same bucket.
+    expect(classify({ code: 'inference-busy-other-tab', kind: 'incompatible' }).category).toBe(
+      'busy-other-tab',
+    );
   });
 
   it('every category carries at least one concrete action', () => {

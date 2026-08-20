@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createRecoveryController } from '../../src/ui/recovery-panel';
-import type { LocalFailureClassification } from '../../src/local-models/local-errors';
+import type { LocalFailureClassification } from '../../src/types';
 
 function makePanel(): {
   root: HTMLElement;

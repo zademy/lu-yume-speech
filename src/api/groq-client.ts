@@ -24,11 +24,11 @@ import { z } from 'zod';
 import type { EventBus } from '../core/event-bus';
 import type { EventMap, TranscriptionOptions, TranscriptionResult } from '../types';
 import {
-  fail as sharedFail,
   runTranscriptionFetch,
   type TranscriptionProvider,
   type TranscriptionRequest,
 } from './transcription-provider';
+import { fail as sharedFail } from '../core/transcription-fail';
 import type { TranscriptionError } from '../types';
 
 /** Groq API base URL (OpenAI-compatible). */

@@ -11,14 +11,13 @@
  * means shipping a new catalog version, never fetching one remotely.
  */
 
+import type { LocalModelMemoryTier } from '../types';
+
 /** Hard per-download ceiling agreed in the spec: 2 GB decimal bytes. */
 export const LOCAL_MODEL_MAX_BYTES = 2_000_000_000;
 
 /** Manifest version — bump whenever an entry is added, removed or repointed. */
 export const LOCAL_CATALOG_VERSION = 3;
-
-/** Memory-requirement tier (runtime footprint, NOT download size). */
-export type LocalModelMemoryTier = 'light' | 'medium' | 'high' | 'very-high';
 
 /** Precision label derived from LU YUME's own benchmark (Estimación until then). */
 export type LocalModelPrecision = 'basic' | 'medium' | 'high';
@@ -85,6 +84,16 @@ export interface LocalCatalogEntry {
    * touching already-downloaded weights.
    */
   experimental?: true;
+  /**
+   * First-download recommendation (spec story 25): the card the app
+   * highlights when guiding a user with nothing downloaded.
+   */
+  recommended?: true;
+  /**
+   * Suggested alternative for modest hardware (spec story 25) — shown as a
+   * hint next to the recommended pick, never selected automatically.
+   */
+  modestHardware?: true;
 }
 
 /** Runtime files every Whisper entry fetches alongside its ONNX weights. */
@@ -142,6 +151,7 @@ export const LOCAL_MODEL_CATALOG: readonly LocalCatalogEntry[] = [
     backend: 'wasm-compatible',
     license: 'mit',
     licenseUrl: 'https://huggingface.co/onnx-community/whisper-base',
+    modestHardware: true,
   }),
   withBenchmarkLabels({
     id: 'whisper-small',
@@ -172,6 +182,7 @@ export const LOCAL_MODEL_CATALOG: readonly LocalCatalogEntry[] = [
     backend: 'wasm-compatible',
     license: 'mit',
     licenseUrl: 'https://huggingface.co/onnx-community/whisper-small',
+    recommended: true,
   }),
   withBenchmarkLabels({
     id: 'whisper-large-v3-turbo',

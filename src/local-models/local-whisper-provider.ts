@@ -25,10 +25,11 @@ import type {
   TranscriptionError,
 } from '../types';
 import type { TranscriptionProvider, TranscriptionRequest } from '../api/transcription-provider';
-import { fail as sharedFail } from '../api/transcription-provider';
+import { fail as sharedFail } from '../core/transcription-fail';
 import type { LocalCatalogEntry } from '../utils/local-model-catalog';
 import type { AudioDecoderPort } from './audio-decode';
 import { planBackends, type BackendPolicy } from './backend-decision';
+import { LOCAL_MODELS_LOCK_NAME, type CrossTabLockPort } from './cross-tab-lock';
 import { memoryTierGuard } from './memory-guard';
 import { resolveLocalRequest } from './local-request';
 import type { WorkerModelSpec, WorkerRequest, WorkerResponse } from './worker-protocol';
@@ -61,6 +62,12 @@ export interface LocalWhisperProviderDeps {
   getDeviceMemoryGb: () => number | null;
   workerFactory: InferenceWorkerFactory;
   decoder: AudioDecoderPort;
+  /**
+   * Cross-tab lock serializing inference against downloads/deletes/updates
+   * in other tabs (spec story 44). Optional — tests and same-tab-only
+   * deployments may omit it.
+   */
+  lock?: CrossTabLockPort;
 }
 
 /** Pending worker exchange (one load or one transcribe at a time). */
@@ -177,6 +184,31 @@ export class LocalWhisperProvider implements TranscriptionProvider {
     });
 
     const spec: WorkerModelSpec = { repo: entry.repo, revision: entry.revision };
+
+    // Cross-tab serialization (spec story 44): inference holds the same lock
+    // as downloads/deletes/updates, so only one tab runs local work at a
+    // time. Contention fails fast with a typed code — never queues.
+    const runInference = (): Promise<TranscriptionResult> =>
+      this.runInference(decoded, spec, entry, resolution.request, externalSignal);
+    if (!this.deps.lock) return runInference();
+    const outcome = await this.deps.lock.withLock(LOCAL_MODELS_LOCK_NAME, runInference);
+    if (outcome.ok) return outcome.value;
+    throw this.fail({
+      kind: 'incompatible',
+      code: 'inference-busy-other-tab',
+      message:
+        'Otra pestaña está usando los modelos locales ahora mismo. Ciérrala o reintenta cuando termine.',
+    });
+  }
+
+  /** Load (if needed) and transcribe — always called with the lock held. */
+  private async runInference(
+    decoded: { audio: Float32Array; duration: number },
+    spec: WorkerModelSpec,
+    entry: LocalCatalogEntry,
+    request: { language?: string; task: 'transcribe' | 'translate' },
+    externalSignal?: AbortSignal,
+  ): Promise<TranscriptionResult> {
     const loaded = await this.ensureLoaded(spec, entry.id, externalSignal);
     if (!loaded.ok) throw loaded.error;
 
@@ -186,8 +218,8 @@ export class LocalWhisperProvider implements TranscriptionProvider {
         requestId: this.takeRequestId(),
         model: spec,
         audio: decoded.audio,
-        language: resolution.request.language,
-        task: resolution.request.task,
+        language: request.language,
+        task: request.task,
       },
       [decoded.audio.buffer],
       externalSignal,
@@ -202,7 +234,7 @@ export class LocalWhisperProvider implements TranscriptionProvider {
 
     const transcription: TranscriptionResult = {
       text: result.response.text,
-      language: resolution.request.language ?? result.response.language,
+      language: request.language ?? result.response.language,
       duration: decoded.duration,
       provenance: this.buildProvenance(entry),
     };

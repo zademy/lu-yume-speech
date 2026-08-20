@@ -58,7 +58,7 @@ const en: Dictionary = {
   'dictation.localGate.eyebrow': 'Local model required',
   'dictation.localGate.title': 'Download a local model to dictate',
   'dictation.localGate.body':
-    'Local transcription runs entirely in your browser. Pick a model in Settings › Local models.',
+    'Local transcription runs entirely in your browser. Whisper Small is a good first download — Whisper Base if your hardware is modest.',
   'dictation.localGate.cta': 'Open Settings',
   'dictation.status.prefix': 'Press',
   'dictation.status.suffix': 'to talk',
@@ -260,6 +260,8 @@ const en: Dictionary = {
   'localModels.measuredValue': 'WER {wer} · RTF {rtf} ({backend})',
   'localModels.estimate': 'Estimate',
   'localModels.experimental': 'Experimental',
+  'localModels.recommended': 'Recommended',
+  'localModels.modestHardware': 'For modest hardware',
   'localModels.confirmExperimental':
     'This model is experimental: it may be less stable, its benchmark is measured separately, and it can be withdrawn from the catalog in a future version (already-downloaded weights are never deleted). Download it anyway?',
   'localModels.mobileNote':
@@ -489,7 +491,7 @@ const es: Dictionary = {
   'dictation.localGate.eyebrow': 'Se requiere un modelo local',
   'dictation.localGate.title': 'Descarga un modelo local para dictar',
   'dictation.localGate.body':
-    'La transcripción local se ejecuta por completo en tu navegador. Elige un modelo en Ajustes › Modelos locales.',
+    'La transcripción local se ejecuta por completo en tu navegador. Whisper Small es una buena primera descarga; Whisper Base si tu equipo es modesto.',
   'dictation.localGate.cta': 'Abrir Ajustes',
   'dictation.status.prefix': 'Presiona',
   'dictation.status.suffix': 'para hablar',
@@ -699,6 +701,8 @@ const es: Dictionary = {
   'localModels.measuredValue': 'WER {wer} · RTF {rtf} ({backend})',
   'localModels.estimate': 'Estimación',
   'localModels.experimental': 'Experimental',
+  'localModels.recommended': 'Recomendado',
+  'localModels.modestHardware': 'Para hardware modesto',
   'localModels.confirmExperimental':
     'Este modelo es experimental: puede ser menos estable, su benchmark se mide por separado y puede retirarse del catálogo en una versión futura (los pesos ya descargados nunca se borran). ¿Descargarlo de todos modos?',
   'localModels.mobileNote':

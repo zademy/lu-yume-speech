@@ -971,6 +971,28 @@ textarea:disabled {
   color: var(--color-text-primary);
 }
 
+/* -----------------------------------------------------------------------
+ * Local model cards — first-download guidance highlight (spec story 25).
+ * Applied by the Dictar gate CTA: scroll to Ajustes › Modelos locales and
+ * ring the recommended pick for a few seconds. Reduced motion keeps the
+ * static ring (animation only is disabled by the global rule below).
+ * ----------------------------------------------------------------------- */
+.local-model-card.card-guidance-highlight {
+  border-color: var(--color-accent-emphasis, #1f6feb);
+  box-shadow: 0 0 0 3px var(--color-accent-muted, rgba(31, 111, 235, 0.25));
+  animation: card-guidance-pulse 1.2s ease-in-out 3;
+}
+
+@keyframes card-guidance-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px var(--color-accent-muted, rgba(31, 111, 235, 0.25));
+  }
+  50% {
+    box-shadow: 0 0 0 6px var(--color-accent-muted, rgba(31, 111, 235, 0.4));
+  }
+}
+
 /* Reduced motion — respect user preference */
 @media (prefers-reduced-motion: reduce) {
   *,

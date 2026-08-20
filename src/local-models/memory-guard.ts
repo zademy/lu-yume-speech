@@ -7,7 +7,7 @@
  * guard stays silent (unreliable signals never block anything).
  */
 
-import type { LocalModelMemoryTier } from '../utils/local-model-catalog';
+import type { LocalModelMemoryTier } from '../types';
 
 /** Minimum reported GB each tier is comfortable with (heuristic). */
 const TIER_MIN_GB: Record<LocalModelMemoryTier, number> = {

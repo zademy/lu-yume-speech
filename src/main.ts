@@ -27,6 +27,7 @@ import type {
   TranscriptionProviderId,
   TranscriptionMethod,
   LocalModelState,
+  LocalRecoveryAction,
 } from './types';
 import { DEFAULT_SETTINGS } from './types';
 import {
@@ -46,12 +47,11 @@ import {
   readDeviceMemoryGb,
   isMobileDevice,
 } from './local-models/browser-ports';
-import { createCrossTabLock } from './local-models/cross-tab-lock';
+import { createCrossTabLock, type CrossTabLockPort } from './local-models/cross-tab-lock';
 import {
   buildTechnicalReport,
   classifyLocalFailure,
   fromTranscriptionError,
-  type LocalRecoveryAction,
 } from './local-models/local-errors';
 import { createRecoveryController } from './ui/recovery-panel';
 import {
@@ -516,6 +516,9 @@ async function bootstrap(): Promise<void> {
   // `localModelsCaps` is hydrated by probeEnvironment below; until then no
   // WebGPU is assumed (models requiring it fail honestly at transcribe time).
   let localModelsCaps: ReturnType<typeof detectCapabilities> | null = null;
+  // One lock instance shared by the download engine and the provider so
+  // inference, downloads, deletes and updates serialize across tabs.
+  const localWorkLock = createCrossTabLock();
   const localClient = new LocalWhisperProvider({
     bus,
     catalog: LOCAL_MODEL_CATALOG,
@@ -526,6 +529,7 @@ async function bootstrap(): Promise<void> {
     getDeviceMemoryGb: () => readDeviceMemoryGb(),
     workerFactory: createInferenceWorker,
     decoder: decodeAudioTo16kMono,
+    lock: localWorkLock,
   });
   const getActiveTranscriptionClient = (): TranscriptionProvider => {
     // Local never silently falls back to a remote provider — canDictate
@@ -777,6 +781,7 @@ async function bootstrap(): Promise<void> {
       refreshCredentialUi();
     },
     canMutate: () => !localInference.running,
+    lock: localWorkLock,
     getPolicy: () => getConfig().localBackend,
     onDelete: async (modelId) => {
       const outcome = await engineRef.engine?.deleteModel(modelId);
@@ -1100,7 +1105,22 @@ function wireNavigation(
     });
   });
   elements.dictationKeyGateButton.addEventListener('click', () => navigate('settings'));
-  elements.dictationLocalGateButton.addEventListener('click', () => navigate('settings'));
+  // First-local guidance (spec story 25): land on Ajustes › Modelos locales
+  // and ring the recommended pick — Whisper Small carries the Recomendado
+  // chip, Whisper Base the "modest hardware" hint on its own card.
+  elements.dictationLocalGateButton.addEventListener('click', () => {
+    navigate('settings');
+    window.requestAnimationFrame(() => {
+      document.getElementById('localModelsTitle')?.scrollIntoView({ block: 'start' });
+      const recommended = LOCAL_MODEL_CATALOG.find((entry) => entry.recommended);
+      const card = recommended
+        ? elements.root.querySelector(`[data-model-id="${recommended.id}"]`)
+        : null;
+      if (!card) return;
+      card.classList.add('card-guidance-highlight');
+      window.setTimeout(() => card.classList.remove('card-guidance-highlight'), 4500);
+    });
+  });
   elements.mobileMenuButton.addEventListener('click', () => {
     const open = elements.navigation.dataset.open !== 'true';
     elements.navigation.dataset.open = String(open);
@@ -1426,6 +1446,8 @@ function wireLocalModelEngine(
     canMutate: () => boolean;
     /** Backend policy setting for diagnostics planning ('auto' default). */
     getPolicy?: () => 'auto' | 'wasm';
+    /** Shared cross-tab lock (same instance the provider holds, story 44). */
+    lock?: CrossTabLockPort;
   },
 ): { engine: LocalDownloadEngine | null; renderAll: () => void } {
   const artifactStore = createCacheArtifactStore();
@@ -1460,7 +1482,7 @@ function wireLocalModelEngine(
     storage: createBrowserStorageAdvisor(),
     bus,
     deviceMemoryGb: readDeviceMemoryGb(),
-    lock: createCrossTabLock(),
+    lock: deps.lock ?? createCrossTabLock(),
   });
 
   // Expose readiness to the dictation gate as soon as records exist. The
@@ -1907,6 +1929,27 @@ function wireMethodSelect(
 }
 
 /**
+ * Lock or unlock the remote-only transcription knobs (model, translation,
+ * prompt, temperature, response format). Shared shape behind both the method
+ * switch (Método Local locks everything remote) and the provider switch
+ * (Cloudflare's fixed worker model locks the Groq-only knobs). The timestamp
+ * toggle stays with the callers — it also depends on the selected response
+ * format.
+ */
+function setRemoteKnobsLocked(elements: AppElements, locked: boolean): void {
+  elements.modelSelect.disabled = locked;
+  const translateOption = elements.operationModeSelect.querySelector<HTMLOptionElement>(
+    'option[value="translate"]',
+  );
+  if (translateOption) translateOption.disabled = locked;
+  // A disabled option must not stay selected.
+  if (locked) elements.operationModeSelect.value = 'transcribe';
+  elements.promptInput.disabled = locked;
+  elements.temperatureSlider.disabled = locked;
+  elements.responseFormatSelect.disabled = locked;
+}
+
+/**
  * Reflects the Método de transcripción in the transcription controls.
  *
  * Under the local method the Proveedor remoto selector and the remote-only
@@ -1931,16 +1974,7 @@ function applyMethodConstraints(
     : true;
   if (!isLocal) elements.localModelSelect.value = 'none';
   if (isLocal) {
-    elements.modelSelect.disabled = true;
-    const translateOption = elements.operationModeSelect.querySelector<HTMLOptionElement>(
-      'option[value="translate"]',
-    );
-    if (translateOption) translateOption.disabled = true;
-    // A disabled option must not stay selected (mirrors the worker branch).
-    elements.operationModeSelect.value = 'transcribe';
-    elements.promptInput.disabled = true;
-    elements.temperatureSlider.disabled = true;
-    elements.responseFormatSelect.disabled = true;
+    setRemoteKnobsLocked(elements, true);
     elements.timestampToggle.disabled = true;
   } else {
     applyProviderConstraints(elements, provider, hasWorkerToken);
@@ -1966,15 +2000,7 @@ function applyProviderConstraints(
     'option[value="cloudflare-whisper"]',
   );
   if (workerOption) workerOption.disabled = !hasWorkerToken;
-  elements.modelSelect.disabled = isWorker;
-  const translateOption = elements.operationModeSelect.querySelector<HTMLOptionElement>(
-    'option[value="translate"]',
-  );
-  if (translateOption) translateOption.disabled = isWorker;
-  if (isWorker) elements.operationModeSelect.value = 'transcribe';
-  elements.promptInput.disabled = isWorker;
-  elements.temperatureSlider.disabled = isWorker;
-  elements.responseFormatSelect.disabled = isWorker;
+  setRemoteKnobsLocked(elements, isWorker);
   elements.timestampToggle.disabled =
     isWorker || elements.responseFormatSelect.value !== 'verbose_json';
 }
