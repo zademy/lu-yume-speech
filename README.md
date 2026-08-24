@@ -4,9 +4,9 @@
   <h1>LU YUME — Speech-to-Text</h1>
 
   <p>
-    Browser-based speech-to-text transcription powered by
-    <strong>Groq Whisper</strong>. Record your voice, get instant text —
-    zero backend, fully client-side, cross-platform.
+    Browser-based speech-to-text: transcribe through <strong>Groq Whisper</strong>
+    or fully <strong>on-device</strong> with local Whisper models. Record your
+    voice, get instant text — zero backend, fully client-side, cross-platform.
   </p>
 
   <p>
@@ -24,11 +24,13 @@
 ## Overview
 
 LU YUME is a **TypeScript SPA** (Vite + Tailwind 4) that captures microphone
-audio in the browser and transcribes it through a swappable provider layer —
-Groq Whisper by default, or your own Cloudflare Whisper worker. It also
-offers translation, AI noise suppression, fuzzy post-correction, optional LLM
-polish, transcript summaries, a Pluma writing surface, and local metrics — all
-without a backend.
+audio in the browser and transcribes it through a swappable method/provider
+layer — Groq Whisper by default, your own Cloudflare Whisper worker, or
+Whisper models running **fully locally** in the browser (Transformers.js +
+ONNX Runtime Web). It also offers translation, AI noise suppression, fuzzy
+post-correction, optional LLM polish, transcript summaries, a Pluma writing
+surface, local metrics, an on-device benchmark, and a cosmetic access gate —
+all without a backend.
 
 > Credentials **never** ship in the JS bundle. Each user supplies them at
 > runtime and they are stored in their browser's `localStorage`. See
@@ -42,7 +44,11 @@ the platform-bridge pattern, see [ARCHITECTURE.md](ARCHITECTURE.md).
 ## Features
 
 - **Real-time transcription & translation** — record audio and send it to Groq Whisper; switch between transcribing (same language) and translating (to English) from the UI.
-- **Swappable transcription providers** — pick between the Groq API and your own Cloudflare Whisper worker (adapter pattern); activation is manual from Settings and each credential lives in the browser.
+- **Local, on-device transcription** — download Whisper models from a versioned catalog and run them in the browser (Transformers.js + ONNX Runtime Web, WebGPU with automatic WASM fallback). Audio never leaves the device.
+- **Model manager** — downloads with progress, cancellation and verification; atomic updates, deletion, reconciliation after browser eviction, one active model, cross-tab locks, and idle memory release.
+- **Access gate** — a client-side access phrase unlocks the app once per load; cosmetic by design (no backend, no user accounts).
+- **On-device benchmark** — run the bundled ES/EN corpus to measure WER and RTF per model, and export the results as JSON.
+- **Swappable transcription methods & providers** — pick the method (Remote API vs Local in the browser) and, for remote, between the Groq API and your own Cloudflare Whisper worker (adapter pattern); activation is manual from Settings and each credential lives in the browser.
 - **Custom vocabulary & fuzzy correction** — define domain terms, names, and acronyms; they're passed to Whisper as a prompt and fuzzy-corrected afterward (Levenshtein + Soundex).
 - **Filler / stutter cleanup** — language-aware stripping of filler words and repeated syllables after transcription.
 - **Silence trimming** — leading/trailing silence is removed before transcription (fail-open) for lower latency and fewer hallucinations.
@@ -74,7 +80,9 @@ the platform-bridge pattern, see [ARCHITECTURE.md](ARCHITECTURE.md).
 3. Copy the key — you will paste it into the app on first launch.
 
 > The key is **free tier–eligible** and rate-limited by Groq, not by this app.
-> Network egress is `https://api.groq.com` only.
+> With the remote method the app only talks to `https://api.groq.com`; the
+> local method adds explicit Hugging Face model downloads (see
+> [SECURITY.md](SECURITY.md)).
 
 ### 3. Run the app
 
@@ -89,9 +97,11 @@ pnpm install
 pnpm dev
 ```
 
-The dev server opens at **http://localhost:1420**. On first use, the app
-prompts for the Groq key; microphone permission is requested the first time
-you record. Inicio is available without a key; Dictar requires one.
+The dev server opens at **http://localhost:1420**. On first use, the app asks
+you to choose an access phrase, then prompts for the Groq key; microphone
+permission is requested the first time you record. Inicio is available without
+a key; Dictar requires either a Groq key (remote method) or a downloaded
+local model (local method).
 
 #### B. Pre-built image from GHCR (no build required)
 
@@ -123,6 +133,24 @@ docker compose down      # stop and remove
 
 ---
 
+## Access gate
+
+On first launch the app asks you to choose an **access phrase** (trimmed,
+≥ 4 characters). Every subsequent load shows a full-screen gate that must be
+unlocked with that phrase before the app is revealed — once per load, with no
+inactivity re-lock.
+
+- The phrase is hashed client-side (SHA-256 with a random salt via Web Crypto,
+  compared in constant time) and persisted as the `gate` credential in
+  `localStorage`, through the same Platform seam as provider credentials.
+- Change it from **Ajustes → Access phrase** by confirming the current one.
+  There is no "remove gate" affordance — resetting means clearing site data.
+- It is **cosmetic by design**: it filters passers-by, not someone who
+  inspects the bundle or opens DevTools. See
+  [ADR 0003](docs/adr/0003-puerta-acceso-cosmetica-sin-backend.md).
+
+---
+
 ## Deployment
 
 ### Production build (no Docker)
@@ -141,6 +169,16 @@ and applies immutable caching to hashed assets.
 
 > **Do not deploy this publicly with a Groq key loaded into the bundle.** The
 > key is client-side by design; each end user must paste their own.
+
+### Content Security Policy
+
+The bundle ships **no inline scripts** — the theme bootstrap is an external
+same-origin script — so a strict CSP works out of the box.
+[SECURITY.md](SECURITY.md) carries the full recommended policy. When local
+models are in use, `connect-src` must also allow `huggingface.co` plus its
+LFS/Xet CDN redirect hosts (`*.aws.cdn.hf.co`, `cdn-lfs*.huggingface.co`),
+and `script-src` needs `'wasm-unsafe-eval'` for the same-origin ONNX Runtime
+WASM binaries.
 
 ### Container image hardening
 
@@ -199,28 +237,38 @@ await import('./src/platform/web-bridge').then((b) =>
 ```
 
 The Groq key also powers the AI-over-text features (LLM polish, summaries,
-selection refine) regardless of the active transcription provider.
+selection refine) regardless of the active transcription method — with the
+local method, locally transcribed text is only sent to Groq after you
+explicitly authorize it (off by default).
 
 See [SECURITY.md](SECURITY.md) before touching anything credential-, secret-,
 or network-related.
 
 ---
 
-## Transcription providers
+## Transcription methods & providers
 
-The app speaks to transcription backends through a shared
-`TranscriptionProvider` seam (`src/api/transcription-provider.ts`, adapter
-pattern). Two clients ship today — adding a third means one class plus one
-entry in the registry in `src/main.ts`; see
-[ADR 0002](docs/adr/0002-adapter-proveedores-transcripcion.md). You pick the
-active one from **Ajustes → Transcription → Provider**; an option without its
-credential is disabled, and deleting the active credential auto-switches to
-the other provider when available.
+Transcription runs behind a two-level hierarchy configured in
+**Ajustes → Transcription**:
+
+- **Method** — `Remote (API)` or `Local (in the browser)`. Each method keeps
+  its own independent preferences; switching methods never silently changes
+  them, and the local method never falls back to a remote provider.
+- **Provider** _(remote method only)_ — which remote service to talk to.
+
+Both methods speak through the same `TranscriptionProvider` seam
+(`src/api/transcription-provider.ts`, adapter pattern). Three clients ship
+today — Groq, a Cloudflare Whisper worker, and the local engine — and adding
+a fourth means one class plus one entry in the registry in `src/main.ts`; see
+[ADR 0002](docs/adr/0002-adapter-proveedores-transcripcion.md). A remote
+option without its credential is disabled, and deleting the active
+credential auto-switches to the other provider when available.
 
 | Provider             | Credential             | Storage key         | Notes                                             |
 | -------------------- | ---------------------- | ------------------- | ------------------------------------------------- |
 | Groq API (default)   | Groq API key           | `stt_groq_api_key`  | transcription, translation, all tuning knobs      |
 | Cloudflare Whisper   | Worker bearer token    | `stt_worker_token`  | transcription only; fixed model `whisper-large-v3-turbo` |
+| Local engine         | — none —               | —                   | on-device Whisper; see [Local transcription](#local-transcription-on-device) |
 
 ### Cloudflare Whisper (bring your own worker)
 
@@ -251,6 +299,94 @@ While Cloudflare Whisper is active, translation and the Groq-only knobs
 (model, prompt, temperature, response format, timestamps) are disabled in the
 UI; the language selector keeps every option and `auto` simply lets the worker
 apply its server-side default.
+
+---
+
+## Local transcription (on-device)
+
+The local engine runs Whisper **inside the browser** — a dedicated Worker
+loads quantized ONNX weights through Transformers.js and ONNX Runtime Web.
+Backend policy is `auto` by default (WebGPU when available, WASM fallback);
+you can also force WASM-only from **Ajustes → Local models**. Every local
+transcription records its provenance: model id, pinned revision, and the
+backend that actually ran.
+
+### Model catalog
+
+The catalog ships inside the app (version 3), is read-only, and pins each
+entry to an immutable Hugging Face revision with its exact artifacts and
+sizes — nothing about the catalog is fetched remotely, and no download ever
+exceeds a 2 GB hard cap. All models transcribe Spanish and English with
+language auto-detection and can translate non-English speech to English.
+
+| Model                                  | Size     | Backend          | Memory tier | Notes                          |
+| -------------------------------------- | -------- | ---------------- | ----------- | ------------------------------ |
+| Whisper Tiny                           | ~99 MB   | WASM             | light       | smallest download              |
+| Whisper Base                           | ~145 MB  | WASM             | light       | suggested for modest hardware  |
+| Whisper Small                          | ~302 MB  | WASM             | medium      | **recommended** first download |
+| Whisper Medium                         | ~684 MB  | WASM             | high        |                                |
+| Whisper Large v3 Turbo                 | ~762 MB  | WebGPU required  | high        |                                |
+| Whisper Large v3                       | ~1.23 GB | WebGPU required  | very-high   | highest precision              |
+| Whisper Large v3 Turbo Lite Fast       | ~564 MB  | WebGPU required  | high        | experimental                   |
+| Whisper Large v3 Turbo Lite Accurate   | ~631 MB  | WebGPU required  | high        | experimental                   |
+| Whisper Large v3 Lite Fast             | ~1.02 GB | WebGPU required  | very-high   | experimental                   |
+| Whisper Large v3 Lite Accurate         | ~1.10 GB | WebGPU required  | very-high   | experimental                   |
+
+Experimental entries (the Lite family) warn before the first download, are
+never auto-selected, keep their benchmarks separate, and may be withdrawn
+from the catalog without touching already-downloaded weights.
+
+### Downloads, lifecycle, and memory
+
+- **Explicit downloads only** — nothing is fetched until you click Download.
+  Progress, cancellation, and verification are built in; a model becomes
+  usable only after its artifacts verify.
+- **Storage** — artifact bytes land in a dedicated versioned Cache API cache;
+  logical state and benchmark measurements live in IndexedDB. The browser may
+  evict cached artifacts under space pressure; the engine reconciles records
+  on startup and demotes partial or evicted models.
+- **Lifecycle** — update atomically to a new pinned revision, delete with one
+  click, and keep exactly one **active model** used for the next local
+  transcription.
+- **Cross-tab safety** — Web Locks (with a `localStorage` heartbeat fallback)
+  serialize downloads and inference across tabs.
+- **Memory management** — the resident model lives in a dedicated Worker and
+  is freed after a configurable idle window (default 30 minutes).
+
+### Privacy
+
+With the local method, audio and text are processed on the device and never
+sent to a remote provider. The AI-over-text features (LLM polish, summaries,
+selection refine) still use the Groq key — locally transcribed **text** is
+only sent if you explicitly authorize it in Ajustes; the authorization is off
+by default. See [SECURITY.md](SECURITY.md).
+
+---
+
+## Benchmarks
+
+Each catalog card's precision/speed labels come from a **measured, on-device
+benchmark** — not vendor claims. Published results (v1; macOS, Chrome 151,
+WebGPU, 16 GB RAM):
+
+| Model                  | Backend | WER ES | WER EN | WER global | RTF  | Cold load |
+| ---------------------- | ------- | ------ | ------ | ---------- | ---- | --------- |
+| whisper-base           | webgpu  | 4.38 % | 1.47 % | 2.72 %     | 0.059 | 1.4 s   |
+| whisper-base           | wasm    | 4.38 % | 1.47 % | 2.72 %     | 0.323 | 1.1 s   |
+| whisper-small          | webgpu  | 1.52 % | 1.47 % | 1.49 %     | 0.096 | 3.0 s   |
+| whisper-small          | wasm    | 1.52 % | 1.47 % | 1.49 %     | 1.321 | 2.2 s   |
+| whisper-large-v3-turbo | webgpu  | 1.52 % | 2.97 % | 2.35 %     | 0.272 | 9.0 s   |
+
+Labels: accuracy `high` ≤ 8 %, `medium` ≤ 20 %, `low` > 20 % global WER;
+speed `fast` ≤ 0.5, `balanced` 0.5–1.5, `slow` ≥ 1.5 RTF.
+
+To reproduce: the versioned corpus (7 ES/EN clips, some with noise, WAV PCM
+mono 16 kHz) ships in `public/benchmark-corpus/` and regenerates via
+`scripts/benchmark/generate-corpus.sh`. Run **Ajustes → Local models → Run
+diagnostics** to cold-load the active model, transcribe the corpus, and
+compute per-language/global WER, RTF, and heap peak on your own hardware —
+results are stored locally and exportable as JSON. Full method, thresholds,
+and caveats: [docs/benchmark.md](docs/benchmark.md).
 
 ---
 
