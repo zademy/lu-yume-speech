@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.0](https://github.com/zademy/lu-yume-speech/compare/v1.7.0...v1.8.0) (2026-08-26)
+
+
+### Features
+
+* **app:** active transcription visibility — sidebar chip, honest gat… ([329f474](https://github.com/zademy/lu-yume-speech/commit/329f4745248a7ac356530fb37aa59438d7300c76))
+* **app:** active transcription visibility — sidebar chip, honest gates, model persistence ([5db9969](https://github.com/zademy/lu-yume-speech/commit/5db9969c0e22a5808dba1a6197ded9e3f5d2ea06))
+
 ## [1.7.0](https://github.com/zademy/lu-yume-speech/compare/v1.6.0...v1.7.0) (2026-08-20)
 
 
