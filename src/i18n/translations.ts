@@ -52,9 +52,10 @@ const en: Dictionary = {
   'dictation.title': 'Dictate',
   'dictation.description': 'Record, transcribe and work with text without leaving your space.',
   'dictation.gate.eyebrow': 'Setup required',
-  'dictation.gate.title': 'Connect your Groq account',
-  'dictation.gate.body': 'Add an API key to enable recording and transcription.',
-  'dictation.gate.cta': 'Set up API key',
+  'dictation.gate.title': 'Set up a transcription method',
+  'dictation.gate.body':
+    'Add a Groq API key, a Whisper worker token, or download a local model — all in Settings.',
+  'dictation.gate.cta': 'Open Settings',
   'dictation.localGate.eyebrow': 'Local model required',
   'dictation.localGate.title': 'Download a local model to dictate',
   'dictation.localGate.body':
@@ -72,7 +73,11 @@ const en: Dictionary = {
   'output.summary.eyebrow': 'Derived from visible text',
   'output.summary.title': 'Summary history',
   'dictation.footer.shortcut': 'Shortcut: Alt / Ctrl + Space',
-  'dictation.footer.processor': 'Processed by Groq Whisper',
+  'dictation.footer.processor.groq': 'Processed by Groq Whisper',
+  'dictation.footer.processor.worker': 'Processed by Cloudflare Whisper',
+  'dictation.footer.processor.local': 'Processed locally in your browser',
+  'nav.activeModel.label': 'Transcription model',
+  'nav.activeModel.none': 'Not set',
 
   'settings.eyebrow': 'Preferences',
   'settings.title': 'Settings',
@@ -485,9 +490,10 @@ const es: Dictionary = {
   'dictation.title': 'Dictar',
   'dictation.description': 'Graba, transcribe y trabaja con el texto sin salir de tu espacio.',
   'dictation.gate.eyebrow': 'Configuración requerida',
-  'dictation.gate.title': 'Conecta tu cuenta de Groq',
-  'dictation.gate.body': 'Agrega una API key para habilitar la grabación y la transcripción.',
-  'dictation.gate.cta': 'Configurar API key',
+  'dictation.gate.title': 'Configura un método de transcripción',
+  'dictation.gate.body':
+    'Agrega una API key de Groq, un token del worker (Whisper) o descarga un modelo local — todo en Ajustes.',
+  'dictation.gate.cta': 'Abrir Ajustes',
   'dictation.localGate.eyebrow': 'Se requiere un modelo local',
   'dictation.localGate.title': 'Descarga un modelo local para dictar',
   'dictation.localGate.body':
@@ -505,7 +511,11 @@ const es: Dictionary = {
   'output.summary.eyebrow': 'Derivado del texto visible',
   'output.summary.title': 'Historial de resúmenes',
   'dictation.footer.shortcut': 'Atajo: Alt / Ctrl + Space',
-  'dictation.footer.processor': 'Procesado por Groq Whisper',
+  'dictation.footer.processor.groq': 'Procesado por Groq Whisper',
+  'dictation.footer.processor.worker': 'Procesado por Cloudflare Whisper',
+  'dictation.footer.processor.local': 'Procesado localmente en tu navegador',
+  'nav.activeModel.label': 'Modelo de transcripción',
+  'nav.activeModel.none': 'Sin configurar',
 
   'settings.eyebrow': 'Preferencias',
   'settings.title': 'Ajustes',

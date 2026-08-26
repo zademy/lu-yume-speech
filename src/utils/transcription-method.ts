@@ -10,6 +10,7 @@
  * root; persistence flows through the Platform seam.
  */
 
+import { CLOUDFLARE_WHISPER_MODEL } from '../types';
 import type { AppSettings, TranscriptionMethod, TranscriptionProviderId } from '../types';
 
 /** UI options for the Método de transcripción selector (i18n-keyed labels). */
@@ -67,4 +68,28 @@ export function remoteKnobsLocked(
   provider: TranscriptionProviderId,
 ): boolean {
   return method === 'local' || provider === 'cloudflare-whisper';
+}
+
+/** Descriptor of the Modelo de transcripción vigente (see CONTEXT.md). */
+export type ActiveTranscription =
+  | { kind: 'groq'; model: string }
+  | { kind: 'worker'; model: string }
+  | { kind: 'local'; modelId: string }
+  | { kind: 'none' };
+
+/**
+ * The setup that will produce the next Transcripción: the composite of
+ * Método de transcripción + Proveedor remoto/modelo (or Modelo activo under
+ * local). Reflects the persisted selection — it says nothing about whether
+ * the credential or the download is in place (`resolveCanDictate` owns that).
+ */
+export function resolveActiveTranscription(settings: AppSettings): ActiveTranscription {
+  if (settings.transcriptionMethod === 'local') {
+    return hasActiveLocalModel(settings)
+      ? { kind: 'local', modelId: settings.localModelId as string }
+      : { kind: 'none' };
+  }
+  return settings.transcriptionProvider === 'cloudflare-whisper'
+    ? { kind: 'worker', model: CLOUDFLARE_WHISPER_MODEL }
+    : { kind: 'groq', model: settings.model };
 }

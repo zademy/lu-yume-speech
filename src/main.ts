@@ -33,6 +33,7 @@ import { DEFAULT_SETTINGS } from './types';
 import {
   methodChangePatch,
   hasActiveLocalModel,
+  resolveActiveTranscription,
   resolveCanDictate,
   remoteKnobsLocked,
 } from './utils/transcription-method';
@@ -209,6 +210,13 @@ async function bootstrap(): Promise<void> {
       localModelReady:
         hasActiveLocalModel(config) && localEngineState.ready(config.localModelId as string),
     });
+  /** i18n key of the setup toast for whatever the active method is missing. */
+  const missingSetupToastKey = (): string =>
+    config.transcriptionMethod === 'local'
+      ? 'toast.needLocalModel'
+      : config.transcriptionProvider === 'cloudflare-whisper'
+        ? 'toast.needWorkerToken'
+        : 'toast.needApiKey';
   const getConfig = (): AppSettings => config;
   const setConfig = (next: AppSettings): void => {
     config = next;
@@ -221,6 +229,7 @@ async function bootstrap(): Promise<void> {
   const elements = renderApp();
   elements.methodSelect.value = config.transcriptionMethod;
   elements.providerSelect.value = config.transcriptionProvider;
+  elements.modelSelect.value = config.model;
   elements.workerBaseUrlInput.value = config.workerBaseUrl;
   translateTree(elements.root, config.appLanguage);
 
@@ -336,12 +345,14 @@ async function bootstrap(): Promise<void> {
     startRecorder: async () => {
       // Gate Pluma dictation the same way the Dictar view is gated — a
       // blocked method must record nothing rather than silently transcribe
-      // through a remote provider.
+      // through a remote provider. Throwing (not returning) lets the
+      // controller reset its armed state instead of leaving a dead toggle.
       if (!canDictate()) {
-        showToast(elements.toastContainer, t('toast.needLocalModel'), 'warning');
-        return;
+        showToast(elements.toastContainer, t(missingSetupToastKey()), 'warning');
+        throw new Error('dictation-gate-blocked');
       }
-      await ensureAudioReady();
+      // ensureAudioReady surfaces its own toast on mic denial — just abort.
+      if (!(await ensureAudioReady())) throw new Error('audio-unavailable');
       recorder.start();
     },
     stopRecorder: () => recorder.stop(),
@@ -633,6 +644,30 @@ async function bootstrap(): Promise<void> {
       config.transcriptionProvider,
       workerToken.length > 0,
     );
+    // Processor footnote follows the active method/provider — never claims
+    // Groq while the worker or a local model does the transcription. Swapping
+    // the data-i18n key keeps language changes on the right variant.
+    const processorKey =
+      config.transcriptionMethod === 'local'
+        ? 'dictation.footer.processor.local'
+        : config.transcriptionProvider === 'cloudflare-whisper'
+          ? 'dictation.footer.processor.worker'
+          : 'dictation.footer.processor.groq';
+    elements.dictationProcessorLabel.dataset.i18n = processorKey;
+    elements.dictationProcessorLabel.textContent = t(processorKey);
+    // Sidebar chip: the Modelo de transcripción vigente (see CONTEXT.md) —
+    // the composite the next Transcripción will run through.
+    const active = resolveActiveTranscription(config);
+    const activeName =
+      active.kind === 'local'
+        ? `Local · ${
+            LOCAL_MODEL_CATALOG.find((entry) => entry.id === active.modelId)?.name ?? active.modelId
+          }`
+        : active.kind === 'none'
+          ? t('nav.activeModel.none')
+          : `${active.kind === 'worker' ? 'Worker' : 'Groq'} · ${active.model}`;
+    elements.activeModelValue.textContent = activeName;
+    elements.activeModelChip.title = `${t('nav.activeModel.label')} · ${activeName}`;
     updateLocalLlmAuthVisibility();
   };
 
@@ -671,6 +706,22 @@ async function bootstrap(): Promise<void> {
     bus.emit('settings:change', patch);
     refreshCredentialUi();
   };
+  /**
+   * Switch the Groq model and persist the choice. Like method/provider, the
+   * selection survives reloads — before this the select reset to the default
+   * on every boot and the sidebar chip could not follow it.
+   */
+  const switchModel = (model: TranscriptionOptions['model']): void => {
+    const patch: Partial<AppSettings> = { model };
+    const next: AppSettings = { ...getConfig(), ...patch };
+    setConfig(next);
+    void platform.saveSettings(next);
+    bus.emit('settings:change', patch);
+    refreshCredentialUi();
+  };
+  elements.modelSelect.addEventListener('change', () => {
+    switchModel(elements.modelSelect.value as TranscriptionOptions['model']);
+  });
   wireMethodSelect(elements, () => config.transcriptionMethod, switchMethod);
   wireProviderSelect(elements, () => config.transcriptionProvider, switchProvider);
   wireApiKeySettings(
@@ -964,6 +1015,9 @@ async function bootstrap(): Promise<void> {
     await platform.saveSettings(next);
     bus.emit('settings:change', { appLanguage: lang });
     translateTree(elements.root, lang);
+    // Chip value ("Sin configurar") and processor title carry i18n — refresh
+    // them after translateTree so nothing stays in the previous language.
+    refreshCredentialUi();
     renderLocalModelsDevice();
     renderLocalResident();
     localModels.renderAll();
@@ -981,17 +1035,7 @@ async function bootstrap(): Promise<void> {
     onRecordStart: () => {
       if (!canDictate()) {
         navigate('settings');
-        showToast(
-          elements.toastContainer,
-          config.transcriptionMethod === 'local'
-            ? t('toast.needLocalModel')
-            : t(
-                config.transcriptionProvider === 'cloudflare-whisper'
-                  ? 'toast.needWorkerToken'
-                  : 'toast.needApiKey',
-              ),
-          'warning',
-        );
+        showToast(elements.toastContainer, t(missingSetupToastKey()), 'warning');
         return;
       }
       navigate('dictation');
@@ -1105,6 +1149,13 @@ function wireNavigation(
     });
   });
   elements.dictationKeyGateButton.addEventListener('click', () => navigate('settings'));
+  // Sidebar chip → Ajustes, focused on the selector that changes what it shows.
+  elements.activeModelChip.addEventListener('click', () => {
+    navigate('settings');
+    window.requestAnimationFrame(() => {
+      elements.methodSelect.scrollIntoView({ block: 'center' });
+    });
+  });
   // First-local guidance (spec story 25): land on Ajustes › Modelos locales
   // and ring the recommended pick — Whisper Small carries the Recomendado
   // chip, Whisper Base the "modest hardware" hint on its own card.

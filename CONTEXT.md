@@ -44,6 +44,10 @@ _Avoid_: Modelo instalado, modelo disponible
 Modelo descargado que se usará para la siguiente Transcripción local. Solo puede haber uno activo a la vez.
 _Avoid_: Modelo predeterminado, modelo instalado, proveedor activo
 
+**Modelo de transcripción vigente**:
+Combinación de Método de transcripción y Proveedor remoto con su modelo (o el Modelo activo, bajo transcripción local) que producirá la siguiente Transcripción. Refleja la selección hecha, sin afirmar que la credencial o la descarga estén listas.
+_Avoid_: Modelo activo (que solo aplica a transcripción local), proveedor activo, modelo seleccionado
+
 **Descarga parcial**:
 Datos incompletos de un Modelo del catálogo que todavía no pueden activarse.
 _Avoid_: Modelo descargado, modelo dañado
