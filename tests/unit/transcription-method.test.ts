@@ -4,6 +4,7 @@ import {
   methodChangePatch,
   hasActiveLocalModel,
   resolveCanDictate,
+  resolveActiveTranscription,
   remoteKnobsLocked,
 } from '../../src/utils/transcription-method';
 import { DEFAULT_SETTINGS } from '../../src/types';
@@ -101,6 +102,37 @@ describe('transcription-method', () => {
       expect(
         resolveCanDictate({ method: 'local', remoteCredentialOk: false, localModelReady: true }),
       ).toBe(true);
+    });
+  });
+
+  describe('resolveActiveTranscription', () => {
+    it('remote + Groq follows the selected Groq model', () => {
+      expect(resolveActiveTranscription(DEFAULT_SETTINGS)).toEqual({
+        kind: 'groq',
+        model: 'whisper-large-v3-turbo',
+      });
+      expect(resolveActiveTranscription(settingsWith({ model: 'whisper-large-v3' }))).toEqual({
+        kind: 'groq',
+        model: 'whisper-large-v3',
+      });
+    });
+
+    it('remote + worker uses the fixed server-side model', () => {
+      expect(
+        resolveActiveTranscription(settingsWith({ transcriptionProvider: 'cloudflare-whisper' })),
+      ).toEqual({ kind: 'worker', model: 'whisper-large-v3-turbo' });
+    });
+
+    it('local method follows the active local model id', () => {
+      expect(
+        resolveActiveTranscription(settingsWith({ transcriptionMethod: 'local', localModelId: 'whisper-small' })),
+      ).toEqual({ kind: 'local', modelId: 'whisper-small' });
+    });
+
+    it('local method without an active model resolves to none', () => {
+      expect(resolveActiveTranscription(settingsWith({ transcriptionMethod: 'local' }))).toEqual({
+        kind: 'none',
+      });
     });
   });
 });

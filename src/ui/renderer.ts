@@ -75,6 +75,8 @@ export interface AppElements {
   plumaNavButton: HTMLButtonElement;
   settingsNavButton: HTMLButtonElement;
   aboutNavButton: HTMLButtonElement;
+  activeModelChip: HTMLButtonElement;
+  activeModelValue: HTMLSpanElement;
   pageTitle: HTMLHeadingElement;
   homeView: HTMLElement;
   dictationView: HTMLElement;
@@ -94,6 +96,7 @@ export interface AppElements {
   dictationLocalGate: HTMLElement;
   dictationLocalGateButton: HTMLButtonElement;
   dictationWorkspace: HTMLDivElement;
+  dictationProcessorLabel: HTMLSpanElement;
   appLanguageSelect: HTMLSelectElement;
   apiKeyForm: HTMLFormElement;
   apiKeyInput: HTMLInputElement;
@@ -222,6 +225,8 @@ export function renderApp(): AppElements {
     plumaNavButton: getRequiredElement(root, '#plumaNavButton', HTMLButtonElement),
     settingsNavButton: getRequiredElement(root, '#settingsNavButton', HTMLButtonElement),
     aboutNavButton: getRequiredElement(root, '#aboutNavButton', HTMLButtonElement),
+    activeModelChip: getRequiredElement(root, '#activeModelChip', HTMLButtonElement),
+    activeModelValue: getRequiredElement(root, '#activeModelValue', HTMLSpanElement),
     pageTitle: getRequiredElement(root, '#mobilePageTitle', HTMLHeadingElement),
     homeView: getRequiredElement(root, '#homeView', HTMLElement),
     dictationView: getRequiredElement(root, '#dictationView', HTMLElement),
@@ -245,6 +250,7 @@ export function renderApp(): AppElements {
       HTMLButtonElement,
     ),
     dictationWorkspace: getRequiredElement(root, '#dictationWorkspace', HTMLDivElement),
+    dictationProcessorLabel: getRequiredElement(root, '#dictationProcessorLabel', HTMLSpanElement),
     appLanguageSelect: getRequiredElement(root, '#appLanguageSelect', HTMLSelectElement),
     apiKeyForm: getRequiredElement(root, '#apiKeyForm', HTMLFormElement),
     apiKeyInput: getRequiredElement(root, '#apiKeyInput', HTMLInputElement),
@@ -362,6 +368,10 @@ function renderNavigation(): string {
         ${renderNavButton('plumaNavButton', 'pluma', 'nav.pluma', icons.feather, false)}
       </nav>
       <div class="mt-auto border-t border-[var(--color-border-subtle)] pt-3 flex flex-col gap-1">
+        <button id="activeModelChip" type="button" class="active-model-chip">
+          <span class="active-model-chip-label" data-i18n="nav.activeModel.label"></span>
+          <span id="activeModelValue" class="active-model-chip-value"></span>
+        </button>
         ${renderNavButton('settingsNavButton', 'settings', 'nav.settings', icons.settings, false)}
         ${renderNavButton('aboutNavButton', 'about', 'nav.about', icons.info, false)}
       </div>
@@ -455,8 +465,9 @@ function renderMetric(id: string, labelKey: string, hintKey: string, value: stri
  * Dictate view: credential gate + workspace (status bar, visualizer, output).
  *
  * `modifierLabel` is the OS-aware shortcut token (`⌘` on macOS, `Ctrl` elsewhere)
- * surfaced in the status hint. The workspace stays `hidden` until a Groq key
- * is configured (see the `dictationKeyGate` section).
+ * surfaced in the status hint. The workspace stays `hidden` until the active
+ * method is configured (API key, worker token, or local model — see the
+ * `dictationKeyGate` section).
  */
 function renderDictationView(modifierLabel: string): string {
   return `
@@ -472,7 +483,7 @@ function renderDictationView(modifierLabel: string): string {
         <span class="credential-gate-icon">${icons.key}</span>
         <div>
           <p class="eyebrow" data-i18n="dictation.gate.eyebrow">Setup required</p>
-          <h3 id="credentialGateTitle" data-i18n="dictation.gate.title">Connect your Groq account</h3>
+          <h3 id="credentialGateTitle" data-i18n="dictation.gate.title">Set up a transcription method</h3>
           <p data-i18n="dictation.gate.body"></p>
         </div>
         <button id="dictationKeyGateButton" type="button" class="primary-action"><span data-i18n="dictation.gate.cta"></span></button>
@@ -892,7 +903,7 @@ function renderOutputSection(): string {
 
 /** Footnote with shortcut + processor info, shown below the output. */
 function renderDictationFooter(): string {
-  return `<div class="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border-subtle)] pt-4 text-[10.5px] text-[var(--color-text-muted)]"><span data-i18n="dictation.footer.shortcut"></span><span data-i18n="dictation.footer.processor"></span></div>`;
+  return `<div class="mt-5 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-border-subtle)] pt-4 text-[10.5px] text-[var(--color-text-muted)]"><span data-i18n="dictation.footer.shortcut"></span><span id="dictationProcessorLabel" data-i18n="dictation.footer.processor.groq"></span></div>`;
 }
 
 // ---------------------------------------------------------------------------
