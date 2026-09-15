@@ -15,7 +15,7 @@ import type {
   TranscriptionOptions,
   TranscriptionResult,
 } from '../types';
-import { CLOUDFLARE_WHISPER_MODEL } from '../types';
+import { CLOUDFLARE_WHISPER_MODEL, MINIMAX_ASR_MODEL } from '../types';
 
 /** Inputs for {@link buildHistoryEntry}. */
 export interface HistoryEntryInput {
@@ -34,20 +34,22 @@ export interface HistoryEntryInput {
 /**
  * Build the history entry. Local transcriptions stamp method + model id +
  * revision + effective backend from the result's provenance; remote ones
- * stamp the provider (Groq stays implicit) and the worker's fixed model.
+ * stamp the provider (Groq stays implicit) and the worker's or MiniMax's
+ * fixed model.
  */
 export function buildHistoryEntry(input: HistoryEntryInput): HistoryEntry {
   const { config, options, result, text, mode, now } = input;
   const isLocal = config.transcriptionMethod === 'local';
   const isWorker = !isLocal && config.transcriptionProvider === 'cloudflare-whisper';
+  const isMinimax = !isLocal && config.transcriptionProvider === 'minimax';
 
   const entry: HistoryEntry = {
     id: crypto.randomUUID(),
     text,
     language: result.language,
-    model: isWorker ? CLOUDFLARE_WHISPER_MODEL : options.model,
+    model: isWorker ? CLOUDFLARE_WHISPER_MODEL : isMinimax ? MINIMAX_ASR_MODEL : options.model,
     method: config.transcriptionMethod,
-    provider: isWorker ? 'cloudflare-whisper' : undefined,
+    provider: isWorker ? 'cloudflare-whisper' : isMinimax ? 'minimax' : undefined,
     duration: result.duration,
     createdAt: now,
     operationMode: mode,

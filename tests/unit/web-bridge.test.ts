@@ -67,6 +67,25 @@ describe('WebBridge', () => {
     });
   });
 
+  describe('minimax credential', () => {
+    it('roundtrips set/get/has/delete independently of groq and worker', async () => {
+      await bridge.setCredential('groq', 'gsk_' + 'e'.repeat(40));
+      await bridge.setCredential('worker', 'worker-secret-token');
+      await bridge.setCredential('minimax', 'minimax-test-key-1234');
+
+      expect(await bridge.getCredential('minimax')).toBe('minimax-test-key-1234');
+      expect(await bridge.hasCredential('minimax')).toBe(true);
+      expect(localStorage.getItem('stt_minimax_api_key')).toBe(
+        JSON.stringify('minimax-test-key-1234'),
+      );
+
+      await bridge.deleteCredential('minimax');
+      expect(await bridge.hasCredential('minimax')).toBe(false);
+      expect(await bridge.hasCredential('groq')).toBe(true);
+      expect(await bridge.hasCredential('worker')).toBe(true);
+    });
+  });
+
   describe('gate credential', () => {
     it('roundtrips set/get/has/delete independently of groq and worker', async () => {
       await bridge.setCredential('gate', 'v1.c2FsdA.dGhlZGlnZXN0');

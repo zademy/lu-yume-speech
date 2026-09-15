@@ -90,4 +90,22 @@ describe('buildHistoryEntry — remote provenance', () => {
     expect(entry.model).toBe(CLOUDFLARE_WHISPER_MODEL);
     expect(entry.operationMode).toBe('translate');
   });
+
+  it('the MiniMax entry carries asr-1.0 and the minimax provider', () => {
+    const entry = buildHistoryEntry({
+      config: {
+        ...DEFAULT_SETTINGS,
+        transcriptionProvider: 'minimax',
+      },
+      options: baseOptions,
+      result,
+      text: 'hola mundo',
+      mode: 'transcribe',
+      now: 1_000,
+    });
+
+    expect(entry.provider).toBe('minimax');
+    expect(entry.model).toBe('asr-1.0');
+    expect(entry.operationMode).toBe('transcribe');
+  });
 });

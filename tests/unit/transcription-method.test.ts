@@ -79,9 +79,14 @@ describe('transcription-method', () => {
       expect(remoteKnobsLocked('remote', 'cloudflare-whisper')).toBe(true);
     });
 
+    it('locks the knobs under the MiniMax provider (fixed model)', () => {
+      expect(remoteKnobsLocked('remote', 'minimax')).toBe(true);
+    });
+
     it('locks the knobs under the local method regardless of provider', () => {
       expect(remoteKnobsLocked('local', 'groq')).toBe(true);
       expect(remoteKnobsLocked('local', 'cloudflare-whisper')).toBe(true);
+      expect(remoteKnobsLocked('local', 'minimax')).toBe(true);
     });
   });
 
@@ -123,9 +128,17 @@ describe('transcription-method', () => {
       ).toEqual({ kind: 'worker', model: 'whisper-large-v3-turbo' });
     });
 
+    it('remote + MiniMax uses the fixed asr-1.0 model', () => {
+      expect(
+        resolveActiveTranscription(settingsWith({ transcriptionProvider: 'minimax' })),
+      ).toEqual({ kind: 'minimax', model: 'asr-1.0' });
+    });
+
     it('local method follows the active local model id', () => {
       expect(
-        resolveActiveTranscription(settingsWith({ transcriptionMethod: 'local', localModelId: 'whisper-small' })),
+        resolveActiveTranscription(
+          settingsWith({ transcriptionMethod: 'local', localModelId: 'whisper-small' }),
+        ),
       ).toEqual({ kind: 'local', modelId: 'whisper-small' });
     });
 

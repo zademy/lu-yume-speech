@@ -65,7 +65,7 @@ import { representativeMeasurement } from './utils/benchmark/manifest';
 import { planBackends } from './local-models/backend-decision';
 import { buildHistoryEntry } from './utils/history-entry';
 import { LocalWhisperProvider } from './local-models/local-whisper-provider';
-import { decodeAudioTo16kMono } from './local-models/audio-decode';
+import { decodeAudioTo16kMono, WHISPER_SAMPLE_RATE } from './local-models/audio-decode';
 
 import { Recorder } from './audio/recorder';
 import { AudioAnalyzer } from './audio/audio-analyzer';
@@ -73,10 +73,11 @@ import { RecordingTimer } from './audio/recording-timer';
 import { WaveformVisualizer, type WaveformStyle } from './audio/waveform-visualizer';
 import { AudioProcessor } from './audio/audio-processor';
 import type { NoiseReductionMode } from './audio/audio-processor';
-import { trimSilence } from './audio/silence-trimmer';
+import { trimSilence, encodeWav } from './audio/silence-trimmer';
 import * as store from './db/recordings-db';
 import { GroqClient } from './api/groq-client';
 import { CloudflareWhisperClient } from './api/cloudflare-whisper-client';
+import { MiniMaxClient, MINIMAX_SUPPORTED_LANGUAGES } from './api/minimax-client';
 import type { TranscriptionProvider } from './api/transcription-provider';
 import { postProcessWithLlm } from './api/llm-postprocessor';
 import { generateSummary, SUMMARY_MODEL } from './api/summary-client';
@@ -117,6 +118,7 @@ import { detectPlatform } from './platform/platform';
 import type { Platform } from './platform/platform';
 import { apiKeySchema } from './platform/api-key.schema';
 import { workerTokenSchema } from './platform/worker-token.schema';
+import { minimaxKeySchema } from './platform/minimax-key.schema';
 import { GateService } from './gate/gate-service';
 import type { GateError, GateState } from './types';
 
@@ -182,8 +184,10 @@ async function bootstrap(): Promise<void> {
   const platform = detectPlatform();
   let apiKey = (await platform.getCredential('groq')) ?? '';
   let workerToken = (await platform.getCredential('worker')) ?? '';
+  let minimaxApiKey = (await platform.getCredential('minimax')) ?? '';
   const getApiKey = (): string => apiKey;
   const getWorkerToken = (): string => workerToken;
+  const getMinimaxApiKey = (): string => minimaxApiKey;
 
   // Live configuration: loaded once, refreshed on settings:change.
   let config: AppSettings = { ...DEFAULT_SETTINGS, ...((await platform.loadSettings()) ?? {}) };
@@ -206,7 +210,9 @@ async function bootstrap(): Promise<void> {
       remoteCredentialOk:
         config.transcriptionProvider === 'cloudflare-whisper'
           ? workerToken.length > 0
-          : apiKey.length > 0,
+          : config.transcriptionProvider === 'minimax'
+            ? minimaxApiKey.length > 0
+            : apiKey.length > 0,
       localModelReady:
         hasActiveLocalModel(config) && localEngineState.ready(config.localModelId as string),
     });
@@ -216,7 +222,9 @@ async function bootstrap(): Promise<void> {
       ? 'toast.needLocalModel'
       : config.transcriptionProvider === 'cloudflare-whisper'
         ? 'toast.needWorkerToken'
-        : 'toast.needApiKey';
+        : config.transcriptionProvider === 'minimax'
+          ? 'toast.needMinimaxKey'
+          : 'toast.needApiKey';
   const getConfig = (): AppSettings => config;
   const setConfig = (next: AppSettings): void => {
     config = next;
@@ -516,10 +524,24 @@ async function bootstrap(): Promise<void> {
     const url = config.workerBaseUrl.trim();
     return url || DEFAULT_SETTINGS.workerBaseUrl;
   });
+  // MiniMax needs WAV (PCM16 mono 16 kHz) instead of the recorded WebM/Ogg —
+  // the composition root wires the existing decode + WAV-encode utilities
+  // into the client's audio port so the api module stays decoupled.
+  const convertToWav16kMono = async (
+    blob: Blob,
+  ): Promise<{ blob: Blob; durationSeconds: number }> => {
+    const { audio } = await decodeAudioTo16kMono(blob);
+    return {
+      blob: new Blob([encodeWav(audio, WHISPER_SAMPLE_RATE)], { type: 'audio/wav' }),
+      durationSeconds: audio.length / WHISPER_SAMPLE_RATE,
+    };
+  };
+  const minimaxClient = new MiniMaxClient(bus, getMinimaxApiKey, convertToWav16kMono);
   /** Provider registry — adding a backend means one class + one entry here. */
   const transcriptionClients: Record<TranscriptionProviderId, TranscriptionProvider> = {
     groq: groqClient,
     'cloudflare-whisper': workerClient,
+    minimax: minimaxClient,
   };
   // Motor local (T4): third provider behind the same seam. Reads the active
   // model + its download-engine record lazily; the worker (and therefore
@@ -634,6 +656,7 @@ async function bootstrap(): Promise<void> {
     const localBlocked = config.transcriptionMethod === 'local' && !hasActiveLocalModel(config);
     updateApiKeyState(elements, apiKey, canDictate());
     updateWorkerTokenState(elements, workerToken);
+    updateMinimaxKeyState(elements, minimaxApiKey);
     // Under a blocked local method the key gate is irrelevant — the local
     // model gate below owns the Dictar view instead.
     if (localBlocked) elements.dictationKeyGate.hidden = true;
@@ -643,16 +666,19 @@ async function bootstrap(): Promise<void> {
       config.transcriptionMethod,
       config.transcriptionProvider,
       workerToken.length > 0,
+      minimaxApiKey.length > 0,
     );
     // Processor footnote follows the active method/provider — never claims
-    // Groq while the worker or a local model does the transcription. Swapping
-    // the data-i18n key keeps language changes on the right variant.
+    // Groq while the worker, MiniMax or a local model does the transcription.
+    // Swapping the data-i18n key keeps language changes on the right variant.
     const processorKey =
       config.transcriptionMethod === 'local'
         ? 'dictation.footer.processor.local'
         : config.transcriptionProvider === 'cloudflare-whisper'
           ? 'dictation.footer.processor.worker'
-          : 'dictation.footer.processor.groq';
+          : config.transcriptionProvider === 'minimax'
+            ? 'dictation.footer.processor.minimax'
+            : 'dictation.footer.processor.groq';
     elements.dictationProcessorLabel.dataset.i18n = processorKey;
     elements.dictationProcessorLabel.textContent = t(processorKey);
     // Sidebar chip: the Modelo de transcripción vigente (see CONTEXT.md) —
@@ -665,7 +691,7 @@ async function bootstrap(): Promise<void> {
           }`
         : active.kind === 'none'
           ? t('nav.activeModel.none')
-          : `${active.kind === 'worker' ? 'Worker' : 'Groq'} · ${active.model}`;
+          : `${active.kind === 'worker' ? 'Worker' : active.kind === 'minimax' ? 'MiniMax' : 'Groq'} · ${active.model}`;
     elements.activeModelValue.textContent = activeName;
     elements.activeModelChip.title = `${t('nav.activeModel.label')} · ${activeName}`;
     updateLocalLlmAuthVisibility();
@@ -722,6 +748,12 @@ async function bootstrap(): Promise<void> {
   elements.modelSelect.addEventListener('change', () => {
     switchModel(elements.modelSelect.value as TranscriptionOptions['model']);
   });
+  // Picking a supported language makes the MiniMax fallback note obsolete.
+  elements.languageSelect.addEventListener('change', () => {
+    if (!elements.languageSelect.selectedOptions[0]?.disabled) {
+      elements.languageUnsupportedNote.hidden = true;
+    }
+  });
   wireMethodSelect(elements, () => config.transcriptionMethod, switchMethod);
   wireProviderSelect(elements, () => config.transcriptionProvider, switchProvider);
   wireApiKeySettings(
@@ -763,6 +795,27 @@ async function bootstrap(): Promise<void> {
         apiKey
       ) {
         switchProvider('groq');
+        return;
+      }
+      refreshCredentialUi();
+    },
+  );
+  wireMinimaxKeySettings(
+    elements,
+    platform,
+    () => minimaxApiKey,
+    (next) => {
+      minimaxApiKey = next;
+      // Deleting the active MiniMax key with another credential available:
+      // auto-switch to Groq (default) or the worker — only under the remote
+      // method, mirroring the other credential deletions.
+      if (
+        !next &&
+        config.transcriptionMethod === 'remote' &&
+        config.transcriptionProvider === 'minimax'
+      ) {
+        if (apiKey) switchProvider('groq');
+        else if (workerToken) switchProvider('cloudflare-whisper');
         return;
       }
       refreshCredentialUi();
@@ -1318,6 +1371,65 @@ function wireWorkerTokenSettings(
     setConfig(next);
     void platform.saveSettings(next);
     bus.emit('settings:change', patch);
+  });
+}
+
+/**
+ * Wires the MiniMax-key form (toggle, Zod-validated save, delete) — the
+ * credential is fully independent from the Groq key and the worker token.
+ */
+function wireMinimaxKeySettings(
+  elements: AppElements,
+  platform: Platform,
+  getMinimaxKey: () => string,
+  setMinimaxKey: (next: string) => void,
+): void {
+  elements.minimaxKeyToggle.addEventListener('click', () => {
+    const visible = elements.minimaxKeyInput.type === 'text';
+    elements.minimaxKeyInput.type = visible ? 'password' : 'text';
+    elements.minimaxKeyToggle.setAttribute('aria-pressed', String(!visible));
+    elements.minimaxKeyToggle.setAttribute(
+      'aria-label',
+      visible ? 'Mostrar API key de MiniMax' : 'Ocultar API key de MiniMax',
+    );
+  });
+
+  elements.minimaxKeyForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const key = elements.minimaxKeyInput.value.trim();
+    const result = minimaxKeySchema.safeParse(key);
+    if (!result.success) {
+      elements.minimaxKeyError.textContent =
+        result.error.issues[0]?.message ?? 'API key de MiniMax inválida.';
+      elements.minimaxKeyInput.setAttribute('aria-invalid', 'true');
+      elements.minimaxKeyInput.focus();
+      return;
+    }
+    elements.minimaxKeySaveButton.disabled = true;
+    elements.minimaxKeySaveButton.textContent = 'Guardando...';
+    void platform
+      .setCredential('minimax', key)
+      .then(() => {
+        setMinimaxKey(key);
+        elements.minimaxKeyInput.value = '';
+        elements.minimaxKeyError.textContent = '';
+        elements.minimaxKeyInput.removeAttribute('aria-invalid');
+        showToast(elements.toastContainer, t('toast.minimaxKeySaved'), 'success');
+      })
+      .finally(() => {
+        elements.minimaxKeySaveButton.disabled = false;
+        elements.minimaxKeySaveButton.textContent = t('settings.minimax.save');
+      });
+  });
+
+  elements.minimaxKeyDeleteButton.addEventListener('click', () => {
+    if (!getMinimaxKey()) return;
+    void platform.deleteCredential('minimax').then(() => {
+      setMinimaxKey('');
+      elements.minimaxKeyInput.value = '';
+      elements.minimaxKeyError.textContent = '';
+      showToast(elements.toastContainer, t('toast.minimaxKeyDeleted'), 'info');
+    });
   });
 }
 
@@ -2014,6 +2126,7 @@ function applyMethodConstraints(
   method: TranscriptionMethod,
   provider: TranscriptionProviderId,
   hasWorkerToken: boolean,
+  hasMinimaxKey: boolean,
 ): void {
   const isLocal = method === 'local';
   elements.methodSelect.value = method;
@@ -2028,32 +2141,65 @@ function applyMethodConstraints(
     setRemoteKnobsLocked(elements, true);
     elements.timestampToggle.disabled = true;
   } else {
-    applyProviderConstraints(elements, provider, hasWorkerToken);
+    applyProviderConstraints(elements, provider, hasWorkerToken, hasMinimaxKey);
   }
+  applyLanguageConstraints(elements, method, provider);
 }
 
 /**
  * Reflects the active provider in the transcription controls.
  *
- * While Cloudflare Whisper is active the worker's fixed model applies and the
- * Groq-only knobs (model, translation, prompt, temperature, response format,
- * timestamps) are disabled. The language selector keeps every option
- * including 'auto' ('auto' omits `lang` — the worker then uses its default).
+ * While Cloudflare Whisper or MiniMax is active the provider's fixed model
+ * applies and the Groq-only knobs (model, translation, prompt, temperature,
+ * response format, timestamps) are disabled. MiniMax's closed language set
+ * is handled by {@link applyLanguageConstraints}.
  */
 function applyProviderConstraints(
   elements: AppElements,
   provider: TranscriptionProviderId,
   hasWorkerToken: boolean,
+  hasMinimaxKey: boolean,
 ): void {
-  const isWorker = remoteKnobsLocked('remote', provider);
+  const knobsLocked = remoteKnobsLocked('remote', provider);
   elements.providerSelect.value = provider;
   const workerOption = elements.providerSelect.querySelector<HTMLOptionElement>(
     'option[value="cloudflare-whisper"]',
   );
   if (workerOption) workerOption.disabled = !hasWorkerToken;
-  setRemoteKnobsLocked(elements, isWorker);
+  const minimaxOption =
+    elements.providerSelect.querySelector<HTMLOptionElement>('option[value="minimax"]');
+  if (minimaxOption) minimaxOption.disabled = !hasMinimaxKey;
+  setRemoteKnobsLocked(elements, knobsLocked);
   elements.timestampToggle.disabled =
-    isWorker || elements.responseFormatSelect.value !== 'verbose_json';
+    knobsLocked || elements.responseFormatSelect.value !== 'verbose_json';
+}
+
+/**
+ * Language-selector constraints per provider. MiniMax documents a closed
+ * language set: while it is active the unsupported options are visibly
+ * disabled and an unsupported live selection falls back to 'auto' with an
+ * explanatory note instead of silently sending an invalid hint (the client
+ * also refuses to send undocumented hints). Other providers keep the full
+ * list and hide the note; the live selection is otherwise left untouched.
+ */
+function applyLanguageConstraints(
+  elements: AppElements,
+  method: TranscriptionMethod,
+  provider: TranscriptionProviderId,
+): void {
+  const restrictToMiniMax = method === 'remote' && provider === 'minimax';
+  let currentUnsupported = false;
+  for (const option of Array.from(elements.languageSelect.options)) {
+    const unsupported =
+      restrictToMiniMax &&
+      option.value !== 'auto' &&
+      !MINIMAX_SUPPORTED_LANGUAGES.has(option.value);
+    option.disabled = unsupported;
+    if (unsupported && option.selected) currentUnsupported = true;
+  }
+  elements.languageUnsupportedNote.hidden = !currentUnsupported;
+  // A disabled option must not stay selected — display 'auto' instead.
+  if (currentUnsupported) elements.languageSelect.value = 'auto';
 }
 
 /** Reflects the current key state in the status badge, save button, and Dictar gate visibility. */
@@ -2072,6 +2218,14 @@ function updateWorkerTokenState(elements: AppElements, workerToken: string): voi
   elements.workerTokenStatus.textContent = configured ? 'Configurada' : 'Sin configurar';
   elements.workerTokenStatus.classList.toggle('is-configured', configured);
   elements.workerTokenDeleteButton.disabled = !configured;
+}
+
+/** Mirrors {@link updateWorkerTokenState} for the MiniMax key badge. */
+function updateMinimaxKeyState(elements: AppElements, minimaxKey: string): void {
+  const configured = minimaxKey.length > 0;
+  elements.minimaxKeyStatus.textContent = configured ? 'Configurada' : 'Sin configurar';
+  elements.minimaxKeyStatus.classList.toggle('is-configured', configured);
+  elements.minimaxKeyDeleteButton.disabled = !configured;
 }
 
 /** Renders the Inicio stat badges (words, transcriptions, audio minutes) from history. */
@@ -2278,7 +2432,9 @@ function wireTranscriptionPipeline(
         ? { message: `Procesando con ${localEntry.name} (local)…`, level: 'processing' }
         : config.transcriptionProvider === 'cloudflare-whisper'
           ? { message: 'Procesando con Cloudflare Whisper…', level: 'processing' }
-          : { message: `Procesando con ${options.model}...`, level: 'processing' },
+          : config.transcriptionProvider === 'minimax'
+            ? { message: 'Procesando con MiniMax…', level: 'processing' }
+            : { message: `Procesando con ${options.model}...`, level: 'processing' },
     );
   };
 

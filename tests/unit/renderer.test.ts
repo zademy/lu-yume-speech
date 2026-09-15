@@ -46,6 +46,35 @@ describe('renderApp application shell', () => {
     expect(elements.settingsView.contains(elements.gatePhraseForm)).toBe(true);
   });
 
+  it('renders the MiniMax credential form as an independent settings card', () => {
+    const elements = renderApp();
+    document.body.appendChild(elements.root);
+
+    expect(elements.minimaxKeyInput.type).toBe('password');
+    expect(elements.minimaxKeyInput.getAttribute('aria-describedby')).toBe(
+      'minimaxKeyHelp minimaxKeyError',
+    );
+    expect(elements.minimaxKeyToggle.getAttribute('aria-pressed')).toBe('false');
+    expect(elements.settingsView.contains(elements.minimaxKeyForm)).toBe(true);
+    // The MiniMax credential lives in its own card, not the Groq form.
+    expect(elements.apiKeyForm.contains(elements.minimaxKeyInput)).toBe(false);
+    // The unsupported-language note ships hidden.
+    expect(elements.languageUnsupportedNote.hidden).toBe(true);
+    expect(elements.settingsView.contains(elements.languageUnsupportedNote)).toBe(true);
+  });
+
+  it('offers MiniMax as a Proveedor remoto option', () => {
+    const elements = renderApp();
+    document.body.appendChild(elements.root);
+
+    const minimaxOption =
+      elements.providerSelect.querySelector<HTMLOptionElement>('option[value="minimax"]');
+    expect(minimaxOption).not.toBeNull();
+    expect(minimaxOption!.textContent).toContain('MiniMax');
+    // Groq keeps its default selection.
+    expect(elements.providerSelect.value).toBe('groq');
+  });
+
   it('renders the transcription method hierarchy with local defaults', () => {
     const elements = renderApp();
     document.body.appendChild(elements.root);
