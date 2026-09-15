@@ -10,7 +10,7 @@
  * root; persistence flows through the Platform seam.
  */
 
-import { CLOUDFLARE_WHISPER_MODEL } from '../types';
+import { CLOUDFLARE_WHISPER_MODEL, MINIMAX_ASR_MODEL } from '../types';
 import type { AppSettings, TranscriptionMethod, TranscriptionProviderId } from '../types';
 
 /** UI options for the Método de transcripción selector (i18n-keyed labels). */
@@ -61,19 +61,21 @@ export function resolveCanDictate(deps: CanDictateDeps): boolean {
 /**
  * True when the Groq-only knobs (model, translate, prompt, temperature,
  * response format, timestamps) must lock: under the local method no remote
- * provider is in play, and the worker provider uses a fixed server-side model.
+ * provider is in play, and the worker and MiniMax providers use fixed
+ * server-side models.
  */
 export function remoteKnobsLocked(
   method: TranscriptionMethod,
   provider: TranscriptionProviderId,
 ): boolean {
-  return method === 'local' || provider === 'cloudflare-whisper';
+  return method === 'local' || provider === 'cloudflare-whisper' || provider === 'minimax';
 }
 
 /** Descriptor of the Modelo de transcripción vigente (see CONTEXT.md). */
 export type ActiveTranscription =
   | { kind: 'groq'; model: string }
   | { kind: 'worker'; model: string }
+  | { kind: 'minimax'; model: string }
   | { kind: 'local'; modelId: string }
   | { kind: 'none' };
 
@@ -89,7 +91,11 @@ export function resolveActiveTranscription(settings: AppSettings): ActiveTranscr
       ? { kind: 'local', modelId: settings.localModelId as string }
       : { kind: 'none' };
   }
-  return settings.transcriptionProvider === 'cloudflare-whisper'
-    ? { kind: 'worker', model: CLOUDFLARE_WHISPER_MODEL }
-    : { kind: 'groq', model: settings.model };
+  if (settings.transcriptionProvider === 'cloudflare-whisper') {
+    return { kind: 'worker', model: CLOUDFLARE_WHISPER_MODEL };
+  }
+  if (settings.transcriptionProvider === 'minimax') {
+    return { kind: 'minimax', model: MINIMAX_ASR_MODEL };
+  }
+  return { kind: 'groq', model: settings.model };
 }

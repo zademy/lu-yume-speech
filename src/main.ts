@@ -65,7 +65,7 @@ import { representativeMeasurement } from './utils/benchmark/manifest';
 import { planBackends } from './local-models/backend-decision';
 import { buildHistoryEntry } from './utils/history-entry';
 import { LocalWhisperProvider } from './local-models/local-whisper-provider';
-import { decodeAudioTo16kMono } from './local-models/audio-decode';
+import { decodeAudioTo16kMono, WHISPER_SAMPLE_RATE } from './local-models/audio-decode';
 
 import { Recorder } from './audio/recorder';
 import { AudioAnalyzer } from './audio/audio-analyzer';
@@ -73,11 +73,17 @@ import { RecordingTimer } from './audio/recording-timer';
 import { WaveformVisualizer, type WaveformStyle } from './audio/waveform-visualizer';
 import { AudioProcessor } from './audio/audio-processor';
 import type { NoiseReductionMode } from './audio/audio-processor';
-import { trimSilence } from './audio/silence-trimmer';
+import { trimSilence, encodeWav } from './audio/silence-trimmer';
 import * as store from './db/recordings-db';
 import { GroqClient } from './api/groq-client';
 import { CloudflareWhisperClient } from './api/cloudflare-whisper-client';
-import type { TranscriptionProvider } from './api/transcription-provider';
+import { MiniMaxClient, MINIMAX_SUPPORTED_LANGUAGES } from './api/minimax-client';
+import { createResumableTakeController } from './api/resumable-take';
+import {
+  isResumableProvider,
+  type ResumableTranscriptionProvider,
+  type TranscriptionProvider,
+} from './api/transcription-provider';
 import { postProcessWithLlm } from './api/llm-postprocessor';
 import { generateSummary, SUMMARY_MODEL } from './api/summary-client';
 import { renderApp } from './ui/renderer';
@@ -117,6 +123,7 @@ import { detectPlatform } from './platform/platform';
 import type { Platform } from './platform/platform';
 import { apiKeySchema } from './platform/api-key.schema';
 import { workerTokenSchema } from './platform/worker-token.schema';
+import { minimaxKeySchema } from './platform/minimax-key.schema';
 import { GateService } from './gate/gate-service';
 import type { GateError, GateState } from './types';
 
@@ -182,8 +189,10 @@ async function bootstrap(): Promise<void> {
   const platform = detectPlatform();
   let apiKey = (await platform.getCredential('groq')) ?? '';
   let workerToken = (await platform.getCredential('worker')) ?? '';
+  let minimaxApiKey = (await platform.getCredential('minimax')) ?? '';
   const getApiKey = (): string => apiKey;
   const getWorkerToken = (): string => workerToken;
+  const getMinimaxApiKey = (): string => minimaxApiKey;
 
   // Live configuration: loaded once, refreshed on settings:change.
   let config: AppSettings = { ...DEFAULT_SETTINGS, ...((await platform.loadSettings()) ?? {}) };
@@ -206,7 +215,9 @@ async function bootstrap(): Promise<void> {
       remoteCredentialOk:
         config.transcriptionProvider === 'cloudflare-whisper'
           ? workerToken.length > 0
-          : apiKey.length > 0,
+          : config.transcriptionProvider === 'minimax'
+            ? minimaxApiKey.length > 0
+            : apiKey.length > 0,
       localModelReady:
         hasActiveLocalModel(config) && localEngineState.ready(config.localModelId as string),
     });
@@ -216,7 +227,9 @@ async function bootstrap(): Promise<void> {
       ? 'toast.needLocalModel'
       : config.transcriptionProvider === 'cloudflare-whisper'
         ? 'toast.needWorkerToken'
-        : 'toast.needApiKey';
+        : config.transcriptionProvider === 'minimax'
+          ? 'toast.needMinimaxKey'
+          : 'toast.needApiKey';
   const getConfig = (): AppSettings => config;
   const setConfig = (next: AppSettings): void => {
     config = next;
@@ -516,10 +529,22 @@ async function bootstrap(): Promise<void> {
     const url = config.workerBaseUrl.trim();
     return url || DEFAULT_SETTINGS.workerBaseUrl;
   });
+  // MiniMax needs WAV (PCM16 mono 16 kHz) instead of the recorded WebM/Ogg —
+  // the composition root wires the existing decode + WAV-encode utilities
+  // into the client's ports so the api module stays decoupled. The client
+  // partitions the decoded samples itself and encodes each fragment.
+  const decodeForMinimax = async (recording: Blob) => {
+    const { audio } = await decodeAudioTo16kMono(recording);
+    return { samples: audio, sampleRate: WHISPER_SAMPLE_RATE };
+  };
+  const encodeWavBlob = (samples: Float32Array, sampleRate: number): Blob =>
+    new Blob([encodeWav(samples, sampleRate)], { type: 'audio/wav' });
+  const minimaxClient = new MiniMaxClient(bus, getMinimaxApiKey, decodeForMinimax, encodeWavBlob);
   /** Provider registry — adding a backend means one class + one entry here. */
   const transcriptionClients: Record<TranscriptionProviderId, TranscriptionProvider> = {
     groq: groqClient,
     'cloudflare-whisper': workerClient,
+    minimax: minimaxClient,
   };
   // Motor local (T4): third provider behind the same seam. Reads the active
   // model + its download-engine record lazily; the worker (and therefore
@@ -634,6 +659,7 @@ async function bootstrap(): Promise<void> {
     const localBlocked = config.transcriptionMethod === 'local' && !hasActiveLocalModel(config);
     updateApiKeyState(elements, apiKey, canDictate());
     updateWorkerTokenState(elements, workerToken);
+    updateMinimaxKeyState(elements, minimaxApiKey);
     // Under a blocked local method the key gate is irrelevant — the local
     // model gate below owns the Dictar view instead.
     if (localBlocked) elements.dictationKeyGate.hidden = true;
@@ -643,16 +669,19 @@ async function bootstrap(): Promise<void> {
       config.transcriptionMethod,
       config.transcriptionProvider,
       workerToken.length > 0,
+      minimaxApiKey.length > 0,
     );
     // Processor footnote follows the active method/provider — never claims
-    // Groq while the worker or a local model does the transcription. Swapping
-    // the data-i18n key keeps language changes on the right variant.
+    // Groq while the worker, MiniMax or a local model does the transcription.
+    // Swapping the data-i18n key keeps language changes on the right variant.
     const processorKey =
       config.transcriptionMethod === 'local'
         ? 'dictation.footer.processor.local'
         : config.transcriptionProvider === 'cloudflare-whisper'
           ? 'dictation.footer.processor.worker'
-          : 'dictation.footer.processor.groq';
+          : config.transcriptionProvider === 'minimax'
+            ? 'dictation.footer.processor.minimax'
+            : 'dictation.footer.processor.groq';
     elements.dictationProcessorLabel.dataset.i18n = processorKey;
     elements.dictationProcessorLabel.textContent = t(processorKey);
     // Sidebar chip: the Modelo de transcripción vigente (see CONTEXT.md) —
@@ -665,7 +694,7 @@ async function bootstrap(): Promise<void> {
           }`
         : active.kind === 'none'
           ? t('nav.activeModel.none')
-          : `${active.kind === 'worker' ? 'Worker' : 'Groq'} · ${active.model}`;
+          : `${active.kind === 'worker' ? 'Worker' : active.kind === 'minimax' ? 'MiniMax' : 'Groq'} · ${active.model}`;
     elements.activeModelValue.textContent = activeName;
     elements.activeModelChip.title = `${t('nav.activeModel.label')} · ${activeName}`;
     updateLocalLlmAuthVisibility();
@@ -722,6 +751,12 @@ async function bootstrap(): Promise<void> {
   elements.modelSelect.addEventListener('change', () => {
     switchModel(elements.modelSelect.value as TranscriptionOptions['model']);
   });
+  // Picking a supported language makes the MiniMax fallback note obsolete.
+  elements.languageSelect.addEventListener('change', () => {
+    if (!elements.languageSelect.selectedOptions[0]?.disabled) {
+      elements.languageUnsupportedNote.hidden = true;
+    }
+  });
   wireMethodSelect(elements, () => config.transcriptionMethod, switchMethod);
   wireProviderSelect(elements, () => config.transcriptionProvider, switchProvider);
   wireApiKeySettings(
@@ -763,6 +798,27 @@ async function bootstrap(): Promise<void> {
         apiKey
       ) {
         switchProvider('groq');
+        return;
+      }
+      refreshCredentialUi();
+    },
+  );
+  wireMinimaxKeySettings(
+    elements,
+    platform,
+    () => minimaxApiKey,
+    (next) => {
+      minimaxApiKey = next;
+      // Deleting the active MiniMax key with another credential available:
+      // auto-switch to Groq (default) or the worker — only under the remote
+      // method, mirroring the other credential deletions.
+      if (
+        !next &&
+        config.transcriptionMethod === 'remote' &&
+        config.transcriptionProvider === 'minimax'
+      ) {
+        if (apiKey) switchProvider('groq');
+        else if (workerToken) switchProvider('cloudflare-whisper');
         return;
       }
       refreshCredentialUi();
@@ -966,6 +1022,10 @@ async function bootstrap(): Promise<void> {
         break;
     }
   };
+  // Hooks letting the pipeline release its retained recovery state when the
+  // user explicitly dismisses the recovery panel (registered by the pipeline
+  // below, after the panel exists).
+  const recoveryDismissHooks: Array<() => void> = [];
   const recovery = createRecoveryController(
     {
       root: elements.localRecovery,
@@ -979,6 +1039,9 @@ async function bootstrap(): Promise<void> {
       lang: () => getConfig().appLanguage,
       onAction: applyRecoveryAction,
       copyText: copyToClipboard,
+      onDismiss: () => {
+        for (const hook of recoveryDismissHooks) hook();
+      },
     },
   );
 
@@ -992,6 +1055,7 @@ async function bootstrap(): Promise<void> {
     () => dictationTarget.current,
     recovery,
     retryRunner,
+    recoveryDismissHooks,
   );
 
   wireRecordingHandlers(
@@ -1318,6 +1382,65 @@ function wireWorkerTokenSettings(
     setConfig(next);
     void platform.saveSettings(next);
     bus.emit('settings:change', patch);
+  });
+}
+
+/**
+ * Wires the MiniMax-key form (toggle, Zod-validated save, delete) — the
+ * credential is fully independent from the Groq key and the worker token.
+ */
+function wireMinimaxKeySettings(
+  elements: AppElements,
+  platform: Platform,
+  getMinimaxKey: () => string,
+  setMinimaxKey: (next: string) => void,
+): void {
+  elements.minimaxKeyToggle.addEventListener('click', () => {
+    const visible = elements.minimaxKeyInput.type === 'text';
+    elements.minimaxKeyInput.type = visible ? 'password' : 'text';
+    elements.minimaxKeyToggle.setAttribute('aria-pressed', String(!visible));
+    elements.minimaxKeyToggle.setAttribute(
+      'aria-label',
+      visible ? 'Mostrar API key de MiniMax' : 'Ocultar API key de MiniMax',
+    );
+  });
+
+  elements.minimaxKeyForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const key = elements.minimaxKeyInput.value.trim();
+    const result = minimaxKeySchema.safeParse(key);
+    if (!result.success) {
+      elements.minimaxKeyError.textContent =
+        result.error.issues[0]?.message ?? 'API key de MiniMax inválida.';
+      elements.minimaxKeyInput.setAttribute('aria-invalid', 'true');
+      elements.minimaxKeyInput.focus();
+      return;
+    }
+    elements.minimaxKeySaveButton.disabled = true;
+    elements.minimaxKeySaveButton.textContent = 'Guardando...';
+    void platform
+      .setCredential('minimax', key)
+      .then(() => {
+        setMinimaxKey(key);
+        elements.minimaxKeyInput.value = '';
+        elements.minimaxKeyError.textContent = '';
+        elements.minimaxKeyInput.removeAttribute('aria-invalid');
+        showToast(elements.toastContainer, t('toast.minimaxKeySaved'), 'success');
+      })
+      .finally(() => {
+        elements.minimaxKeySaveButton.disabled = false;
+        elements.minimaxKeySaveButton.textContent = t('settings.minimax.save');
+      });
+  });
+
+  elements.minimaxKeyDeleteButton.addEventListener('click', () => {
+    if (!getMinimaxKey()) return;
+    void platform.deleteCredential('minimax').then(() => {
+      setMinimaxKey('');
+      elements.minimaxKeyInput.value = '';
+      elements.minimaxKeyError.textContent = '';
+      showToast(elements.toastContainer, t('toast.minimaxKeyDeleted'), 'info');
+    });
   });
 }
 
@@ -2014,6 +2137,7 @@ function applyMethodConstraints(
   method: TranscriptionMethod,
   provider: TranscriptionProviderId,
   hasWorkerToken: boolean,
+  hasMinimaxKey: boolean,
 ): void {
   const isLocal = method === 'local';
   elements.methodSelect.value = method;
@@ -2028,32 +2152,68 @@ function applyMethodConstraints(
     setRemoteKnobsLocked(elements, true);
     elements.timestampToggle.disabled = true;
   } else {
-    applyProviderConstraints(elements, provider, hasWorkerToken);
+    applyProviderConstraints(elements, provider, hasWorkerToken, hasMinimaxKey);
   }
+  applyLanguageConstraints(elements, method, provider);
+  // MiniMax's documented contract has no translation: explain why the
+  // Traducir option is locked instead of leaving it silently disabled.
+  elements.translateUnsupportedNote.hidden = isLocal || provider !== 'minimax';
 }
 
 /**
  * Reflects the active provider in the transcription controls.
  *
- * While Cloudflare Whisper is active the worker's fixed model applies and the
- * Groq-only knobs (model, translation, prompt, temperature, response format,
- * timestamps) are disabled. The language selector keeps every option
- * including 'auto' ('auto' omits `lang` — the worker then uses its default).
+ * While Cloudflare Whisper or MiniMax is active the provider's fixed model
+ * applies and the Groq-only knobs (model, translation, prompt, temperature,
+ * response format, timestamps) are disabled. MiniMax's closed language set
+ * is handled by {@link applyLanguageConstraints}.
  */
 function applyProviderConstraints(
   elements: AppElements,
   provider: TranscriptionProviderId,
   hasWorkerToken: boolean,
+  hasMinimaxKey: boolean,
 ): void {
-  const isWorker = remoteKnobsLocked('remote', provider);
+  const knobsLocked = remoteKnobsLocked('remote', provider);
   elements.providerSelect.value = provider;
   const workerOption = elements.providerSelect.querySelector<HTMLOptionElement>(
     'option[value="cloudflare-whisper"]',
   );
   if (workerOption) workerOption.disabled = !hasWorkerToken;
-  setRemoteKnobsLocked(elements, isWorker);
+  const minimaxOption =
+    elements.providerSelect.querySelector<HTMLOptionElement>('option[value="minimax"]');
+  if (minimaxOption) minimaxOption.disabled = !hasMinimaxKey;
+  setRemoteKnobsLocked(elements, knobsLocked);
   elements.timestampToggle.disabled =
-    isWorker || elements.responseFormatSelect.value !== 'verbose_json';
+    knobsLocked || elements.responseFormatSelect.value !== 'verbose_json';
+}
+
+/**
+ * Language-selector constraints per provider. MiniMax documents a closed
+ * language set: while it is active the unsupported options are visibly
+ * disabled and an unsupported live selection falls back to 'auto' with an
+ * explanatory note instead of silently sending an invalid hint (the client
+ * also refuses to send undocumented hints). Other providers keep the full
+ * list and hide the note; the live selection is otherwise left untouched.
+ */
+function applyLanguageConstraints(
+  elements: AppElements,
+  method: TranscriptionMethod,
+  provider: TranscriptionProviderId,
+): void {
+  const restrictToMiniMax = method === 'remote' && provider === 'minimax';
+  let currentUnsupported = false;
+  for (const option of Array.from(elements.languageSelect.options)) {
+    const unsupported =
+      restrictToMiniMax &&
+      option.value !== 'auto' &&
+      !MINIMAX_SUPPORTED_LANGUAGES.has(option.value);
+    option.disabled = unsupported;
+    if (unsupported && option.selected) currentUnsupported = true;
+  }
+  elements.languageUnsupportedNote.hidden = !currentUnsupported;
+  // A disabled option must not stay selected — display 'auto' instead.
+  if (currentUnsupported) elements.languageSelect.value = 'auto';
 }
 
 /** Reflects the current key state in the status badge, save button, and Dictar gate visibility. */
@@ -2072,6 +2232,14 @@ function updateWorkerTokenState(elements: AppElements, workerToken: string): voi
   elements.workerTokenStatus.textContent = configured ? 'Configurada' : 'Sin configurar';
   elements.workerTokenStatus.classList.toggle('is-configured', configured);
   elements.workerTokenDeleteButton.disabled = !configured;
+}
+
+/** Mirrors {@link updateWorkerTokenState} for the MiniMax key badge. */
+function updateMinimaxKeyState(elements: AppElements, minimaxKey: string): void {
+  const configured = minimaxKey.length > 0;
+  elements.minimaxKeyStatus.textContent = configured ? 'Configurada' : 'Sin configurar';
+  elements.minimaxKeyStatus.classList.toggle('is-configured', configured);
+  elements.minimaxKeyDeleteButton.disabled = !configured;
 }
 
 /** Renders the Inicio stat badges (words, transcriptions, audio minutes) from history. */
@@ -2230,11 +2398,46 @@ function wireTranscriptionPipeline(
   getDictationTarget: () => 'output' | 'pluma',
   recovery: ReturnType<typeof createRecoveryController>,
   retryRunner: { run: ((blob: Blob) => void) | null },
+  recoveryDismissHooks: Array<() => void>,
 ): void {
   // Named pipeline state — replaces the former `lastBlob` closure so a failed
   // take can never leak into a later success, and a rapid re-record surfaces
   // the overwritten buffer instead of silently dropping it.
   const session = new TranscriptionSession();
+  // Session-only recovery for resumable (MiniMax) takes: retained request
+  // audio + completed-fragment prefix; Reintentar re-sends only the pending
+  // fragments. Provenance lock: retries run through the client that STARTED
+  // the take (captured below), and the take's provider is what its history
+  // entry gets stamped with even if the user switches providers meanwhile.
+  let recoveryClient: ResumableTranscriptionProvider | null = null;
+  const takeRecovery = createResumableTakeController({
+    run: async (audio, resume) => {
+      const client = recoveryClient;
+      if (!client) return;
+      takeProvider = 'minimax';
+      await client.transcribeResumable(audio, buildLiveRequest(), resume);
+    },
+  });
+  /** Provider that produced the in-flight/recovered take (null = live config). */
+  let takeProvider: TranscriptionProviderId | null = null;
+  /** True while the current in-flight take belongs to the recovery controller. */
+  let resumableInFlight = false;
+  recoveryDismissHooks.push(() => {
+    session.discardKept();
+    takeRecovery.dispose();
+    recoveryClient = null;
+  });
+
+  /** Request built from the LIVE controls (credential/language stay current). */
+  const buildLiveRequest = () => {
+    const base = readTranscriptionOptions(elements);
+    const config = getConfig();
+    const options: TranscriptionOptions =
+      base.prompt === undefined && config.customWords.length === 0
+        ? base
+        : { ...base, prompt: buildPrompt(config.customWords, base.prompt) };
+    return { ...options, mode: readOperationMode(elements) };
+  };
 
   bus.on('recording:start', () => session.startRecording());
 
@@ -2256,18 +2459,36 @@ function wireTranscriptionPipeline(
         })
       : rawBlob;
 
-    const base = readTranscriptionOptions(elements);
-    const options: TranscriptionOptions =
-      base.prompt === undefined && config.customWords.length === 0
-        ? base
-        : { ...base, prompt: buildPrompt(config.customWords, base.prompt) };
-
-    const mode = readOperationMode(elements);
-    const request = { ...options, mode };
+    const request = buildLiveRequest();
     const client = getClient();
-    void client.transcribe(audio, request).catch(() => {
-      // Error already emitted on the bus via transcription:error
-    });
+    if (isResumableProvider(client)) {
+      // Register the take (audio as submitted → deterministic partition on
+      // retries) and track the completed-fragment prefix for recovery. The
+      // client instance is captured so a later provider switch can never
+      // reroute the retained take.
+      recoveryClient = client;
+      takeProvider = client.id === 'local' ? null : client.id;
+      resumableInFlight = true;
+      takeRecovery.begin(rawBlob, audio);
+      void client
+        .transcribeResumable(audio, request, {
+          completedTexts: [],
+          onFragmentCompleted: (texts) => takeRecovery.progress(texts),
+        })
+        .catch(() => {
+          // Error already emitted on the bus via transcription:error
+        });
+    } else {
+      // A new non-resumable take owns the pipeline — release any retained
+      // recovery state instead of leaving an unreachable zombie behind.
+      takeRecovery.dispose();
+      recoveryClient = null;
+      takeProvider = null;
+      resumableInFlight = false;
+      void client.transcribe(audio, request).catch(() => {
+        // Error already emitted on the bus via transcription:error
+      });
+    }
     const localEntry =
       config.transcriptionMethod === 'local'
         ? LOCAL_MODEL_CATALOG.find((entry) => entry.id === config.localModelId)
@@ -2278,7 +2499,9 @@ function wireTranscriptionPipeline(
         ? { message: `Procesando con ${localEntry.name} (local)…`, level: 'processing' }
         : config.transcriptionProvider === 'cloudflare-whisper'
           ? { message: 'Procesando con Cloudflare Whisper…', level: 'processing' }
-          : { message: `Procesando con ${options.model}...`, level: 'processing' },
+          : config.transcriptionProvider === 'minimax'
+            ? { message: 'Procesando con MiniMax…', level: 'processing' }
+            : { message: `Procesando con ${request.model}...`, level: 'processing' },
     );
   };
 
@@ -2290,10 +2513,25 @@ function wireTranscriptionPipeline(
 
   // Manual recovery retries re-enter the exact same pipeline with the kept
   // blob (the composition root registered this hook when wiring the panel).
-  retryRunner.run = (blob) => void runTranscription(blob);
+  // A retained resumable take resumes instead — only pending fragments go
+  // back out, through the take's own provider.
+  retryRunner.run = (blob) => {
+    if (takeRecovery.handles(blob)) {
+      resumableInFlight = true;
+      void takeRecovery.retry();
+      return;
+    }
+    void runTranscription(blob);
+  };
 
   bus.on('transcription:success', async (result) => {
     renderMetadata(elements.metadataPanel, result);
+    // Only the resumable take's own success clears its recovery state — a
+    // different take completing must never silently drop retained work.
+    if (resumableInFlight) takeRecovery.finished();
+    resumableInFlight = false;
+    const completedProvider = takeProvider;
+    takeProvider = null;
 
     if (!result.text) {
       session.complete();
@@ -2351,6 +2589,7 @@ function wireTranscriptionPipeline(
       text,
       mode,
       now: Date.now(),
+      providerOverride: completedProvider ?? undefined,
     });
     const pending = session.complete();
     const blob = pending?.blob ?? new Blob([], { type: 'audio/webm' });
@@ -2377,6 +2616,25 @@ function wireTranscriptionPipeline(
   bus.on('transcription:error', (error) => {
     console.error('[App] Transcription error:', error);
     const config = getConfig();
+
+    // Resumable (MiniMax) takes keep the Grabación AND the completed-fragment
+    // prefix in memory — session-only recovery, Reintentar re-sends only the
+    // pending fragments (spec T3). The branch is bound to the in-flight take,
+    // so a DIFFERENT provider failing never touches the retained take.
+    if (resumableInFlight) {
+      const kept = session.failKeepingAudio();
+      takeRecovery.failed();
+      takeProvider = null;
+      resumableInFlight = false;
+      if (kept && takeRecovery.handles(kept.blob)) {
+        recovery.offerManual(kept, t('recovery.minimax.message'), error.message);
+        setStatus(elements, { message: `Error: ${error.message}`, level: 'error' });
+        showToast(elements.toastContainer, t('recovery.minimax.kept'), 'warning');
+        return;
+      }
+      takeRecovery.dispose();
+      recoveryClient = null;
+    }
 
     // Local failures keep the Grabación and offer ONLY manual actions —
     // nothing is ever re-sent automatically (spec T7). A cancelled run is
@@ -2407,6 +2665,7 @@ function wireTranscriptionPipeline(
       }
       session.discardKept();
     }
+    takeProvider = null;
     session.fail();
     showToast(elements.toastContainer, error.message, 'error');
     setStatus(elements, { message: `Error: ${error.message}`, level: 'error' });

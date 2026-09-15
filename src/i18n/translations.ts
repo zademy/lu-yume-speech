@@ -75,6 +75,7 @@ const en: Dictionary = {
   'dictation.footer.shortcut': 'Shortcut: Alt / Ctrl + Space',
   'dictation.footer.processor.groq': 'Processed by Groq Whisper',
   'dictation.footer.processor.worker': 'Processed by Cloudflare Whisper',
+  'dictation.footer.processor.minimax': 'Processed by MiniMax Speech',
   'dictation.footer.processor.local': 'Processed locally in your browser',
   'nav.activeModel.label': 'Transcription model',
   'nav.activeModel.none': 'Not set',
@@ -104,6 +105,17 @@ const en: Dictionary = {
   'settings.worker.baseUrlLabel': 'Worker base URL',
   'settings.worker.baseUrlHelp':
     'Must be https. Change it if you deploy the worker on another domain.',
+  'settings.minimax.title': 'MiniMax Speech',
+  'settings.minimax.subtitle': 'Transcription with the MiniMax Speech-to-Text API (asr-1.0).',
+  'settings.minimax.label': 'MiniMax API key',
+  'settings.minimax.placeholder': 'key...',
+  'settings.minimax.help': 'Transcription only; AI text features still need the Groq key.',
+  'settings.minimax.save': 'Save key',
+  'settings.minimax.toggleAria': 'Show MiniMax key',
+  'settings.language.unsupportedNote':
+    'MiniMax does not support that language; auto-detection will be used.',
+  'settings.translate.unsupportedNote':
+    'MiniMax does not offer translation. Select Groq to translate audio to English.',
   'settings.gate.title': 'Access phrase',
   'settings.gate.subtitle': 'Change the phrase that unlocks the application.',
   'settings.gate.current': 'Current phrase',
@@ -203,6 +215,9 @@ const en: Dictionary = {
   'recovery.copied': 'Copied',
   'recovery.copyFailed': 'Could not copy',
   'recovery.kept': 'Recording kept on this device — choose an action below.',
+  'recovery.minimax.message':
+    'MiniMax failed. The recording and its completed fragments are kept only while this page stays open; Retry resends just the pending part.',
+  'recovery.minimax.kept': 'Recording kept for this session — retry the pending part.',
   'recovery.category.browser-not-supported':
     'This browser does not support the local engine (Web Workers required).',
   'recovery.category.webgpu-unavailable':
@@ -433,9 +448,12 @@ const en: Dictionary = {
   'toast.micDenied': "Couldn't access the microphone",
   'toast.needApiKey': 'Set up your API key to dictate',
   'toast.needWorkerToken': 'Set up the worker token to dictate',
+  'toast.needMinimaxKey': 'Set up the MiniMax API key to dictate',
   'toast.needLocalModel': 'Download a local model in Settings to dictate',
   'toast.workerTokenSaved': 'Worker token saved and active',
   'toast.workerTokenDeleted': 'Worker token deleted',
+  'toast.minimaxKeySaved': 'MiniMax key saved and active',
+  'toast.minimaxKeyDeleted': 'MiniMax key deleted',
   'toast.apiKeySaved': 'API key saved and active',
   'toast.apiKeyDeleted': 'API key deleted',
   'toast.silence': 'Silence detected — processing...',
@@ -513,6 +531,7 @@ const es: Dictionary = {
   'dictation.footer.shortcut': 'Atajo: Alt / Ctrl + Space',
   'dictation.footer.processor.groq': 'Procesado por Groq Whisper',
   'dictation.footer.processor.worker': 'Procesado por Cloudflare Whisper',
+  'dictation.footer.processor.minimax': 'Procesado por MiniMax Speech',
   'dictation.footer.processor.local': 'Procesado localmente en tu navegador',
   'nav.activeModel.label': 'Modelo de transcripción',
   'nav.activeModel.none': 'Sin configurar',
@@ -566,6 +585,18 @@ const es: Dictionary = {
   'settings.worker.subtitle': 'Transcripción mediante tu propio worker de Cloudflare.',
   'settings.worker.label': 'Token del worker',
   'settings.worker.placeholder': 'token...',
+  'settings.minimax.title': 'MiniMax Speech',
+  'settings.minimax.subtitle': 'Transcripción con la API Speech-to-Text de MiniMax (asr-1.0).',
+  'settings.minimax.label': 'API key de MiniMax',
+  'settings.minimax.placeholder': 'key...',
+  'settings.minimax.help':
+    'Solo transcripción; las funciones de IA sobre texto siguen requiriendo la key de Groq.',
+  'settings.minimax.save': 'Guardar key',
+  'settings.minimax.toggleAria': 'Mostrar API key de MiniMax',
+  'settings.language.unsupportedNote':
+    'MiniMax no admite ese idioma; se usará detección automática.',
+  'settings.translate.unsupportedNote':
+    'MiniMax no ofrece traducción. Selecciona Groq para traducir el audio a inglés.',
   'settings.transcription.description':
     'Método, proveedor, modelo, idioma, captura y formato de respuesta.',
   'settings.transcription.title': 'Transcripción',
@@ -646,6 +677,9 @@ const es: Dictionary = {
   'recovery.copied': 'Copiado',
   'recovery.copyFailed': 'No se pudo copiar',
   'recovery.kept': 'Grabación conservada en este dispositivo — elige una acción.',
+  'recovery.minimax.message':
+    'MiniMax falló. La grabación y sus fragmentos completados se conservan solo mientras esta página permanezca abierta; Reintentar reenvía únicamente lo pendiente.',
+  'recovery.minimax.kept': 'Grabación conservada en esta sesión — reintenta lo pendiente.',
   'recovery.category.browser-not-supported':
     'Este navegador no soporta el Motor local (requiere Web Workers).',
   'recovery.category.webgpu-unavailable':
@@ -880,9 +914,12 @@ const es: Dictionary = {
   'toast.micDenied': 'No se pudo acceder al micrófono',
   'toast.needApiKey': 'Configura tu API key para dictar',
   'toast.needWorkerToken': 'Configura el token del worker para dictar',
+  'toast.needMinimaxKey': 'Configura la API key de MiniMax para dictar',
   'toast.needLocalModel': 'Descarga un modelo local en Ajustes para dictar',
   'toast.workerTokenSaved': 'Token del worker guardado y activo',
   'toast.workerTokenDeleted': 'Token del worker eliminado',
+  'toast.minimaxKeySaved': 'API key de MiniMax guardada y activa',
+  'toast.minimaxKeyDeleted': 'API key de MiniMax eliminada',
   'toast.apiKeySaved': 'API key guardada y activa',
   'toast.apiKeyDeleted': 'API key eliminada',
   'toast.silence': 'Silencio detectado — procesando...',

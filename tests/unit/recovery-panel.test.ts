@@ -122,4 +122,60 @@ describe('createRecoveryController', () => {
     await vi.waitFor(() => expect(panel.copy.textContent).toBe('Copied'));
     expect(copyText).toHaveBeenCalledWith('the report');
   });
+
+  describe('offerManual (non-local failures)', () => {
+    it('renders the message with a single Retry action that dispatches retry', () => {
+      const onAction = vi.fn();
+      const controller = createRecoveryController(panel, {
+        lang: () => 'en',
+        onAction,
+        copyText: async () => true,
+      });
+      const kept = { blob: new Blob(['audio']), mimeType: 'audio/webm' };
+
+      controller.offerManual(kept, 'MiniMax failed — kept while this page stays open.', 'detail');
+
+      expect(panel.root.hidden).toBe(false);
+      expect(panel.message.textContent).toBe('MiniMax failed — kept while this page stays open.');
+      expect(panel.detail.textContent).toBe('detail');
+      const buttons = [...panel.actions.querySelectorAll('button')];
+      expect(buttons.map((b) => b.textContent)).toEqual(['Retry']);
+
+      (buttons[0] as HTMLButtonElement).click();
+      expect(onAction).toHaveBeenCalledWith('retry', kept);
+      expect(panel.root.hidden).toBe(true);
+    });
+
+    it('dismiss notifies onDismiss so retained recovery state is released', () => {
+      const onDismiss = vi.fn();
+      const controller = createRecoveryController(panel, {
+        lang: () => 'en',
+        onAction: vi.fn(),
+        copyText: async () => true,
+        onDismiss,
+      });
+      controller.offerManual({ blob: new Blob(), mimeType: 'audio/webm' }, 'msg', 'detail');
+
+      panel.dismiss.click();
+
+      expect(panel.root.hidden).toBe(true);
+      expect(onDismiss).toHaveBeenCalledTimes(1);
+    });
+
+    it('programmatic hide() does NOT fire onDismiss (retry clicks keep state)', () => {
+      const onDismiss = vi.fn();
+      const controller = createRecoveryController(panel, {
+        lang: () => 'en',
+        onAction: vi.fn(),
+        copyText: async () => true,
+        onDismiss,
+      });
+      controller.offerManual({ blob: new Blob(), mimeType: 'audio/webm' }, 'm', 'd');
+
+      controller.hide();
+
+      expect(panel.root.hidden).toBe(true);
+      expect(onDismiss).not.toHaveBeenCalled();
+    });
+  });
 });

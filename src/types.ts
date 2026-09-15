@@ -91,13 +91,13 @@ export const WHISPER_MODELS: WhisperModel[] = ['whisper-large-v3', 'whisper-larg
 
 /**
  * Método de transcripción: how a Transcripción is produced.
- * - 'remote' → a Proveedor remoto (Groq / Cloudflare Whisper)
+ * - 'remote' → a Proveedor remoto (Groq / Cloudflare Whisper / MiniMax)
  * - 'local'  → a Modelo local executed in the browser (Motor local)
  */
 export type TranscriptionMethod = 'remote' | 'local';
 
 /** Identifier of an installed transcription provider. */
-export type TranscriptionProviderId = 'groq' | 'cloudflare-whisper';
+export type TranscriptionProviderId = 'groq' | 'cloudflare-whisper' | 'minimax';
 
 /** Providers available for the UI selector. */
 export const TRANSCRIPTION_PROVIDERS: readonly {
@@ -106,10 +106,14 @@ export const TRANSCRIPTION_PROVIDERS: readonly {
 }[] = [
   { value: 'groq', label: 'Groq API' },
   { value: 'cloudflare-whisper', label: 'Cloudflare Whisper' },
+  { value: 'minimax', label: 'MiniMax Speech' },
 ] as const;
 
 /** Model reported by the Cloudflare Whisper worker (fixed server-side). */
 export const CLOUDFLARE_WHISPER_MODEL: WhisperModel = 'whisper-large-v3-turbo';
+
+/** Fixed model of the MiniMax Speech-to-Text API (`asr-1.0`). */
+export const MINIMAX_ASR_MODEL = 'asr-1.0';
 
 // ---------------------------------------------------------------------------
 // Operation mode
@@ -523,8 +527,8 @@ export interface HistoryEntry {
   text: string;
   /** Detected or specified language (ISO-639-1) */
   language?: string;
-  /** Whisper model used */
-  model: WhisperModel;
+  /** Model used (Groq Whisper variant, the worker's fixed model, or `asr-1.0` for MiniMax). */
+  model: string;
   /** Método de transcripción that produced this entry (audit provenance). */
   method?: TranscriptionMethod;
   /** Catalog id of the Modelo activo (local method provenance). */

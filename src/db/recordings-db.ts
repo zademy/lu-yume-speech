@@ -26,7 +26,6 @@ import type {
   OperationMode,
   SummaryHistory,
   TranscriptionProviderId,
-  WhisperModel,
 } from '../types';
 import { SUMMARY_HISTORY_MAX_ENTRIES } from '../types';
 
@@ -42,7 +41,7 @@ export interface GrabacionMeta {
   id: string;
   text: string;
   language?: string;
-  model: WhisperModel;
+  model: string;
   /** Provider that produced this grabación (omitted = Groq). */
   provider?: TranscriptionProviderId;
   duration?: number;

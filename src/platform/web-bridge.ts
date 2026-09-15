@@ -6,6 +6,7 @@ import { save, load, remove } from '../utils/storage';
 const CREDENTIAL_KEYS: Record<CredentialName, string> = {
   groq: 'groq_api_key',
   worker: 'worker_token',
+  minimax: 'minimax_api_key',
   gate: 'gate_credential',
 };
 
