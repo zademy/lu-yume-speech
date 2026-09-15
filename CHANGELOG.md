@@ -1,5 +1,66 @@
 # Changelog
 
+## [1.8.0](https://github.com/zademy/lu-yume-speech/compare/v1.7.0...v1.8.0) (2026-08-26)
+
+
+### Features
+
+* **app:** active transcription visibility — sidebar chip, honest gat… ([329f474](https://github.com/zademy/lu-yume-speech/commit/329f4745248a7ac356530fb37aa59438d7300c76))
+* **app:** active transcription visibility — sidebar chip, honest gates, model persistence ([5db9969](https://github.com/zademy/lu-yume-speech/commit/5db9969c0e22a5808dba1a6197ded9e3f5d2ea06))
+
+## [1.7.0](https://github.com/zademy/lu-yume-speech/compare/v1.6.0...v1.7.0) (2026-08-20)
+
+
+### Features
+
+* **local-models:** add download engine with progress, cancellation and verification ([f2d4848](https://github.com/zademy/lu-yume-speech/commit/f2d4848271a7c342d78aa8a91e54ecca070fa6a1)), closes [#38](https://github.com/zademy/lu-yume-speech/issues/38)
+* **local-models:** add versioned read-only catalog and Models settings section ([6015d87](https://github.com/zademy/lu-yume-speech/commit/6015d87d6dbdd202f0f93af29a1011c954d7d147)), closes [#37](https://github.com/zademy/lu-yume-speech/issues/37)
+* **local-models:** automatic WebGPU→WASM backend, memory management and provenance ([b34946b](https://github.com/zademy/lu-yume-speech/commit/b34946b28c0cb38a8774e23a144d2fc0646bed1b)), closes [#40](https://github.com/zademy/lu-yume-speech/issues/40)
+* **local-models:** catalog stages 2-3 — Tiny, Medium, Large v3 + experimental Lite family ([526b1df](https://github.com/zademy/lu-yume-speech/commit/526b1dfca658e4d87c940dacb496829692b4e532))
+* **local-models:** first local transcription — Whisper Base on WASM end to end ([f026bab](https://github.com/zademy/lu-yume-speech/commit/f026baba4bc781f83d02e41050843dd656f70d5f)), closes [#39](https://github.com/zademy/lu-yume-speech/issues/39)
+* **local-models:** full lifecycle — delete, atomic update, reconcile, cross-tab locks ([884f202](https://github.com/zademy/lu-yume-speech/commit/884f202edcfa2b49d6d3bdd070b4e976bd23ddb5)), closes [#41](https://github.com/zademy/lu-yume-speech/issues/41)
+* **local-models:** measured benchmark — corpus, WER/RTF diagnostics, published results ([7241f34](https://github.com/zademy/lu-yume-speech/commit/7241f34d7f63a0c07f08082fe5438d7df60a48f3))
+* **local-models:** privacy, typed errors, failure recovery, migration, accessible progress ([823c36b](https://github.com/zademy/lu-yume-speech/commit/823c36b7033f2c5372cedfd743f30f750a37d7d2)), closes [#43](https://github.com/zademy/lu-yume-speech/issues/43)
+* **transcription:** add Metodo remoto/local hierarchy with independent preferences ([fac7ed6](https://github.com/zademy/lu-yume-speech/commit/fac7ed6108224671680e5b06b02d33cd55f3d759)), closes [#36](https://github.com/zademy/lu-yume-speech/issues/36)
+
+
+### Bug Fixes
+
+* **app:** dictation gate refresh + strict-CSP deployment readiness ([67690a9](https://github.com/zademy/lu-yume-speech/commit/67690a9ee6734b162284d4df48ede7f157723de3))
+
+## [1.6.0](https://github.com/zademy/lu-yume-speech/compare/v1.5.0...v1.6.0) (2026-08-16)
+
+
+### Features
+
+* **gate:** añade Puerta de acceso con Frase de acceso (cosmética) ([13a7077](https://github.com/zademy/lu-yume-speech/commit/13a707717284372c429be81434fa43274f1f18ee))
+
+
+### Bug Fixes
+
+* **gate:** mapa de errores compartido, gate.error.empty y a11y del setup ([d5ebfae](https://github.com/zademy/lu-yume-speech/commit/d5ebfaef9cd8c0b8352a48d6a8a7c6b3026942eb))
+
+## [1.5.0](https://github.com/zademy/lu-yume-speech/compare/v1.4.0...v1.5.0) (2026-08-16)
+
+
+### Features
+
+* **api:** add transcription provider adapter with Cloudflare Whisper worker ([bf1a3be](https://github.com/zademy/lu-yume-speech/commit/bf1a3bec198e3dcfc5ebf5fe016abbfa74f4e329))
+* **api:** add transcription provider adapter with Cloudflare Whisper… ([5cb3baa](https://github.com/zademy/lu-yume-speech/commit/5cb3baae63c065530ace187247038a3276fe2108))
+
+## [1.4.0](https://github.com/zademy/lu-yume-speech/compare/v1.3.0...v1.4.0) (2026-08-11)
+
+
+### Features
+
+* **build:** sync app version from package.json and container CI ([56d9fb9](https://github.com/zademy/lu-yume-speech/commit/56d9fb9e0a501a8e5a612a0bc74f2c245384788c))
+
+
+### Bug Fixes
+
+* **pluma:** isolate dictation state from Dictate view on navigation ([0788b15](https://github.com/zademy/lu-yume-speech/commit/0788b159d6e91eee5186fad9670d647eceb7678b))
+* **pluma:** move improve star to left, reduce editor font to 12px, fix metrics button spacing ([799d5c7](https://github.com/zademy/lu-yume-speech/commit/799d5c7e233f91909b5b6f10bb0c7045d1e120ff))
+
 ## [1.3.0](https://github.com/zademy/lu-yume-speech/compare/v1.2.0...v1.3.0) (2026-08-10)
 
 
