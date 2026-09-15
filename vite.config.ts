@@ -11,10 +11,11 @@
 import { defineConfig } from 'vite';
 import tailwindcss from '@tailwindcss/vite';
 
+import { reticle } from '@reticlehq/vite-plugin';
 import pkg from './package.json' with { type: 'json' };
 
 export default defineConfig({
-  plugins: [tailwindcss()],
+  plugins: [reticle(),tailwindcss()],
   clearScreen: false,
   // Vue feature flags required by Milkdown Crepe (which bundles Vue for some
   // internal components). Without these, Vue emits dev warnings and runs with
