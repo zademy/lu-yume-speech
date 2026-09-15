@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.9.0](https://github.com/zademy/lu-yume-speech/compare/v1.8.0...v1.9.0) (2026-09-15)
+
+
+### Features
+
+* **stt:** add MiniMax provider with full single-request dictation ([#55](https://github.com/zademy/lu-yume-speech/issues/55)) ([724532c](https://github.com/zademy/lu-yume-speech/commit/724532c5884e518ae160d3968827857a06774716))
+* **stt:** resumable MiniMax takes — retry only pending fragments ([#57](https://github.com/zademy/lu-yume-speech/issues/57)) ([fea89cb](https://github.com/zademy/lu-yume-speech/commit/fea89cb0f1fb3dec7903a580be128ee54ca3af0f))
+* **stt:** split long MiniMax recordings into one joined Transcripción ([#56](https://github.com/zademy/lu-yume-speech/issues/56)) ([0a23fd4](https://github.com/zademy/lu-yume-speech/commit/0a23fd4be6b121df2ab23f080080da332b66f3ab))
+
+
+### Bug Fixes
+
+* **stt:** explain disabled translation while MiniMax is active ([#55](https://github.com/zademy/lu-yume-speech/issues/55)) ([50b8b40](https://github.com/zademy/lu-yume-speech/commit/50b8b40891632350f26d23081c01186cc4ea29fd))
+
 ## [1.8.0](https://github.com/zademy/lu-yume-speech/compare/v1.7.0...v1.8.0) (2026-08-26)
 
 
