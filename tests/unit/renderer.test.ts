@@ -61,6 +61,9 @@ describe('renderApp application shell', () => {
     // The unsupported-language note ships hidden.
     expect(elements.languageUnsupportedNote.hidden).toBe(true);
     expect(elements.settingsView.contains(elements.languageUnsupportedNote)).toBe(true);
+    // The MiniMax translation note ships hidden too.
+    expect(elements.translateUnsupportedNote.hidden).toBe(true);
+    expect(elements.settingsView.contains(elements.translateUnsupportedNote)).toBe(true);
   });
 
   it('offers MiniMax as a Proveedor remoto option', () => {

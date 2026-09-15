@@ -2144,6 +2144,9 @@ function applyMethodConstraints(
     applyProviderConstraints(elements, provider, hasWorkerToken, hasMinimaxKey);
   }
   applyLanguageConstraints(elements, method, provider);
+  // MiniMax's documented contract has no translation: explain why the
+  // Traducir option is locked instead of leaving it silently disabled.
+  elements.translateUnsupportedNote.hidden = isLocal || provider !== 'minimax';
 }
 
 /**

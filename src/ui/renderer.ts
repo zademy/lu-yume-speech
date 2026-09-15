@@ -130,6 +130,7 @@ export interface AppElements {
   minimaxKeyError: HTMLParagraphElement;
   minimaxKeyStatus: HTMLSpanElement;
   languageUnsupportedNote: HTMLElement;
+  translateUnsupportedNote: HTMLElement;
   modelSelect: HTMLSelectElement;
   operationModeSelect: HTMLSelectElement;
   recordModeSelect: HTMLSelectElement;
@@ -298,6 +299,7 @@ export function renderApp(): AppElements {
     languageUnsupportedNote: getRequiredElement(root, '#languageUnsupportedNote', HTMLElement),
     modelSelect: getRequiredElement(root, '#modelSelect', HTMLSelectElement),
     operationModeSelect: getRequiredElement(root, '#operationModeSelect', HTMLSelectElement),
+    translateUnsupportedNote: getRequiredElement(root, '#translateUnsupportedNote', HTMLElement),
     recordModeSelect: getRequiredElement(root, '#recordModeSelect', HTMLSelectElement),
     noiseReductionSelect: getRequiredElement(root, '#noiseReductionSelect', HTMLSelectElement),
     languageSelect: getRequiredElement(root, '#languageSelect', HTMLSelectElement),
@@ -608,6 +610,9 @@ function renderSettingsView(): string {
                 selected: mode.value === DEFAULT_SETTINGS.operationMode,
               })),
             )}
+            <div class="settings-grid-span">
+              <p id="translateUnsupportedNote" class="field-help" data-i18n="settings.translate.unsupportedNote" hidden></p>
+            </div>
             ${renderSelectField(
               'recordModeSelect',
               'field.recordMode',

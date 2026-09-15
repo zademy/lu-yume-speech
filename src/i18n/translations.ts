@@ -114,6 +114,8 @@ const en: Dictionary = {
   'settings.minimax.toggleAria': 'Show MiniMax key',
   'settings.language.unsupportedNote':
     'MiniMax does not support that language; auto-detection will be used.',
+  'settings.translate.unsupportedNote':
+    'MiniMax does not offer translation. Select Groq to translate audio to English.',
   'settings.gate.title': 'Access phrase',
   'settings.gate.subtitle': 'Change the phrase that unlocks the application.',
   'settings.gate.current': 'Current phrase',
@@ -590,6 +592,8 @@ const es: Dictionary = {
   'settings.minimax.toggleAria': 'Mostrar API key de MiniMax',
   'settings.language.unsupportedNote':
     'MiniMax no admite ese idioma; se usará detección automática.',
+  'settings.translate.unsupportedNote':
+    'MiniMax no ofrece traducción. Selecciona Groq para traducir el audio a inglés.',
   'settings.transcription.description':
     'Método, proveedor, modelo, idioma, captura y formato de respuesta.',
   'settings.transcription.title': 'Transcripción',
