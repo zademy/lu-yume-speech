@@ -34,7 +34,8 @@ import { MINIMAX_ASR_MODEL } from '../types';
 import {
   runTranscriptionFetch,
   REQUEST_TIMEOUT_MS,
-  type TranscriptionProvider,
+  type ResumableTranscriptionProvider,
+  type ResumeRunInfo,
   type TranscriptionRequest,
 } from './transcription-provider';
 import { fail as sharedFail } from '../core/transcription-fail';
@@ -182,7 +183,7 @@ function partitionSamples(
   return bounds;
 }
 
-export class MiniMaxClient implements TranscriptionProvider {
+export class MiniMaxClient implements ResumableTranscriptionProvider {
   readonly id = 'minimax' as const;
 
   private readonly bus: EventBus<EventMap>;
@@ -205,9 +206,28 @@ export class MiniMaxClient implements TranscriptionProvider {
   /**
    * Send audio to MiniMax for transcription (translation is not part of the
    * documented contract — the UI disables that mode while this provider is
-   * active, and the request mode is ignored here). Recordings beyond the
-   * per-request duration limit are split into ordered fragments; the returned
-   * result is the single joined Transcripción for the whole take.
+   * active, and the request mode is ignored here). Equivalent to
+   * {@link transcribeResumable} without prior progress.
+   */
+  async transcribe(
+    blob: Blob,
+    request: TranscriptionRequest,
+    externalSignal?: AbortSignal,
+  ): Promise<TranscriptionResult> {
+    return this.transcribeResumable(blob, request, undefined, externalSignal);
+  }
+
+  /**
+   * Run (or resume) a take. Recordings beyond the per-request duration limit
+   * are split into ordered fragments and their texts joined into ONE result.
+   *
+   * With `resume`, the fragments covered by `completedTexts` are NOT
+   * re-sent — only pending fragments are uploaded, and their texts are
+   * appended to the prefix (the take's request audio must be the same bytes
+   * that produced the prefix, so the deterministic partition matches). The
+   * currently configured credential is read per attempt, so a corrected key
+   * applies to pending uploads. `onFragmentCompleted` reports the growing
+   * prefix after every fragment success.
    *
    * Emits `transcription:start` once, then `transcription:success` once (or
    * `transcription:error`) through the event bus. The per-fragment status
@@ -218,9 +238,10 @@ export class MiniMaxClient implements TranscriptionProvider {
    * @throws {TranscriptionApiError} on any failure (auth, incompatible audio,
    *   rate-limit, network, parse, server).
    */
-  async transcribe(
+  async transcribeResumable(
     blob: Blob,
     request: TranscriptionRequest,
+    resume?: ResumeRunInfo,
     externalSignal?: AbortSignal,
   ): Promise<TranscriptionResult> {
     const apiKey = this.getApiKey();
@@ -249,6 +270,7 @@ export class MiniMaxClient implements TranscriptionProvider {
     }
 
     const fragments = partitionSamples(decoded.samples, decoded.sampleRate);
+    const completed = Math.min(resume?.completedTexts.length ?? 0, fragments.length);
     const totalDuration = decoded.samples.length / decoded.sampleRate;
     this.bus.emit('transcription:start', MINIMAX_ASR_MODEL);
 
@@ -259,10 +281,11 @@ export class MiniMaxClient implements TranscriptionProvider {
       headers.language = request.language;
     }
 
-    // Ordered fragment outcomes — one entry per fragment once it succeeds.
-    // (Lifted into resumable recovery by the long-audio recovery ticket.)
-    const texts: string[] = [];
-    for (let index = 0; index < fragments.length; index++) {
+    // Ordered fragment outcomes — seeded with the resumed prefix so retries
+    // never re-upload completed fragments; the progress sink lets the caller
+    // retain the prefix for recovery.
+    const texts: string[] = [...(resume?.completedTexts.slice(0, completed) ?? [])];
+    for (let index = completed; index < fragments.length; index++) {
       const fragment = fragments[index];
       if (!fragment) continue;
       const fragmentSeconds = (fragment.end - fragment.start) / decoded.sampleRate;
@@ -308,6 +331,7 @@ export class MiniMaxClient implements TranscriptionProvider {
         });
       }
       texts.push(parsed.data.text);
+      resume?.onFragmentCompleted?.([...texts]);
     }
 
     const result: TranscriptionResult = {

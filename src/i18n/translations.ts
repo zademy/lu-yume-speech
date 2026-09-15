@@ -215,6 +215,9 @@ const en: Dictionary = {
   'recovery.copied': 'Copied',
   'recovery.copyFailed': 'Could not copy',
   'recovery.kept': 'Recording kept on this device — choose an action below.',
+  'recovery.minimax.message':
+    'MiniMax failed. The recording and its completed fragments are kept only while this page stays open; Retry resends just the pending part.',
+  'recovery.minimax.kept': 'Recording kept for this session — retry the pending part.',
   'recovery.category.browser-not-supported':
     'This browser does not support the local engine (Web Workers required).',
   'recovery.category.webgpu-unavailable':
@@ -674,6 +677,9 @@ const es: Dictionary = {
   'recovery.copied': 'Copiado',
   'recovery.copyFailed': 'No se pudo copiar',
   'recovery.kept': 'Grabación conservada en este dispositivo — elige una acción.',
+  'recovery.minimax.message':
+    'MiniMax falló. La grabación y sus fragmentos completados se conservan solo mientras esta página permanezca abierta; Reintentar reenvía únicamente lo pendiente.',
+  'recovery.minimax.kept': 'Grabación conservada en esta sesión — reintenta lo pendiente.',
   'recovery.category.browser-not-supported':
     'Este navegador no soporta el Motor local (requiere Web Workers).',
   'recovery.category.webgpu-unavailable':

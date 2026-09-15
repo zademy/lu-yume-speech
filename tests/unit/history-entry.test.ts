@@ -108,4 +108,37 @@ describe('buildHistoryEntry — remote provenance', () => {
     expect(entry.model).toBe('asr-1.0');
     expect(entry.operationMode).toBe('transcribe');
   });
+
+  it('a provider override wins over the live selection (recovered take provenance)', () => {
+    const entry = buildHistoryEntry({
+      config: {
+        ...DEFAULT_SETTINGS,
+        transcriptionProvider: 'groq',
+      },
+      options: baseOptions,
+      result,
+      text: 'hola',
+      mode: 'transcribe',
+      now: 1_000,
+      providerOverride: 'minimax',
+    });
+
+    expect(entry.provider).toBe('minimax');
+    expect(entry.model).toBe('asr-1.0');
+  });
+
+  it('a worker override keeps the fixed worker model', () => {
+    const entry = buildHistoryEntry({
+      config: { ...DEFAULT_SETTINGS, transcriptionProvider: 'groq' },
+      options: baseOptions,
+      result,
+      text: 'x',
+      mode: 'transcribe',
+      now: 1_000,
+      providerOverride: 'cloudflare-whisper',
+    });
+
+    expect(entry.provider).toBe('cloudflare-whisper');
+    expect(entry.model).toBe(CLOUDFLARE_WHISPER_MODEL);
+  });
 });

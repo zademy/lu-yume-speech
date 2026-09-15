@@ -427,3 +427,210 @@ describe('fragmentTimeoutMs', () => {
     expect(fragmentTimeoutMs(5_000)).toBe(900_000);
   });
 });
+
+describe('MiniMaxClient — resumable takes (transcribeResumable)', () => {
+  it('uploads only pending fragments and prepends the completed prefix', async () => {
+    const files: string[] = [];
+    const texts = ['b', 'c'];
+    let call = 0;
+    server.use(
+      http.post(MINIMAX_ENDPOINT, async ({ request }) => {
+        const form = await request.formData();
+        const file = form.get('file');
+        files.push(file instanceof File ? await file.text() : 'not-a-file');
+        return HttpResponse.json({ text: texts[call++] ?? 'x', duration: 500 });
+      }),
+    );
+    const bus = new EventBus<EventMap>();
+    const client = new MiniMaxClient(
+      bus,
+      () => 'k',
+      async () => ({ samples: samplesOf(1_500, 1), sampleRate: RATE }),
+      encoderFake,
+    );
+
+    const result = await client.transcribeResumable(blob(), request, {
+      completedTexts: ['a'],
+    });
+
+    expect(files).toEqual(['frag:500000:1', 'frag:500000:1']);
+    expect(result.text).toBe('a b c');
+    expect(result.duration).toBe(1_500);
+  });
+
+  it('reports the growing completed prefix after each fragment success', async () => {
+    const texts = ['a', 'b', 'c'];
+    let call = 0;
+    server.use(
+      http.post(MINIMAX_ENDPOINT, () =>
+        HttpResponse.json({ text: texts[call++] ?? 'x', duration: 500 }),
+      ),
+    );
+    const bus = new EventBus<EventMap>();
+    const client = new MiniMaxClient(
+      bus,
+      () => 'k',
+      async () => ({ samples: samplesOf(1_500, 1), sampleRate: RATE }),
+      encoderFake,
+    );
+    const prefixes: string[][] = [];
+    const result = await client.transcribeResumable(blob(), request, {
+      completedTexts: [],
+      onFragmentCompleted: (t) => prefixes.push([...t]),
+    });
+
+    expect(prefixes).toEqual([['a'], ['a', 'b'], ['a', 'b', 'c']]);
+    expect(result.text).toBe('a b c');
+  });
+
+  it('uses the currently configured credential on a corrected retry', async () => {
+    const auths: Array<string | null> = [];
+    let failFirst = true;
+    server.use(
+      http.post(MINIMAX_ENDPOINT, ({ request }) => {
+        auths.push(request.headers.get('Authorization'));
+        if (failFirst) {
+          failFirst = false;
+          return HttpResponse.json({}, { status: 401 });
+        }
+        return HttpResponse.json({ text: 'ok', duration: 2 });
+      }),
+    );
+    let key = 'minimax-old-key';
+    const bus = new EventBus<EventMap>();
+    const client = new MiniMaxClient(
+      bus,
+      () => key,
+      async () => ({ samples: samplesOf(2), sampleRate: RATE }),
+      encoderFake,
+    );
+
+    await expect(client.transcribeResumable(blob(), request)).rejects.toMatchObject({
+      detail: { kind: 'auth' },
+    });
+    key = 'minimax-corrected-key';
+    const result = await client.transcribeResumable(blob(), request);
+    expect(result.text).toBe('ok');
+    expect(auths).toEqual(['Bearer minimax-old-key', 'Bearer minimax-corrected-key']);
+  });
+
+  it('keeps the prefix across repeated failures of the same pending fragment', async () => {
+    // Fragment index = fragmentBase + call-in-run, so resumed runs number
+    // their uploads as the fragments they actually carry.
+    const srv = { fragmentBase: 0, calls: 0, total: 0, blockedFragment: 2 };
+    server.use(
+      http.post(MINIMAX_ENDPOINT, () => {
+        srv.calls++;
+        srv.total++;
+        const fragment = srv.fragmentBase + srv.calls;
+        if (fragment === srv.blockedFragment) {
+          return HttpResponse.json({}, { status: 500 });
+        }
+        return HttpResponse.json({ text: `f${fragment}`, duration: 500 });
+      }),
+    );
+    const bus = new EventBus<EventMap>();
+    const client = new MiniMaxClient(
+      bus,
+      () => 'k',
+      async () => ({ samples: samplesOf(1_500, 1), sampleRate: RATE }),
+      encoderFake,
+    );
+
+    // Run 1 (fresh): fragment 1 succeeds, fragment 2 fails.
+    await expect(client.transcribeResumable(blob(), request)).rejects.toMatchObject({
+      detail: { kind: 'server' },
+    });
+    expect(srv.total).toBe(2);
+
+    // Run 2 (resume from 'f1'): the SAME pending fragment fails again —
+    // exactly ONE new upload, the completed prefix is not resent.
+    srv.calls = 0;
+    srv.fragmentBase = 1;
+    await expect(
+      client.transcribeResumable(blob(), request, { completedTexts: ['f1'] }),
+    ).rejects.toMatchObject({ detail: { kind: 'server' } });
+    expect(srv.total).toBe(3);
+
+    // Run 3 (unblock): pending fragments 2 and 3 run once each, joined result.
+    srv.calls = 0;
+    srv.fragmentBase = 1;
+    srv.blockedFragment = 0;
+    const result = await client.transcribeResumable(blob(), request, {
+      completedTexts: ['f1'],
+    });
+    expect(srv.total).toBe(5);
+    expect(result.text).toBe('f1 f2 f3');
+  });
+
+  it('resumes a one-fragment take like a fresh transcription', async () => {
+    const files = captureFiles();
+    const bus = new EventBus<EventMap>();
+    const client = new MiniMaxClient(
+      bus,
+      () => 'k',
+      async () => ({ samples: samplesOf(2), sampleRate: RATE }),
+      encoderFake,
+    );
+    const result = await client.transcribeResumable(blob(), request, {
+      completedTexts: [],
+    });
+    expect(files).toHaveLength(1);
+    expect(result.text).toBe('minimax hello');
+    expect(result.duration).toBe(2);
+  });
+
+  it('resumes from an empty prefix after a first-fragment failure', async () => {
+    const srv = { allow: false, calls: 0 };
+    server.use(
+      http.post(MINIMAX_ENDPOINT, () => {
+        srv.calls++;
+        if (!srv.allow) return HttpResponse.json({}, { status: 500 });
+        return HttpResponse.json({ text: 'ok', duration: 2 });
+      }),
+    );
+    const bus = new EventBus<EventMap>();
+    const client = new MiniMaxClient(
+      bus,
+      () => 'k',
+      async () => ({ samples: samplesOf(2), sampleRate: RATE }),
+      encoderFake,
+    );
+
+    // 500 is non-retryable → terminal failure on fragment 1, no backoff.
+    await expect(client.transcribeResumable(blob(), request)).rejects.toMatchObject({
+      detail: { kind: 'server' },
+    });
+    expect(srv.calls).toBe(1);
+
+    // One-fragment take resumed from an empty prefix: full re-upload, success.
+    srv.allow = true;
+    const result = await client.transcribeResumable(blob(), request, { completedTexts: [] });
+    expect(srv.calls).toBe(2);
+    expect(result.text).toBe('ok');
+  });
+
+  it('emits exactly one start/success pair on a resumed take', async () => {
+    const texts = ['b', 'c'];
+    let call = 0;
+    server.use(
+      http.post(MINIMAX_ENDPOINT, () =>
+        HttpResponse.json({ text: texts[call++] ?? 'x', duration: 500 }),
+      ),
+    );
+    const bus = new EventBus<EventMap>();
+    const client = new MiniMaxClient(
+      bus,
+      () => 'k',
+      async () => ({ samples: samplesOf(1_500, 1), sampleRate: RATE }),
+      encoderFake,
+    );
+    const starts: string[] = [];
+    const successes: unknown[] = [];
+    bus.on('transcription:start', (m) => starts.push(m));
+    bus.on('transcription:success', (r) => successes.push(r));
+    await client.transcribeResumable(blob(), request, { completedTexts: ['a'] });
+    expect(starts).toEqual([MINIMAX_ASR_MODEL]);
+    expect(successes).toHaveLength(1);
+  });
+});

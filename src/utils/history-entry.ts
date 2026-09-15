@@ -13,6 +13,7 @@ import type {
   HistoryEntry,
   OperationMode,
   TranscriptionOptions,
+  TranscriptionProviderId,
   TranscriptionResult,
 } from '../types';
 import { CLOUDFLARE_WHISPER_MODEL, MINIMAX_ASR_MODEL } from '../types';
@@ -29,6 +30,12 @@ export interface HistoryEntryInput {
   text: string;
   mode: OperationMode;
   now: number;
+  /**
+   * Provider that actually produced this take. Overrides the live selection
+   * so a recovered take completed after a provider switch is never relabeled
+   * (spec T3 provenance lock).
+   */
+  providerOverride?: TranscriptionProviderId;
 }
 
 /**
@@ -38,10 +45,11 @@ export interface HistoryEntryInput {
  * fixed model.
  */
 export function buildHistoryEntry(input: HistoryEntryInput): HistoryEntry {
-  const { config, options, result, text, mode, now } = input;
+  const { config, options, result, text, mode, now, providerOverride } = input;
   const isLocal = config.transcriptionMethod === 'local';
-  const isWorker = !isLocal && config.transcriptionProvider === 'cloudflare-whisper';
-  const isMinimax = !isLocal && config.transcriptionProvider === 'minimax';
+  const provider = providerOverride ?? config.transcriptionProvider;
+  const isWorker = !isLocal && provider === 'cloudflare-whisper';
+  const isMinimax = !isLocal && provider === 'minimax';
 
   const entry: HistoryEntry = {
     id: crypto.randomUUID(),

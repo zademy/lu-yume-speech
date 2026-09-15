@@ -49,6 +49,47 @@ export interface TranscriptionProvider {
   ): Promise<TranscriptionResult>;
 }
 
+/**
+ * Resume info for {@link ResumableTranscriptionProvider}: the completed
+ * fragment-text prefix of a partially-succeeded take plus a progress sink
+ * invoked after every further fragment success.
+ */
+export interface ResumeRunInfo {
+  /** Texts of already-completed fragments, in recording order (a prefix). */
+  completedTexts: string[];
+  /** Called with the growing prefix after each fragment success. */
+  onFragmentCompleted?: (completedTexts: string[]) => void;
+}
+
+/**
+ * Optional capability for providers whose takes span several sequential
+ * requests (long audio): a failed take can be RESUMED so only pending
+ * fragments are re-sent. Implemented by MiniMax; other providers are
+ * unaffected (ISP — the base seam stays one call).
+ */
+export interface ResumableTranscriptionProvider extends TranscriptionProvider {
+  /**
+   * Run (or resume) a take. With `resume`, completed fragments are not
+   * re-sent; the result is the single joined Transcripción for the whole
+   * take. Same events as `transcribe`.
+   */
+  transcribeResumable(
+    blob: Blob,
+    request: TranscriptionRequest,
+    resume?: ResumeRunInfo,
+    externalSignal?: AbortSignal,
+  ): Promise<TranscriptionResult>;
+}
+
+/** Type guard for the optional resume capability. */
+export function isResumableProvider(
+  provider: TranscriptionProvider,
+): provider is ResumableTranscriptionProvider {
+  return (
+    typeof (provider as Partial<ResumableTranscriptionProvider>).transcribeResumable === 'function'
+  );
+}
+
 /** Request timeout in milliseconds (shared policy across providers). */
 export const REQUEST_TIMEOUT_MS = 30_000;
 

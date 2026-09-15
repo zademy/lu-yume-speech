@@ -78,7 +78,12 @@ import * as store from './db/recordings-db';
 import { GroqClient } from './api/groq-client';
 import { CloudflareWhisperClient } from './api/cloudflare-whisper-client';
 import { MiniMaxClient, MINIMAX_SUPPORTED_LANGUAGES } from './api/minimax-client';
-import type { TranscriptionProvider } from './api/transcription-provider';
+import { createResumableTakeController } from './api/resumable-take';
+import {
+  isResumableProvider,
+  type ResumableTranscriptionProvider,
+  type TranscriptionProvider,
+} from './api/transcription-provider';
 import { postProcessWithLlm } from './api/llm-postprocessor';
 import { generateSummary, SUMMARY_MODEL } from './api/summary-client';
 import { renderApp } from './ui/renderer';
@@ -1017,6 +1022,10 @@ async function bootstrap(): Promise<void> {
         break;
     }
   };
+  // Hooks letting the pipeline release its retained recovery state when the
+  // user explicitly dismisses the recovery panel (registered by the pipeline
+  // below, after the panel exists).
+  const recoveryDismissHooks: Array<() => void> = [];
   const recovery = createRecoveryController(
     {
       root: elements.localRecovery,
@@ -1030,6 +1039,9 @@ async function bootstrap(): Promise<void> {
       lang: () => getConfig().appLanguage,
       onAction: applyRecoveryAction,
       copyText: copyToClipboard,
+      onDismiss: () => {
+        for (const hook of recoveryDismissHooks) hook();
+      },
     },
   );
 
@@ -1043,6 +1055,7 @@ async function bootstrap(): Promise<void> {
     () => dictationTarget.current,
     recovery,
     retryRunner,
+    recoveryDismissHooks,
   );
 
   wireRecordingHandlers(
@@ -2385,11 +2398,46 @@ function wireTranscriptionPipeline(
   getDictationTarget: () => 'output' | 'pluma',
   recovery: ReturnType<typeof createRecoveryController>,
   retryRunner: { run: ((blob: Blob) => void) | null },
+  recoveryDismissHooks: Array<() => void>,
 ): void {
   // Named pipeline state — replaces the former `lastBlob` closure so a failed
   // take can never leak into a later success, and a rapid re-record surfaces
   // the overwritten buffer instead of silently dropping it.
   const session = new TranscriptionSession();
+  // Session-only recovery for resumable (MiniMax) takes: retained request
+  // audio + completed-fragment prefix; Reintentar re-sends only the pending
+  // fragments. Provenance lock: retries run through the client that STARTED
+  // the take (captured below), and the take's provider is what its history
+  // entry gets stamped with even if the user switches providers meanwhile.
+  let recoveryClient: ResumableTranscriptionProvider | null = null;
+  const takeRecovery = createResumableTakeController({
+    run: async (audio, resume) => {
+      const client = recoveryClient;
+      if (!client) return;
+      takeProvider = 'minimax';
+      await client.transcribeResumable(audio, buildLiveRequest(), resume);
+    },
+  });
+  /** Provider that produced the in-flight/recovered take (null = live config). */
+  let takeProvider: TranscriptionProviderId | null = null;
+  /** True while the current in-flight take belongs to the recovery controller. */
+  let resumableInFlight = false;
+  recoveryDismissHooks.push(() => {
+    session.discardKept();
+    takeRecovery.dispose();
+    recoveryClient = null;
+  });
+
+  /** Request built from the LIVE controls (credential/language stay current). */
+  const buildLiveRequest = () => {
+    const base = readTranscriptionOptions(elements);
+    const config = getConfig();
+    const options: TranscriptionOptions =
+      base.prompt === undefined && config.customWords.length === 0
+        ? base
+        : { ...base, prompt: buildPrompt(config.customWords, base.prompt) };
+    return { ...options, mode: readOperationMode(elements) };
+  };
 
   bus.on('recording:start', () => session.startRecording());
 
@@ -2411,18 +2459,36 @@ function wireTranscriptionPipeline(
         })
       : rawBlob;
 
-    const base = readTranscriptionOptions(elements);
-    const options: TranscriptionOptions =
-      base.prompt === undefined && config.customWords.length === 0
-        ? base
-        : { ...base, prompt: buildPrompt(config.customWords, base.prompt) };
-
-    const mode = readOperationMode(elements);
-    const request = { ...options, mode };
+    const request = buildLiveRequest();
     const client = getClient();
-    void client.transcribe(audio, request).catch(() => {
-      // Error already emitted on the bus via transcription:error
-    });
+    if (isResumableProvider(client)) {
+      // Register the take (audio as submitted → deterministic partition on
+      // retries) and track the completed-fragment prefix for recovery. The
+      // client instance is captured so a later provider switch can never
+      // reroute the retained take.
+      recoveryClient = client;
+      takeProvider = client.id === 'local' ? null : client.id;
+      resumableInFlight = true;
+      takeRecovery.begin(rawBlob, audio);
+      void client
+        .transcribeResumable(audio, request, {
+          completedTexts: [],
+          onFragmentCompleted: (texts) => takeRecovery.progress(texts),
+        })
+        .catch(() => {
+          // Error already emitted on the bus via transcription:error
+        });
+    } else {
+      // A new non-resumable take owns the pipeline — release any retained
+      // recovery state instead of leaving an unreachable zombie behind.
+      takeRecovery.dispose();
+      recoveryClient = null;
+      takeProvider = null;
+      resumableInFlight = false;
+      void client.transcribe(audio, request).catch(() => {
+        // Error already emitted on the bus via transcription:error
+      });
+    }
     const localEntry =
       config.transcriptionMethod === 'local'
         ? LOCAL_MODEL_CATALOG.find((entry) => entry.id === config.localModelId)
@@ -2435,7 +2501,7 @@ function wireTranscriptionPipeline(
           ? { message: 'Procesando con Cloudflare Whisper…', level: 'processing' }
           : config.transcriptionProvider === 'minimax'
             ? { message: 'Procesando con MiniMax…', level: 'processing' }
-            : { message: `Procesando con ${options.model}...`, level: 'processing' },
+            : { message: `Procesando con ${request.model}...`, level: 'processing' },
     );
   };
 
@@ -2447,10 +2513,25 @@ function wireTranscriptionPipeline(
 
   // Manual recovery retries re-enter the exact same pipeline with the kept
   // blob (the composition root registered this hook when wiring the panel).
-  retryRunner.run = (blob) => void runTranscription(blob);
+  // A retained resumable take resumes instead — only pending fragments go
+  // back out, through the take's own provider.
+  retryRunner.run = (blob) => {
+    if (takeRecovery.handles(blob)) {
+      resumableInFlight = true;
+      void takeRecovery.retry();
+      return;
+    }
+    void runTranscription(blob);
+  };
 
   bus.on('transcription:success', async (result) => {
     renderMetadata(elements.metadataPanel, result);
+    // Only the resumable take's own success clears its recovery state — a
+    // different take completing must never silently drop retained work.
+    if (resumableInFlight) takeRecovery.finished();
+    resumableInFlight = false;
+    const completedProvider = takeProvider;
+    takeProvider = null;
 
     if (!result.text) {
       session.complete();
@@ -2508,6 +2589,7 @@ function wireTranscriptionPipeline(
       text,
       mode,
       now: Date.now(),
+      providerOverride: completedProvider ?? undefined,
     });
     const pending = session.complete();
     const blob = pending?.blob ?? new Blob([], { type: 'audio/webm' });
@@ -2534,6 +2616,25 @@ function wireTranscriptionPipeline(
   bus.on('transcription:error', (error) => {
     console.error('[App] Transcription error:', error);
     const config = getConfig();
+
+    // Resumable (MiniMax) takes keep the Grabación AND the completed-fragment
+    // prefix in memory — session-only recovery, Reintentar re-sends only the
+    // pending fragments (spec T3). The branch is bound to the in-flight take,
+    // so a DIFFERENT provider failing never touches the retained take.
+    if (resumableInFlight) {
+      const kept = session.failKeepingAudio();
+      takeRecovery.failed();
+      takeProvider = null;
+      resumableInFlight = false;
+      if (kept && takeRecovery.handles(kept.blob)) {
+        recovery.offerManual(kept, t('recovery.minimax.message'), error.message);
+        setStatus(elements, { message: `Error: ${error.message}`, level: 'error' });
+        showToast(elements.toastContainer, t('recovery.minimax.kept'), 'warning');
+        return;
+      }
+      takeRecovery.dispose();
+      recoveryClient = null;
+    }
 
     // Local failures keep the Grabación and offer ONLY manual actions —
     // nothing is ever re-sent automatically (spec T7). A cancelled run is
@@ -2564,6 +2665,7 @@ function wireTranscriptionPipeline(
       }
       session.discardKept();
     }
+    takeProvider = null;
     session.fail();
     showToast(elements.toastContainer, error.message, 'error');
     setStatus(elements, { message: `Error: ${error.message}`, level: 'error' });
