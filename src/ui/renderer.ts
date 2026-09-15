@@ -122,6 +122,15 @@ export interface AppElements {
   workerTokenError: HTMLParagraphElement;
   workerTokenStatus: HTMLSpanElement;
   workerBaseUrlInput: HTMLInputElement;
+  minimaxKeyForm: HTMLFormElement;
+  minimaxKeyInput: HTMLInputElement;
+  minimaxKeyToggle: HTMLButtonElement;
+  minimaxKeySaveButton: HTMLButtonElement;
+  minimaxKeyDeleteButton: HTMLButtonElement;
+  minimaxKeyError: HTMLParagraphElement;
+  minimaxKeyStatus: HTMLSpanElement;
+  languageUnsupportedNote: HTMLElement;
+  translateUnsupportedNote: HTMLElement;
   modelSelect: HTMLSelectElement;
   operationModeSelect: HTMLSelectElement;
   recordModeSelect: HTMLSelectElement;
@@ -280,8 +289,17 @@ export function renderApp(): AppElements {
     workerTokenError: getRequiredElement(root, '#workerTokenError', HTMLParagraphElement),
     workerTokenStatus: getRequiredElement(root, '#workerTokenStatus', HTMLSpanElement),
     workerBaseUrlInput: getRequiredElement(root, '#workerBaseUrlInput', HTMLInputElement),
+    minimaxKeyForm: getRequiredElement(root, '#minimaxKeyForm', HTMLFormElement),
+    minimaxKeyInput: getRequiredElement(root, '#minimaxKeyInput', HTMLInputElement),
+    minimaxKeyToggle: getRequiredElement(root, '#minimaxKeyToggle', HTMLButtonElement),
+    minimaxKeySaveButton: getRequiredElement(root, '#minimaxKeySaveButton', HTMLButtonElement),
+    minimaxKeyDeleteButton: getRequiredElement(root, '#minimaxKeyDeleteButton', HTMLButtonElement),
+    minimaxKeyError: getRequiredElement(root, '#minimaxKeyError', HTMLParagraphElement),
+    minimaxKeyStatus: getRequiredElement(root, '#minimaxKeyStatus', HTMLSpanElement),
+    languageUnsupportedNote: getRequiredElement(root, '#languageUnsupportedNote', HTMLElement),
     modelSelect: getRequiredElement(root, '#modelSelect', HTMLSelectElement),
     operationModeSelect: getRequiredElement(root, '#operationModeSelect', HTMLSelectElement),
+    translateUnsupportedNote: getRequiredElement(root, '#translateUnsupportedNote', HTMLElement),
     recordModeSelect: getRequiredElement(root, '#recordModeSelect', HTMLSelectElement),
     noiseReductionSelect: getRequiredElement(root, '#noiseReductionSelect', HTMLSelectElement),
     languageSelect: getRequiredElement(root, '#languageSelect', HTMLSelectElement),
@@ -555,6 +573,7 @@ function renderSettingsView(): string {
         ${renderInterfaceSection()}
         ${renderApiKeySection()}
         ${renderWorkerTokenSection()}
+        ${renderMinimaxKeySection()}
         ${renderGateSection()}
         <section class="settings-card" aria-labelledby="transcriptionSettingsTitle">
           <div class="settings-card-heading">
@@ -591,6 +610,9 @@ function renderSettingsView(): string {
                 selected: mode.value === DEFAULT_SETTINGS.operationMode,
               })),
             )}
+            <div class="settings-grid-span">
+              <p id="translateUnsupportedNote" class="field-help" data-i18n="settings.translate.unsupportedNote" hidden></p>
+            </div>
             ${renderSelectField(
               'recordModeSelect',
               'field.recordMode',
@@ -610,6 +632,9 @@ function renderSettingsView(): string {
                 selected: language.code === DEFAULT_SETTINGS.language,
               })),
             )}
+            <div class="settings-grid-span">
+              <p id="languageUnsupportedNote" class="field-error" data-i18n="settings.language.unsupportedNote" hidden></p>
+            </div>
             ${renderResponseFormatControl()}
             <div class="settings-grid-span">${renderTextareaField('promptInput', 'field.context', 'field.context.placeholder', 2)}</div>
             <div class="settings-grid-span">${renderTemperatureControl()}</div>
@@ -733,6 +758,35 @@ function renderWorkerTokenSection(): string {
         <div class="flex flex-wrap justify-end gap-2 pt-2">
           <button id="workerTokenDeleteButton" type="button" class="secondary-action"><span data-i18n="settings.api.delete"></span></button>
           <button id="workerTokenSaveButton" type="submit" class="primary-action"><span data-i18n="settings.worker.save"></span></button>
+        </div>
+      </form>
+    </section>`;
+}
+
+/**
+ * MiniMax-key form: password input with show/hide toggle, save, and delete.
+ * Mirrors the Groq/worker credential cards; the credential is independent so
+ * switching providers never reuses another service's key.
+ */
+function renderMinimaxKeySection(): string {
+  return `
+    <section class="settings-card" aria-labelledby="minimaxKeyTitle">
+      <div class="settings-card-heading">
+        <span class="settings-icon">${icons.globe}</span>
+        <div class="flex-1"><h3 id="minimaxKeyTitle" data-i18n="settings.minimax.title">MiniMax Speech</h3><p data-i18n="settings.minimax.subtitle"></p></div>
+        <span id="minimaxKeyStatus" class="status-badge" data-i18n="settings.api.statusUnset">Not set</span>
+      </div>
+      <form id="minimaxKeyForm" novalidate>
+        <label for="minimaxKeyInput" class="field-label" data-i18n="settings.minimax.label">MiniMax API key</label>
+        <div class="password-field">
+          <input id="minimaxKeyInput" type="password" class="form-control font-mono" data-i18n-placeholder="settings.minimax.placeholder" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="minimaxKeyHelp minimaxKeyError" />
+          <button id="minimaxKeyToggle" type="button" class="password-toggle" data-i18n-aria-label="settings.minimax.toggleAria" aria-pressed="false">${icons.eye}</button>
+        </div>
+        <p id="minimaxKeyHelp" class="field-help" data-i18n="settings.minimax.help"></p>
+        <p id="minimaxKeyError" class="field-error" aria-live="polite"></p>
+        <div class="flex flex-wrap justify-end gap-2 pt-2">
+          <button id="minimaxKeyDeleteButton" type="button" class="secondary-action"><span data-i18n="settings.api.delete"></span></button>
+          <button id="minimaxKeySaveButton" type="submit" class="primary-action"><span data-i18n="settings.minimax.save"></span></button>
         </div>
       </form>
     </section>`;

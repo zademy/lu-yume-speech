@@ -48,7 +48,7 @@ the platform-bridge pattern, see [ARCHITECTURE.md](ARCHITECTURE.md).
 - **Model manager** — downloads with progress, cancellation and verification; atomic updates, deletion, reconciliation after browser eviction, one active model, cross-tab locks, and idle memory release.
 - **Access gate** — a client-side access phrase unlocks the app once per load; cosmetic by design (no backend, no user accounts).
 - **On-device benchmark** — run the bundled ES/EN corpus to measure WER and RTF per model, and export the results as JSON.
-- **Swappable transcription methods & providers** — pick the method (Remote API vs Local in the browser) and, for remote, between the Groq API and your own Cloudflare Whisper worker (adapter pattern); activation is manual from Settings and each credential lives in the browser.
+- **Swappable transcription methods & providers** — pick the method (Remote API vs Local in the browser) and, for remote, between the Groq API, your own Cloudflare Whisper worker, and the MiniMax Speech-to-Text API (adapter pattern); activation is manual from Settings and each credential lives in the browser.
 - **Custom vocabulary & fuzzy correction** — define domain terms, names, and acronyms; they're passed to Whisper as a prompt and fuzzy-corrected afterward (Levenshtein + Soundex).
 - **Filler / stutter cleanup** — language-aware stripping of filler words and repeated syllables after transcription.
 - **Silence trimming** — leading/trailing silence is removed before transcription (fail-open) for lower latency and fewer hallucinations.
@@ -257,18 +257,21 @@ Transcription runs behind a two-level hierarchy configured in
 - **Provider** _(remote method only)_ — which remote service to talk to.
 
 Both methods speak through the same `TranscriptionProvider` seam
-(`src/api/transcription-provider.ts`, adapter pattern). Three clients ship
-today — Groq, a Cloudflare Whisper worker, and the local engine — and adding
-a fourth means one class plus one entry in the registry in `src/main.ts`; see
+(`src/api/transcription-provider.ts`, adapter pattern). Four clients ship
+today — Groq, a Cloudflare Whisper worker, MiniMax, and the local engine —
+and adding a fifth means one class plus an entry in the registry in
+`src/main.ts`; see
 [ADR 0002](docs/adr/0002-adapter-proveedores-transcripcion.md). A remote
 option without its credential is disabled, and deleting the active
-credential auto-switches to the other provider when available.
+credential auto-switches to another configured provider (Groq first, then
+the worker) when available.
 
-| Provider             | Credential             | Storage key         | Notes                                             |
-| -------------------- | ---------------------- | ------------------- | ------------------------------------------------- |
-| Groq API (default)   | Groq API key           | `stt_groq_api_key`  | transcription, translation, all tuning knobs      |
-| Cloudflare Whisper   | Worker bearer token    | `stt_worker_token`  | transcription only; fixed model `whisper-large-v3-turbo` |
-| Local engine         | — none —               | —                   | on-device Whisper; see [Local transcription](#local-transcription-on-device) |
+| Provider             | Credential             | Storage key          | Notes                                             |
+| -------------------- | ---------------------- | -------------------- | ------------------------------------------------- |
+| Groq API (default)   | Groq API key           | `stt_groq_api_key`   | transcription, translation, all tuning knobs      |
+| Cloudflare Whisper   | Worker bearer token    | `stt_worker_token`   | transcription only; fixed model `whisper-large-v3-turbo` |
+| MiniMax Speech       | MiniMax API key        | `stt_minimax_api_key`| transcription only; fixed model `asr-1.0`; long recordings auto-split |
+| Local engine         | — none —               | —                    | on-device Whisper; see [Local transcription](#local-transcription-on-device) |
 
 ### Cloudflare Whisper (bring your own worker)
 
@@ -299,6 +302,36 @@ While Cloudflare Whisper is active, translation and the Groq-only knobs
 (model, prompt, temperature, response format, timestamps) are disabled in the
 UI; the language selector keeps every option and `auto` simply lets the worker
 apply its server-side default.
+
+### MiniMax Speech (bring your own key)
+
+The [MiniMax Speech-to-Text API](https://platform.minimax.io/docs/api-reference/speech-to-text)
+transcribes with the fixed model `asr-1.0` from the browser — same pattern as
+Groq: the key lives only in your browser's `localStorage`
+(`stt_minimax_api_key`) and is entered in **Ajustes → MiniMax Speech**.
+Create a key in the MiniMax console (Account Management → API Key); any
+value of 8+ characters is accepted by the form.
+
+What to expect while MiniMax is active:
+
+- **Long recordings split automatically.** Each request is limited to
+  **500 seconds / 50 MB** by the service, so longer takes are divided into
+  WAV fragments (converted to mono 16 kHz PCM on the fly), cut at nearby
+  silence whenever possible, sent in order, and joined into ONE transcript —
+  one history entry, one refinement pass.
+- **Session-only partial recovery.** If a fragment fails, the recording and
+  the already-completed fragments are kept **only while the page stays
+  open**; a Reintentar button re-sends just the pending part. Closing or
+  refreshing the page drops it — nothing is persisted across sessions.
+- **No translation.** MiniMax's contract does not offer translation to
+  English; the option is disabled while it is active. Select Groq explicitly
+  when you need translation.
+- **Reduced language list.** MiniMax documents a closed set of language
+  hints (Spanish, English, Chinese, Japanese, …). Unsupported choices are
+  disabled and a selection made earlier falls back to `auto` with a notice —
+  the app never sends an undocumented language hint.
+- **AI-over-text features still need Groq.** LLM polish and summaries use the
+  Groq chat API with your Groq key; a MiniMax key alone does not enable them.
 
 ---
 

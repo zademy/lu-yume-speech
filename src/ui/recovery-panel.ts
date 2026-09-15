@@ -25,6 +25,12 @@ export type RecoveryActionHandler = (action: LocalRecoveryAction, kept: KeptReco
 export interface LocalRecoveryController {
   /** Show the panel for a classified failure with the conserved recording. */
   offer(kept: KeptRecording, classification: LocalFailureClassification, report: string): void;
+  /**
+   * Show the panel for a NON-local failure with only Reintentar (spec T3:
+   * resumable remote takes). The message must itself explain the recovery
+   * scope (kept only while the page stays open).
+   */
+  offerManual(kept: KeptRecording, message: string, detail: string): void;
   /** Hide the panel and drop the kept recording. */
   hide(): void;
   /** Whether a recording is currently kept (offered or pending decision). */
@@ -47,6 +53,8 @@ export function createRecoveryController(
     lang: () => AppLanguage;
     onAction: RecoveryActionHandler;
     copyText: (text: string) => Promise<boolean>;
+    /** Explicit dismissal (× button) — releases retained recovery state. */
+    onDismiss?: () => void;
   },
 ): LocalRecoveryController {
   let kept: KeptRecording | null = null;
@@ -58,7 +66,10 @@ export function createRecoveryController(
     panel.detail.textContent = '';
   };
 
-  panel.dismiss.addEventListener('click', hide);
+  panel.dismiss.addEventListener('click', () => {
+    hide();
+    deps.onDismiss?.();
+  });
 
   panel.copy.addEventListener('click', () => {
     void deps.copyText(panel.detail.textContent).then((ok) => {
@@ -69,20 +80,9 @@ export function createRecoveryController(
     });
   });
 
-  const offer = (
-    nextKept: KeptRecording,
-    classification: LocalFailureClassification,
-    report: string,
-  ): void => {
-    kept = nextKept;
-    panel.message.textContent = translate(
-      deps.lang(),
-      `recovery.category.${classification.category}`,
-    );
-    panel.detail.textContent = report;
-
+  const renderActions = (actions: readonly LocalRecoveryAction[]): void => {
     panel.actions.textContent = '';
-    for (const action of classification.actions) {
+    for (const action of actions) {
       const button = document.createElement('button');
       button.type = 'button';
       button.className = PRIMARY_ACTIONS.includes(action) ? 'primary-action' : 'secondary-action';
@@ -94,12 +94,33 @@ export function createRecoveryController(
       });
       panel.actions.appendChild(button);
     }
+  };
 
+  const show = (nextKept: KeptRecording, message: string, detail: string): void => {
+    kept = nextKept;
+    panel.message.textContent = message;
+    panel.detail.textContent = detail;
+  };
+
+  const offer = (
+    nextKept: KeptRecording,
+    classification: LocalFailureClassification,
+    report: string,
+  ): void => {
+    show(nextKept, translate(deps.lang(), `recovery.category.${classification.category}`), report);
+    renderActions(classification.actions);
+    panel.root.hidden = false;
+  };
+
+  const offerManual = (nextKept: KeptRecording, message: string, detail: string): void => {
+    show(nextKept, message, detail);
+    renderActions(['retry']);
     panel.root.hidden = false;
   };
 
   return {
     offer,
+    offerManual,
     hide,
     hasKept: () => kept !== null,
   };
