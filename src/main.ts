@@ -526,17 +526,15 @@ async function bootstrap(): Promise<void> {
   });
   // MiniMax needs WAV (PCM16 mono 16 kHz) instead of the recorded WebM/Ogg —
   // the composition root wires the existing decode + WAV-encode utilities
-  // into the client's audio port so the api module stays decoupled.
-  const convertToWav16kMono = async (
-    blob: Blob,
-  ): Promise<{ blob: Blob; durationSeconds: number }> => {
-    const { audio } = await decodeAudioTo16kMono(blob);
-    return {
-      blob: new Blob([encodeWav(audio, WHISPER_SAMPLE_RATE)], { type: 'audio/wav' }),
-      durationSeconds: audio.length / WHISPER_SAMPLE_RATE,
-    };
+  // into the client's ports so the api module stays decoupled. The client
+  // partitions the decoded samples itself and encodes each fragment.
+  const decodeForMinimax = async (recording: Blob) => {
+    const { audio } = await decodeAudioTo16kMono(recording);
+    return { samples: audio, sampleRate: WHISPER_SAMPLE_RATE };
   };
-  const minimaxClient = new MiniMaxClient(bus, getMinimaxApiKey, convertToWav16kMono);
+  const encodeWavBlob = (samples: Float32Array, sampleRate: number): Blob =>
+    new Blob([encodeWav(samples, sampleRate)], { type: 'audio/wav' });
+  const minimaxClient = new MiniMaxClient(bus, getMinimaxApiKey, decodeForMinimax, encodeWavBlob);
   /** Provider registry — adding a backend means one class + one entry here. */
   const transcriptionClients: Record<TranscriptionProviderId, TranscriptionProvider> = {
     groq: groqClient,

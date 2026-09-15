@@ -59,22 +59,25 @@ export const MAX_RETRIES = 3;
 const RETRYABLE = new Set([429, 503, 504]);
 
 /**
- * Shared fetch runner: 30s timeout via AbortController, external-signal
- * cancellation, retry on 429/503/504 (max 3, exponential backoff + jitter,
- * honoring `Retry-After`), and HTTP-status → `TranscriptionError` mapping.
+ * Shared fetch runner: timeout via AbortController (`timeoutMs`, default
+ * 30 s), external-signal cancellation, retry on 429/503/504 (max 3,
+ * exponential backoff + jitter, honoring `Retry-After`), and HTTP-status →
+ * `TranscriptionError` mapping.
  *
  * Providers plug in their request builder; they only handle the successful
  * `Response` body afterwards. Failures are already emitted on the bus and
- * thrown as `TranscriptionApiError`.
+ * thrown as `TranscriptionApiError`. Providers whose requests legitimately
+ * run longer (e.g. long-audio fragments) pass a larger `timeoutMs`.
  */
 export async function runTranscriptionFetch(
   bus: EventBus<EventMap>,
   buildRequest: (signal: AbortSignal) => Promise<Response>,
   externalSignal?: AbortSignal,
+  timeoutMs: number = REQUEST_TIMEOUT_MS,
 ): Promise<Response> {
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
     const ctrl = new AbortController();
-    const timeout = setTimeout(() => ctrl.abort(), REQUEST_TIMEOUT_MS);
+    const timeout = setTimeout(() => ctrl.abort(), timeoutMs);
     if (externalSignal) {
       if (externalSignal.aborted) ctrl.abort();
       else externalSignal.addEventListener('abort', () => ctrl.abort(), { once: true });
