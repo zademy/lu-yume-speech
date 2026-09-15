@@ -82,12 +82,22 @@ This means:
 
 ## 4. Network egress
 
-The only network egress is `https://api.groq.com` (Groq Whisper API, and — when
-LLM post-processing or transcript summary generation is requested — the Groq
-chat completions endpoint under the same origin). If the SPA is deployed behind a web server, a
-`Content-Security-Policy` header such as
-`default-src 'self'; connect-src 'self' https://api.groq.com` is recommended to
-pin this down.
+Egress origins (all keys stay in browser storage; nothing is bundled):
+
+- `https://api.groq.com` — Groq Whisper API and, when LLM post-processing or
+  transcript summary generation is requested, the Groq chat completions
+  endpoint under the same origin.
+- `https://api.minimax.io` — MiniMax Speech-to-Text provider
+  (`/v1/speech_to_text`, Bearer key like the other providers).
+- A user-configured Cloudflare Whisper worker origin (see README).
+- `huggingface.co` + its Xet/LFS CDN hosts — only for explicit local-model
+  downloads.
+
+If the SPA is deployed behind a web server, a `Content-Security-Policy`
+header such as
+`default-src 'self'; connect-src 'self' https://api.groq.com https://api.minimax.io`
+(plus the worker/Hugging Face origins you use) is recommended to pin this
+down; see SECURITY.md for the full recommended policy.
 
 ## 5. Transcription pipeline
 
